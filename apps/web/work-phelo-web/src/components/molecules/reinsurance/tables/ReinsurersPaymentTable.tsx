@@ -55,13 +55,14 @@ export function ReinsurersPaymentTable({
 
   const obligationCurrency = financialPosition?.currency ?? placement.currency ?? null;
   // When the cedant premium came in as a single foreign currency, show every figure here in
-  // that currency at that rate: obligation = display × rate.
+  // that currency at that rate: display = obligation × rate (rate is the operator-entered
+  // quote — display-currency units per 1 obligation unit).
   const fx = useMemo(
     () => premiumForeignSettlement(payments, obligationCurrency),
     [payments, obligationCurrency],
   );
   const displayCurrency = fx ? fx.currency : obligationCurrency;
-  const conv = (obligationValue: number) => (fx ? obligationValue / fx.rate : obligationValue);
+  const conv = (obligationValue: number) => (fx ? obligationValue * fx.rate : obligationValue);
 
   const pendingByCounterparty = useMemo(() => {
     const map = new Map<string, number>();
@@ -88,7 +89,7 @@ export function ReinsurersPaymentTable({
     () => rows.reduce((sum, row) => sum + row.currentEffectivePayable, 0),
     [rows],
   );
-  const displayTotal = fx ? total / fx.rate : total;
+  const displayTotal = fx ? total * fx.rate : total;
 
   useEffect(() => {
     onTotalChange?.(displayTotal);
@@ -190,7 +191,7 @@ export function ReinsurersPaymentTable({
     <div className="flex flex-col gap-0">
       {fx && (
         <p className="mb-1 text-xs text-gray-500">
-          Amounts in {fx.currency} · 1 {fx.currency} = {fmtRate(fx.rate)} {obligationCurrency ?? ''}
+          Amounts in {fx.currency} · 1 {obligationCurrency ?? ''} = {fmtRate(fx.rate)} {fx.currency}
         </p>
       )}
       <DataTable

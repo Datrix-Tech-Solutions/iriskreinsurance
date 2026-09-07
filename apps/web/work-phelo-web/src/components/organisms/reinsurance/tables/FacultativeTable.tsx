@@ -478,13 +478,6 @@ export function FacultativeTable({
     return map;
   }, [paged, rowStateByPlacementId, tab]);
 
-  // Placements tab: only the current page needs a paid/unpaid check, just to swap
-  // Edit Offer for Partial Edit once a payment exists — no filtering depends on this.
-
-  // Reopen Offer is only valid once no endorsement has been made on the placement —
-  // reopening after an endorsement would let the original offer diverge from what's
-  // since been endorsed. Excludes VOID endorsements, same as EndorsedReferencePill.
-
   const columns = useMemo<Column<Facultative>[]>(() => {
     const userNameById = new Map(
       (Array.isArray(tenantUsers) ? (tenantUsers as TenantUser[]) : []).map((user) => [
@@ -494,11 +487,6 @@ export function FacultativeTable({
     );
     const actorName = (userId: string | null) =>
       userId ? (userNameById.get(userId) ?? 'Unknown user') : 'Unknown user';
-
-    // Endorsements amend the policy without touching the base placement record, so the raw
-    // row.sumInsured / row.premium / row.facultativeOffer never move. Overlay the effective
-    // terms from row-state (which the backend already falls back to base values for) so the
-    // table matches the placement detail page once an endorsement has passed.
     const effectiveTermsFor = (placementId: string) =>
       tab === 'archived' ? undefined : rowStateByPlacementId.get(placementId);
 

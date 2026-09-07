@@ -10,6 +10,7 @@ import { SearchSelect } from '@/components/atoms/SearchSelect';
 import { MultiSelect } from '@/components/atoms/MultiSelect';
 import {
   useCedantOptions,
+  useReinsurerOptions,
   useRiskTypeOptions,
   useCurrencyOptions,
   useBrokerageReport,
@@ -19,13 +20,17 @@ import {
   BrokerageReinsurerRow,
   BrokerageReportParams,
 } from '@/hooks/reinsurance/useBrokerageReport';
+import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { exportToCsv } from '@/lib/exportCsv';
 
 const PAGE_SIZE = 10;
 
-// Brokerage is always viewed from the cedant side and only accrues on premium that
-// has been paid — so unlike the Premiums report there's no scope selector, and no
-// cedant payment-status / reinsurer settlement filters.
+const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
+  { value: 'Outstanding', label: 'Outstanding' },
+  // { value: 'Pending', label: 'Pending' },
+  { value: 'Part Payment', label: 'Part Payment' },
+  { value: 'Paid', label: 'Paid' },
+];
 
 /* ── formatting ── */
 
@@ -77,6 +82,7 @@ interface BrokerageReportDisplayRow {
   sumInsured: number | null;
   premium: number | null;
   exchangeRate: number | null;
+  reinsurerId: string | null;
   reinsurerName: string | null;
   grossPremium: number | null;
   brokerageAmount: number | null;
@@ -104,6 +110,7 @@ function flattenRow(
     sumInsured: r.sumInsured,
     premium: r.premium,
     exchangeRate: r.exchangeRate,
+    reinsurerId: reinsurer?.reinsurerId ?? null,
     reinsurerName: reinsurer?.reinsurerName ?? null,
     grossPremium: reinsurer?.grossPremium ?? null,
     brokerageAmount: reinsurer?.brokerageAmount ?? null,
@@ -267,10 +274,13 @@ export function BrokerageReportTable() {
   const [endDate, setEndDate] = useState('');
   const [riskTypeId, setRiskTypeId] = useState('');
   const [currency, setCurrency] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState('');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
+  const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<BrokerageReportParams | null>(null);
 
   const { options: cedantOptions } = useCedantOptions();
+  const { options: reinsurerOptions } = useReinsurerOptions();
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
   const { data: currencyOptions = [] } = useCurrencyOptions();
 
@@ -284,6 +294,7 @@ export function BrokerageReportTable() {
       endDate,
       riskTypeId: riskTypeId || undefined,
       currency: currency || undefined,
+      paymentStatus: (paymentStatus || undefined) as CedantPaymentStatus | undefined,
       cedantIds: cedantIds.length ? cedantIds : undefined,
     });
     setPage(1);
@@ -291,14 +302,18 @@ export function BrokerageReportTable() {
 
   const columns = useMemo<ReportColumn[]>(() => COLUMNS, []);
 
-  // Explode per confirmed reinsurer closing (shared placement cells repeated).
-  const displayRows = useMemo<BrokerageReportDisplayRow[]>(
-    () =>
-      rows.flatMap((r) =>
-        r.reinsurers.length ? r.reinsurers.map((re) => flattenRow(r, re)) : [flattenRow(r, null)],
-      ),
-    [rows],
-  );
+  // Explode per confirmed reinsurer closing (shared placement cells repeated),
+  // then narrow to the selected reinsurers.
+  const displayRows = useMemo<BrokerageReportDisplayRow[]>(() => {
+    const flat = rows.flatMap((r) =>
+      r.reinsurers.length ? r.reinsurers.map((re) => flattenRow(r, re)) : [flattenRow(r, null)],
+    );
+    if (reinsurerIds.length) {
+      const selected = new Set(reinsurerIds);
+      return flat.filter((row) => row.reinsurerId != null && selected.has(row.reinsurerId));
+    }
+    return flat;
+  }, [rows, reinsurerIds]);
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const paged = displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -359,6 +374,16 @@ export function BrokerageReportTable() {
                   onChange={setCurrency}
                 />
               </div>
+              <div className="w-36">
+                <SearchSelect
+                  size="sm"
+                  showAllOption
+                  placeholder="Payment status"
+                  options={PAYMENT_STATUS_OPTIONS}
+                  value={paymentStatus}
+                  onChange={setPaymentStatus}
+                />
+              </div>
               <div className="w-44">
                 <MultiSelect
                   size="sm"
@@ -367,6 +392,19 @@ export function BrokerageReportTable() {
                   options={cedantOptions}
                   value={cedantIds}
                   onChange={setCedantIds}
+                />
+              </div>
+              <div className="w-44">
+                <MultiSelect
+                  size="sm"
+                  variant="inline"
+                  placeholder="Reinsurers"
+                  options={reinsurerOptions}
+                  value={reinsurerIds}
+                  onChange={(next) => {
+                    setReinsurerIds(next);
+                    setPage(1);
+                  }}
                 />
               </div>
             </div>

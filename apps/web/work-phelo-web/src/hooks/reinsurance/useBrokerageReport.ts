@@ -3,6 +3,7 @@ import { useQueries } from '@tanstack/react-query';
 import { fetchPlacementNotes, facultativePlacementNotesKey } from './useFacultatives';
 import { useCurrencies } from './useCurrencies';
 import { usePremiumsReport, PremiumsReportParams } from './usePremiumsReport';
+import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { Currency, PlacementNote } from '@/types/reinsurance';
 
 const num = (v: string | number | null | undefined): number | null =>
@@ -18,7 +19,8 @@ function currencyRate(currencies: Currency[], isoCode: string | null): number | 
 
 export type BrokerageReportParams = PremiumsReportParams;
 
-/** One reinsurer's brokerage / tax figures, realised against premium collected. */
+/** One reinsurer's brokerage / tax figures, with the `*Paid` variants realised
+ *  against the share of premium collected so far (zero on pending/outstanding). */
 export interface BrokerageReinsurerRow {
   reinsurerId: string;
   reinsurerName: string;
@@ -47,17 +49,19 @@ export interface BrokerageReportRow {
   premium: number | null;
   /** Obligation-currency units per 1 unit of base currency. */
   exchangeRate: number | null;
-  /** Premium collected ÷ premium due, clamped to [0, 1] — brokerage accrues on this share. */
+  /** Cedant premium payment status for the placement. */
+  paymentStatus: CedantPaymentStatus;
+  /** Premium collected ÷ premium due, clamped to [0, 1] — the `*Paid` figures use this. */
   collectionRatio: number;
   reinsurers: BrokerageReinsurerRow[];
 }
 
 /**
- * Brokerage the broker earns on **paid** premium. Builds on usePremiumsReport
- * (placement + per-reinsurer closing + cedant due/paid), keeps only placements
- * where premium has been collected, then attaches each reinsurer's brokerage /
- * WHT / NIC levy from its broker-to-reinsurer credit note (backend-computed),
- * pro-rated by how much of the premium has actually been paid.
+ * Brokerage the broker earns on placed business. Builds on usePremiumsReport
+ * (placement + per-reinsurer closing + cedant due/paid) for every closing in the
+ * period — pending and outstanding included — and attaches each reinsurer's
+ * brokerage / WHT / NIC levy from its credit note (backend-computed), with the
+ * `*Paid` columns pro-rated by how much of the premium has actually been collected.
  */
 export function useBrokerageReport(
   params: BrokerageReportParams,
@@ -70,14 +74,10 @@ export function useBrokerageReport(
   const { rows: premiumRows, isLoading: loadingPremiums } = usePremiumsReport(params, options);
   const { data: currencies = [], isLoading: loadingCurrencies } = useCurrencies();
 
-  // Only placements with premium actually collected — brokerage is cash-basis.
-  const paidRows = useMemo(
-    () => (enabled ? premiumRows.filter((r) => r.paid > 0.01) : []),
-    [premiumRows, enabled],
-  );
+  const scopedRows = useMemo(() => (enabled ? premiumRows : []), [premiumRows, enabled]);
 
   const noteQueries = useQueries({
-    queries: paidRows.map((r) => ({
+    queries: scopedRows.map((r) => ({
       queryKey: facultativePlacementNotesKey(r.id),
       queryFn: () => fetchPlacementNotes(r.id),
       enabled,
@@ -86,16 +86,17 @@ export function useBrokerageReport(
 
   const notesByPlacementId = useMemo(() => {
     const map = new Map<string, PlacementNote[]>();
-    paidRows.forEach((r, i) => {
+    scopedRows.forEach((r, i) => {
       const data = noteQueries[i]?.data;
       if (data) map.set(r.id, data);
     });
     return map;
-  }, [paidRows, noteQueries]);
+  }, [scopedRows, noteQueries]);
 
   const rows = useMemo<BrokerageReportRow[]>(() => {
-    return paidRows.map((r) => {
-      const collectionRatio = r.due > 0.01 ? Math.min(1, Math.max(0, r.paid / r.due)) : 1;
+    return scopedRows.map((r) => {
+      // Collected share drives the `*Paid` columns; 0 when nothing has been received.
+      const collectionRatio = r.due > 0.01 ? Math.min(1, Math.max(0, r.paid / r.due)) : 0;
       const notes = notesByPlacementId.get(r.id) ?? [];
 
       // The reinsurer's credit note carries that closing's brokerage / WHT / NIC
@@ -143,11 +144,12 @@ export function useBrokerageReport(
         sumInsured: r.sumInsured,
         premium: r.premium,
         exchangeRate: currencyRate(currencies, r.currency),
+        paymentStatus: r.paymentStatus,
         collectionRatio,
         reinsurers,
       };
     });
-  }, [paidRows, notesByPlacementId, currencies]);
+  }, [scopedRows, notesByPlacementId, currencies]);
 
   const isLoading = loadingPremiums || loadingCurrencies || noteQueries.some((q) => q.isLoading);
 

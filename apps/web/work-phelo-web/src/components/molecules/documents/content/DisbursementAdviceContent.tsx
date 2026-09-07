@@ -100,7 +100,8 @@ export function DisbursementAdviceContent({ placement, payment }: DisbursementAd
 
   // Every figure in this letter stays in the obligation currency. When the disbursement (or,
   // failing that, the cedant premium it stems from) settled in a single foreign currency, the
-  // footnote states the rate that was applied — obligation = foreign × rate.
+  // footnote states the rate that was applied — foreign = obligation × rate (rate is the
+  // operator-entered quote: foreign-currency units per 1 obligation unit).
   const ownFx =
     payment.settlementCurrency &&
     payment.agreedExchangeRate &&
@@ -148,7 +149,7 @@ export function DisbursementAdviceContent({ placement, payment }: DisbursementAd
   // currency. The detail table above stays in the obligation currency.
   const footnoteCurrency = advFx ? advFx.currency : currency;
   const toFootnote = (obligationValue: number) =>
-    advFx ? obligationValue / advFx.rate : obligationValue;
+    advFx ? obligationValue * advFx.rate : obligationValue;
 
   const amountText = fmtAmount(toFootnote(paidAmount), footnoteCurrency);
   const chequePhrase = chequeNumber
@@ -188,7 +189,7 @@ export function DisbursementAdviceContent({ placement, payment }: DisbursementAd
           {' '}
           Converted at an exchange rate of{' '}
           <strong>
-            1 {advFx.currency}: {currency ?? ''} {fmtRate(advFx.rate)}
+            1 {currency ?? ''}: {advFx.currency} {fmtRate(advFx.rate)}
           </strong>
           .
         </>

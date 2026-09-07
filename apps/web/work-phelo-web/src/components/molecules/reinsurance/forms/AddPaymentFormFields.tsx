@@ -226,6 +226,7 @@ export function AddPaymentFormFields({
   const paymentType = watch('paymentType');
   const paymentCurrency = watch('currency');
   const amountValue = watch('amount');
+  const rateValue = watch('rate');
   const allocations = useWatch({ control, name: 'allocations' });
 
   const parsedAmount = parseFloat(amountValue) || 0;
@@ -287,6 +288,19 @@ export function AddPaymentFormFields({
 
   const fmtNum = (val: number) =>
     val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Cross-currency receipts: `rate` is quoted as payment-currency units per 1 unit of the
+  // placement / offer currency (e.g. "1 USD = 11.37 GHS"). Surface the direction on the Rate
+  // label, and on the Amount label show the outstanding balance expressed in the payment
+  // currency (outstanding × rate) so the user knows roughly what to enter.
+  const parsedRate = parseFloat(rateValue) || 0;
+  const outstandingInPaymentCurrency =
+    showRate && parsedRate > 0 && totalExpected > 0 ? totalExpected * parsedRate : null;
+  const rateLabel = showRate ? `Rate (${businessCurrency} to ${paymentCurrency})` : 'Rate';
+  const amountLabel =
+    showRate && outstandingInPaymentCurrency != null
+      ? `Amount · ≈ ${paymentCurrency} ${fmtNum(outstandingInPaymentCurrency)}`
+      : 'Amount';
 
   const totalExpectedHint =
     businessIds.length > 1 ? (
@@ -406,7 +420,9 @@ export function AddPaymentFormFields({
             </div>
             {rowNeedsRate && (
               <div className="flex flex-col gap-(--field-label-gap,0.125rem)">
-                <span className="text-xs text-gray-400">Rate</span>
+                <span className="text-xs text-gray-400">
+                  Rate ({f.currency} to {paymentCurrency})
+                </span>
                 <Controller
                   name={`allocationRates.${f.id}` as `allocationRates.${string}`}
                   control={control}
@@ -525,7 +541,7 @@ export function AddPaymentFormFields({
         />
         {showRate && (
           <FormField
-            label="Rate"
+            label={rateLabel}
             registration={register('rate', { required: 'Rate is required' })}
             placeholder="0.00"
             type="number"
@@ -541,7 +557,7 @@ export function AddPaymentFormFields({
           rules={{ min: { value: 0.01, message: 'Amount is required' } }}
           render={({ field }) => (
             <NumberField
-              label="Amount"
+              label={amountLabel}
               value={field.value ? Number(field.value) : 0}
               onChange={(n) => field.onChange(String(n))}
               error={errors.amount?.message}
@@ -592,7 +608,7 @@ export function AddPaymentFormFields({
         />
         {showRate && (
           <FormField
-            label="Rate"
+            label={rateLabel}
             registration={register('rate', { required: 'Rate is required' })}
             placeholder="0.00"
             type="number"
@@ -608,7 +624,7 @@ export function AddPaymentFormFields({
           rules={{ min: { value: 0.01, message: 'Amount is required' } }}
           render={({ field }) => (
             <NumberField
-              label="Amount"
+              label={amountLabel}
               value={field.value ? Number(field.value) : 0}
               onChange={(n) => field.onChange(String(n))}
               error={errors.amount?.message}
