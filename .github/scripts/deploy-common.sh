@@ -324,7 +324,7 @@ deploy_path_for_env() {
       if [[ "${DEPLOY_ENV:-}" == "dev" && -n "${DEPLOY_PATH:-}" ]]; then
         printf '%s\n' "$DEPLOY_PATH"
       else
-        printf '%s\n' "${WORKPHELO_DEV_DEPLOY_PATH:-/var/www/apps/dev.workphelo.datrixtechsolutions.com/work-phelo}"
+        printf '%s\n' "${IRISKRE_DEV_DEPLOY_PATH:-/srv/iriskre}"
       fi
       ;;
     prod)
@@ -367,18 +367,18 @@ service_name_from_image_env_key() {
   esac
 }
 
-is_workphelo_image_ref() {
+is_deployment_image_ref() {
   local image_ref="$1"
-  local image_prefix="${IMAGE_PREFIX:-ghcr.io/datrix-tech-solutions/work-phelo}"
+  local image_prefix="${IMAGE_PREFIX:-ghcr.io/datrix-tech-solutions/iriskreinsurance}"
 
   [[ "$image_ref" == "${image_prefix}/"* ]]
 }
 
-is_sha_tagged_workphelo_ref() {
+is_sha_tagged_deployment_ref() {
   local image_ref="$1"
   local tag="${image_ref##*:}"
 
-  is_workphelo_image_ref "$image_ref" && [[ "$tag" =~ ^[0-9a-f]{40}$ ]]
+  is_deployment_image_ref "$image_ref" && [[ "$tag" =~ ^[0-9a-f]{40}$ ]]
 }
 
 list_service_image_refs_from_env_file() {
@@ -492,7 +492,7 @@ collect_deploy_history_image_refs() {
   done | sort -u
 }
 
-collect_retained_workphelo_image_ids() {
+collect_retained_deployment_image_ids() {
   local image_ref
 
   {
@@ -500,20 +500,20 @@ collect_retained_workphelo_image_ids() {
     collect_deploy_history_image_refs
   } | sort -u | while IFS= read -r image_ref; do
     [[ -n "$image_ref" ]] || continue
-    is_workphelo_image_ref "$image_ref" || continue
+    is_deployment_image_ref "$image_ref" || continue
     docker image inspect --format='{{.Id}}' "$image_ref" 2>/dev/null || true
   done | sort -u
 }
 
-collect_protected_workphelo_image_ids() {
+collect_protected_deployment_image_ids() {
   {
     collect_container_image_ids
-    collect_retained_workphelo_image_ids
+    collect_retained_deployment_image_ids
   } | sort -u
 }
 
-list_workphelo_image_tags() {
-  local image_prefix="${IMAGE_PREFIX:-ghcr.io/datrix-tech-solutions/work-phelo}"
+list_deployment_image_tags() {
+  local image_prefix="${IMAGE_PREFIX:-ghcr.io/datrix-tech-solutions/iriskreinsurance}"
   local repository
   local tag
   local image_id
@@ -559,7 +559,7 @@ record_successful_deploy_images() {
 
   while IFS=$'\t' read -r service image_ref; do
     [[ -n "${service:-}" && -n "${image_ref:-}" ]] || continue
-    is_sha_tagged_workphelo_ref "$image_ref" || continue
+    is_sha_tagged_deployment_ref "$image_ref" || continue
     printf '%s\t%s\t%s\n' "$timestamp" "$service" "$image_ref"
   done < <(list_service_image_refs_from_env_file "$compose_env_file") >"$new_entries"
 
@@ -587,18 +587,18 @@ record_successful_deploy_images() {
   log "✓ Recorded ${deploy_env} image history at ${history_file}"
 }
 
-cleanup_stale_workphelo_images() {
+cleanup_stale_deployment_images() {
   local protected_ids
   local image_tags
   protected_ids="$(mktemp)"
   image_tags="$(mktemp)"
 
-  collect_protected_workphelo_image_ids >"$protected_ids"
-  list_workphelo_image_tags >"$image_tags"
+  collect_protected_deployment_image_ids >"$protected_ids"
+  list_deployment_image_tags >"$image_tags"
 
   if [[ ! -s "$image_tags" ]]; then
     rm -f "$protected_ids" "$image_tags"
-    log "No WorkPhelo GHCR images found for retention cleanup"
+    log "No deployment GHCR images found for retention cleanup"
     return 0
   fi
 
@@ -623,17 +623,17 @@ cleanup_stale_workphelo_images() {
   done < <(cut -d '|' -f1 "$image_tags" | sort -u)
 
   rm -f "$protected_ids" "$image_tags"
-  log "WorkPhelo image retention complete; removed ${deleted} stale unused SHA-tagged image(s)"
+  log "Deployment image retention complete; removed ${deleted} stale unused SHA-tagged image(s)"
 }
 
 post_deploy_capacity_maintenance() {
   report_root_disk_usage "Post-Deploy Disk Usage"
 
   section "Post-Deploy Image Retention"
-  if cleanup_stale_workphelo_images; then
-    log "✓ WorkPhelo image cleanup completed"
+  if cleanup_stale_deployment_images; then
+    log "✓ Deployment image cleanup completed"
   else
-    log "⚠ WorkPhelo image cleanup failed; continuing unless disk is critical"
+    log "⚠ Deployment image cleanup failed; continuing unless disk is critical"
   fi
 
   report_root_disk_usage "Post-Cleanup Disk Usage"
@@ -850,7 +850,7 @@ validate_environment_boundaries() {
       die "Production ALLOWED_ORIGINS contains local/dev/staging origins"
     fi
 
-    if contains_any "$rabbitmq_url" "localhost" "127.0.0.1" "workphelo-dev"; then
+    if contains_any "$rabbitmq_url" "localhost" "127.0.0.1" "iriskre-dev"; then
       die "Production RABBITMQ_URL appears to point at a local/dev broker"
     fi
     ;;

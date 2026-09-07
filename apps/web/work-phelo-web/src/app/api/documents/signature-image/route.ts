@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 
 export const runtime = 'nodejs';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://dev-api.workphelo.com/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'https://api-dev.iriskreinsurance.com/api/v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

@@ -13,11 +13,11 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   ORG: datrix-tech-solutions
-  IMAGE_PREFIX: ghcr.io/datrix-tech-solutions/work-phelo
+  IMAGE_PREFIX: ghcr.io/datrix-tech-solutions/iriskreinsurance
   COMPOSE_FILE: infrastructure/docker-compose.dev.yml
-  DEPLOY_PATH: /var/www/apps/dev.workphelo.datrixtechsolutions.com/work-phelo
-  WEB_PUBLIC_API_URL: https://dev-api.workphelo.com/api/v1
-  WEB_PUBLIC_APP_BASE_URL: https://dev-app.workphelo.com
+  DEPLOY_PATH: /srv/iriskre
+  WEB_PUBLIC_API_URL: https://api-dev.iriskreinsurance.com/api/v1
+  WEB_PUBLIC_APP_BASE_URL: https://dev.iriskreinsurance.com
   BUILD_SHA: ${{ github.sha }}
   BUILD_REF: ${{ github.ref_name }}
   CHECKOUT_REF: ${{ github.sha }}
@@ -254,7 +254,7 @@ jobs:
 
     environment:
       name: dev
-      url: https://dev-app.workphelo.com
+      url: https://dev.iriskreinsurance.com
 
     env:
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
@@ -285,10 +285,10 @@ jobs:
       HR_FIELD_HMAC_KEY: ${{ secrets.HR_FIELD_HMAC_KEY }}
       BUILD_SHA: ${{ github.sha }}
       BUILD_REF: ${{ github.ref_name }}
-      IMAGE_PREFIX: ghcr.io/datrix-tech-solutions/work-phelo
+      IMAGE_PREFIX: ghcr.io/datrix-tech-solutions/iriskreinsurance
       CHANGED_SERVICES: ${{ needs.detect-changes.outputs.changed }}
-      WEB_PUBLIC_API_URL: https://dev-api.workphelo.com/api/v1
-      WEB_PUBLIC_APP_BASE_URL: https://dev-app.workphelo.com
+      WEB_PUBLIC_API_URL: https://api-dev.iriskreinsurance.com/api/v1
+      WEB_PUBLIC_APP_BASE_URL: https://dev.iriskreinsurance.com
       AUTH_SERVICE_URL: ${{ vars.AUTH_SERVICE_URL }}
       AUTH_TENANT_ASSET_STORAGE_PROVIDER: ${{ vars.AUTH_TENANT_ASSET_STORAGE_PROVIDER }}
       AUTH_TENANT_ASSET_S3_BUCKET: ${{ vars.AUTH_TENANT_ASSET_S3_BUCKET }}
@@ -300,7 +300,7 @@ jobs:
       CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
       CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
       REINSURANCE_DOCUMENT_STORAGE_PROVIDER: cloudinary
-      REINSURANCE_DOCUMENT_CLOUDINARY_ROOT_FOLDER: workphelo/reinsurance
+      REINSURANCE_DOCUMENT_CLOUDINARY_ROOT_FOLDER: iriskreinsurance/reinsurance
       REINSURANCE_DOCUMENT_SIGNED_URL_TTL_SECONDS: 300
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -341,7 +341,7 @@ jobs:
           key: ${{ secrets.DEV_SSH_KEY }}
           port: 22
           source: .github/scripts/deploy-common.sh,infrastructure/docker-compose.dev.yml
-          target: /var/www/apps/dev.workphelo.datrixtechsolutions.com/work-phelo/
+          target: /srv/iriskre/
           strip_components: 0
 
       # ── 10. SSH deploy via extracted script ───────────────────────────────

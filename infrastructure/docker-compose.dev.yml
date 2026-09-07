@@ -15,40 +15,15 @@ services:
       retries: 10
       start_period: 10s
 
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    restart: unless-stopped
-    networks:
-      - app-network
-    ports:
-      - '127.0.0.1:5672:5672'
-      - '127.0.0.1:15672:15672'
-    environment:
-      RABBITMQ_DEFAULT_USER: erp
-      RABBITMQ_DEFAULT_PASS: erppassword
-      RABBITMQ_DEFAULT_VHOST: workphelo
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-    healthcheck:
-      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
-
   auth-service:
     image: ${AUTH_SERVICE_IMAGE}
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4001:4001'
     env_file:
       - ../apps/auth-service/.env.dev
     depends_on:
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     healthcheck:
       test:
@@ -68,14 +43,10 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4002:4002'
     env_file:
       - ../apps/hr-service/.env.dev
     depends_on:
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     healthcheck:
       test:
@@ -95,14 +66,10 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4004:4004'
     env_file:
       - ../apps/notification-service/.env.dev
     depends_on:
       redis:
-        condition: service_healthy
-      rabbitmq:
         condition: service_healthy
     healthcheck:
       test:
@@ -122,13 +89,8 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4005:4005'
     env_file:
       - ../apps/subscription-service/.env.dev
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
     healthcheck:
       test:
         [
@@ -147,13 +109,8 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4006:4006'
     env_file:
       - ../apps/marketing-service/.env.dev
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
     healthcheck:
       test:
         [
@@ -172,8 +129,6 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4007:4007'
     env_file:
       - ../apps/reinsurance-service/.env.dev
     healthcheck:
@@ -194,8 +149,6 @@ services:
     restart: unless-stopped
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4008:4008'
     env_file:
       - ../apps/accounting-service/.env.dev
     healthcheck:
@@ -258,8 +211,8 @@ services:
     environment:
       HOSTNAME: 0.0.0.0
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:-https://dev-api.workphelo.com/api/v1}
-      NEXT_PUBLIC_APP_BASE_URL: ${WEB_PUBLIC_APP_BASE_URL:-https://dev-app.workphelo.com}
+      NEXT_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:-https://api-dev.iriskreinsurance.com/api/v1}
+      NEXT_PUBLIC_APP_BASE_URL: ${WEB_PUBLIC_APP_BASE_URL:-https://dev.iriskreinsurance.com}
       NEXT_PUBLIC_ENABLE_ANNOUNCEMENT_SMS: 'true'
     ports:
       - '127.0.0.1:3000:3000'
@@ -281,11 +234,9 @@ services:
 
 networks:
   app-network:
-    name: workphelo-dev-network
+    name: iriskre-dev-network
     driver: bridge
 
 volumes:
   redis_data:
-    name: workphelo-dev-redis-data
-  rabbitmq_data:
-    name: workphelo-dev-rabbitmq-data
+    name: iriskre-dev-redis-data

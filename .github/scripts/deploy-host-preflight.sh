@@ -57,7 +57,7 @@ check_deploy_target() {
 
   [[ -w "$target" ]] || die "deploy target is not writable: $target"
 
-  local probe="${target}/.workphelo-preflight-${DEPLOY_ENV:-unknown}-$$"
+  local probe="${target}/.iriskre-preflight-${DEPLOY_ENV:-unknown}-$$"
   : >"$probe" || die "could not write probe file in deploy target: $target"
   rm -f "$probe" || die "could not remove probe file from deploy target: $target"
   log "OK: deploy target is writable: $target"
@@ -71,7 +71,7 @@ check_host_utilities() {
 }
 
 main() {
-  log "WorkPhelo deployment host preflight (${DEPLOY_ENV:-unknown})"
+  log "iRisk Reinsurance deployment host preflight (${DEPLOY_ENV:-unknown})"
   check_host_utilities
   check_root_disk_space
   check_docker

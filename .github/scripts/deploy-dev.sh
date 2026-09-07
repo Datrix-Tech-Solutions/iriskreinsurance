@@ -3,10 +3,10 @@
 set -euo pipefail
 
 DEPLOY_ENV="dev"
-DEPLOY_PATH="/var/www/apps/dev.workphelo.datrixtechsolutions.com/work-phelo"
+DEPLOY_PATH="/srv/iriskre"
 COMPOSE_FILE="${DEPLOY_PATH}/infrastructure/docker-compose.dev.yml"
 COMPOSE_ENV_FILE="${DEPLOY_PATH}/.compose.dev.env"
-COMPOSE_PROJECT_NAME="workphelo-dev"
+COMPOSE_PROJECT_NAME="iriskre-dev"
 HELPER_FILE="${DEPLOY_PATH}/.github/scripts/deploy-common.sh"
 
 [[ -f "$HELPER_FILE" ]] || {
@@ -17,7 +17,7 @@ HELPER_FILE="${DEPLOY_PATH}/.github/scripts/deploy-common.sh"
 # shellcheck source=/dev/null
 source "$HELPER_FILE"
 
-section "WorkPhelo Dev Deployment"
+section "iRisk Reinsurance Dev Deployment"
 log "SHA: ${BUILD_SHA:-unknown}"
 log "Ref: ${BUILD_REF:-unknown}"
 log "Time: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -52,8 +52,8 @@ write_env_file "$COMPOSE_ENV_FILE" \
   "REINSURANCE_SERVICE_IMAGE=${REINSURANCE_SERVICE_IMAGE}" \
   "ACCOUNTING_SERVICE_IMAGE=${ACCOUNTING_SERVICE_IMAGE}" \
   "NEXTJS_IMAGE=${NEXTJS_IMAGE}" \
-  "WEB_PUBLIC_API_URL=${WEB_PUBLIC_API_URL:-https://dev-api.workphelo.com/api/v1}" \
-  "WEB_PUBLIC_APP_BASE_URL=${WEB_PUBLIC_APP_BASE_URL:-https://dev-app.workphelo.com}"
+  "WEB_PUBLIC_API_URL=${WEB_PUBLIC_API_URL:-https://api-dev.iriskreinsurance.com/api/v1}" \
+  "WEB_PUBLIC_APP_BASE_URL=${WEB_PUBLIC_APP_BASE_URL:-https://dev.iriskreinsurance.com}"
 log "✓ ${COMPOSE_ENV_FILE}"
 
 section "Service Env Files"
@@ -172,7 +172,8 @@ write_env_file "${DEPLOY_PATH}/apps/reinsurance-service/.env.dev" \
   "CLOUDINARY_CLOUD_NAME=${CLOUDINARY_CLOUD_NAME}" \
   "CLOUDINARY_API_KEY=${CLOUDINARY_API_KEY}" \
   "CLOUDINARY_API_SECRET=${CLOUDINARY_API_SECRET}" \
-  "REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS=${REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS}"
+  "REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS=${REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS}" \
+  "REINSURANCE_ACCOUNTING_OUTBOX_DISPATCHER_ENABLED=false"
 
 write_env_file "${DEPLOY_PATH}/apps/accounting-service/.env.dev" \
   "PORT=4008" \
@@ -194,7 +195,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 log "✓ Authenticated with GHCR"
 
 section "Pull Images"
-docker_compose pull redis rabbitmq
+docker_compose pull redis
 ensure_image_available "$API_GATEWAY_IMAGE" "api-gateway" "api-gateway"
 ensure_image_available "$AUTH_SERVICE_IMAGE" "auth-service" "auth-service"
 ensure_image_available "$HR_SERVICE_IMAGE" "hr-service" "hr-service"
@@ -216,9 +217,8 @@ preflight_runtime_env "$ACCOUNTING_SERVICE_IMAGE" "${DEPLOY_PATH}/apps/accountin
 log "✓ Runtime env validation passed"
 
 section "Infrastructure Services"
-docker_compose up -d --no-build redis rabbitmq
+docker_compose up -d --no-build redis
 wait_for_container_health redis
-wait_for_container_health rabbitmq
 log "✓ Infrastructure services healthy"
 
 section "Database Migrations"
@@ -240,7 +240,6 @@ log "✓ Compose rollout finished"
 
 section "Container Health"
 wait_for_container_health redis
-wait_for_container_health rabbitmq
 wait_for_container_health auth-service
 wait_for_container_health hr-service
 wait_for_container_health notification-service
@@ -274,13 +273,6 @@ else
 fi
 
 section "Reachability"
-wait_for_http_ok "dev auth-service" "http://127.0.0.1:4001/health"
-wait_for_http_ok "dev hr-service" "http://127.0.0.1:4002/health"
-wait_for_http_ok "dev notification-service" "http://127.0.0.1:4004/api/health"
-wait_for_http_ok "dev subscription-service" "http://127.0.0.1:4005/api/health"
-wait_for_http_ok "dev marketing-service" "http://127.0.0.1:4006/api/health"
-wait_for_http_ok "dev reinsurance-service" "http://127.0.0.1:4007/api/health"
-wait_for_http_ok "dev accounting-service" "http://127.0.0.1:4008/api/health"
 wait_for_http_ok "dev api-gateway" "http://127.0.0.1:4010/health"
 wait_for_http_ok "dev reinsurance via gateway" "http://127.0.0.1:4010/api/v1/operations/reinsurance/health"
 wait_for_http_ok "dev accounting via gateway" "http://127.0.0.1:4010/api/v1/accounting/health"

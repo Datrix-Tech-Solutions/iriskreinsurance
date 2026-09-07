@@ -23,7 +23,7 @@
     "dev:marketing": "turbo run dev --filter=marketing-service",
     "dev:reinsurance": "turbo run dev --filter=reinsurance-service",
     "dev:accounting": "turbo run dev --filter=accounting-service",
-    "dev:infra": "docker compose -f infrastructure/docker-compose.dev.yml up rabbitmq redis -d",
+    "dev:infra": "docker compose -f infrastructure/docker-compose.dev.yml up redis -d",
     "prepare": "husky",
     "check-types": "turbo run check-types",
     "check-rbac": "node scripts/check-rbac-alignment.mjs"
