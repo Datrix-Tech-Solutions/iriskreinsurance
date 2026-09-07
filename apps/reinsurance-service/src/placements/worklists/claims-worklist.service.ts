@@ -180,6 +180,7 @@ export class ReinsuranceClaimsWorklistService {
                 SUM(COALESCE("claimShare", 0)) AS "amount"
               FROM classified_claims
               WHERE "claimState"::text = 'FINALIZED'
+                AND "bucket" <> 'closed'
               GROUP BY "claimCurrency"
             ) totals
           ),
