@@ -7,7 +7,7 @@ import { CookieOptions, Response } from 'express';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
 const SAME_SITE =
   (process.env.COOKIE_SAME_SITE as 'lax' | 'strict' | 'none') || 'lax';
-const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || undefined;
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN?.trim() || undefined;
 
 const baseCookieOptions: CookieOptions = {
   httpOnly: true,

@@ -48,22 +48,22 @@ describe('cookie helper', () => {
   });
 
   it('sets Domain on access and refresh cookies when COOKIE_DOMAIN is set', async () => {
-    process.env.COOKIE_DOMAIN = '.iriskreinsurance.com';
+    process.env.COOKIE_DOMAIN = 'iriskreinsurance.com';
     const { setAuthCookies } = await import('./cookie.helper');
     const res = mockResponse();
 
     setAuthCookies(res as never, 'access-token', 'refresh-token');
 
     expect(res.cookie.mock.calls[0][2]).toMatchObject({
-      domain: '.iriskreinsurance.com',
+      domain: 'iriskreinsurance.com',
     });
     expect(res.cookie.mock.calls[1][2]).toMatchObject({
-      domain: '.iriskreinsurance.com',
+      domain: 'iriskreinsurance.com',
     });
   });
 
   it('uses the same Domain attributes when clearing cookies', async () => {
-    process.env.COOKIE_DOMAIN = '.iriskreinsurance.com';
+    process.env.COOKIE_DOMAIN = 'iriskreinsurance.com';
     const { clearAuthCookies } = await import('./cookie.helper');
     const res = mockResponse();
 
@@ -73,7 +73,7 @@ describe('cookie helper', () => {
       secure: true,
       sameSite: 'lax',
       path: '/',
-      domain: '.iriskreinsurance.com',
+      domain: 'iriskreinsurance.com',
     };
 
     expect(res.clearCookie).toHaveBeenCalledWith(
