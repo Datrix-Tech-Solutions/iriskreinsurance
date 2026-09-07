@@ -74,14 +74,15 @@ export function RecordDisbursementPanel({
   const obligationCurrency = financialPosition?.currency ?? placement.currency ?? null;
   // Closings and the financial position are denominated in the obligation currency. If the
   // cedant premium was received in a single foreign currency, disburse to the reinsurer in
-  // that same currency at that same rate: obligation = display × rate.
+  // that same currency at that same rate: display = obligation × rate (rate is the
+  // operator-entered quote — display-currency units per 1 obligation unit).
   const fx = useMemo(
     () => premiumForeignSettlement(payments, obligationCurrency),
     [payments, obligationCurrency],
   );
   const displayCurrency = fx ? fx.currency : obligationCurrency;
-  const toDisplay = (obligationValue: number) => (fx ? obligationValue / fx.rate : obligationValue);
-  const toObligation = (displayValue: number) => (fx ? displayValue * fx.rate : displayValue);
+  const toDisplay = (obligationValue: number) => (fx ? obligationValue * fx.rate : obligationValue);
+  const toObligation = (displayValue: number) => (fx ? displayValue / fx.rate : displayValue);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [amount, setAmount] = useState(0);
@@ -305,7 +306,7 @@ export function RecordDisbursementPanel({
         {fx && (
           <p className="text-xs text-gray-500">
             Premium was received in {fx.currency}, amounts are shown and disbursed in {fx.currency}{' '}
-            at 1 {fx.currency} = {fmt(fx.rate, obligationCurrency)}.
+            at 1 {obligationCurrency ?? ''} = {fmt(fx.rate, fx.currency)}.
           </p>
         )}
         <SearchSelect

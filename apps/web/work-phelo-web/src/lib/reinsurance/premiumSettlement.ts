@@ -3,7 +3,8 @@ import { PlacementPayment } from '@/types/reinsurance';
 export interface PremiumForeignSettlement {
   /** Currency the cedant actually settled the premium in. */
   currency: string;
-  /** Obligation-currency units per 1 unit of `currency` (obligation = settlement × rate). */
+  /** `currency` units per 1 unit of the obligation currency, as the operator entered it
+   *  (settlement = obligation × rate, obligation = settlement ÷ rate). */
   rate: number;
 }
 

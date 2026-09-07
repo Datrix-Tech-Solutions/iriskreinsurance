@@ -67,6 +67,30 @@ function reinsurerCountFor(p: Facultative): number {
   ).length;
 }
 
+/** One accepted reinsurer on the placement — the report explodes a row per entry
+ *  of this list under the Reinsurer scope. */
+export interface FacultativeReinsurerBreakdown {
+  reinsurerId: string;
+  reinsurerName: string;
+  /** Signed line % where set, else the negotiated share %. */
+  sharePercent: number | null;
+}
+
+function reinsurerBreakdownFor(p: Facultative): FacultativeReinsurerBreakdown[] {
+  return p.participants
+    .filter((pt) => REINSURER_ROLES.has(pt.role) && QUALIFYING_PARTICIPANT_STATUSES.has(pt.status))
+    .map((pt) => ({
+      reinsurerId: pt.counterpartyId,
+      reinsurerName: pt.counterparty.name,
+      sharePercent:
+        pt.signedLinePercent != null
+          ? parseFloat(pt.signedLinePercent)
+          : pt.sharePercent != null
+            ? parseFloat(pt.sharePercent)
+            : null,
+    }));
+}
+
 export type FacultativeReportLifecycle = 'ACTIVE' | 'EXPIRED';
 
 export interface FacultativeReportParams {
@@ -101,6 +125,8 @@ export interface FacultativeReportRow {
   inceptionDate: string | null;
   expiryDate: string | null;
   paymentStatus: CedantPaymentStatus;
+  /** Accepted reinsurers on the placement; drives the Reinsurer-scope row explosion. */
+  reinsurers: FacultativeReinsurerBreakdown[];
 }
 
 export interface FacultativeReportSummary {
@@ -280,6 +306,7 @@ export function useFacultativeReport(
         inceptionDate: p.inceptionDate,
         expiryDate: p.expiryDate,
         paymentStatus: paymentStatusByPlacementId.get(p.id) ?? 'Outstanding',
+        reinsurers: reinsurerBreakdownFor(p),
       }))
       .filter((row) => !paymentStatuses || paymentStatuses.has(row.paymentStatus));
   }, [filtered, riskClassNameFor, paymentStatusByPlacementId, params.paymentStatuses]);

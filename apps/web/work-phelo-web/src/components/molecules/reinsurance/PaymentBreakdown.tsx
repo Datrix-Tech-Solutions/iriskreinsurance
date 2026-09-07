@@ -57,9 +57,9 @@ export function PaymentBreakdown({
 
   const netSettled = position?.netSettled ?? 0;
   const fxSettlement = premiumForeignSettlement(payments, positionCurrency);
-  // obligation = settlement × rate, so settlement = obligation ÷ rate.
+  // rate is settlement units per 1 obligation unit, so settlement = obligation × rate.
   const receivedValue = fxSettlement
-    ? `${fmt(netSettled / fxSettlement.rate, fxSettlement.currency)} (${fmt(netSettled, positionCurrency)})`
+    ? `${fmt(netSettled * fxSettlement.rate, fxSettlement.currency)} (${fmt(netSettled, positionCurrency)})`
     : fmt(netSettled, positionCurrency);
 
   // Brokerage isn't a single rate set on the offer — it's the sum of each participating
@@ -103,7 +103,7 @@ export function PaymentBreakdown({
       {fxSettlement && (
         <DetailField
           label="Rate Used"
-          value={`1 ${fxSettlement.currency} = ${fmtRate(fxSettlement.rate)} ${positionCurrency ?? ''}`.trim()}
+          value={`1 ${positionCurrency ?? ''} = ${fmtRate(fxSettlement.rate)} ${fxSettlement.currency}`.trim()}
         />
       )}
       <DetailField

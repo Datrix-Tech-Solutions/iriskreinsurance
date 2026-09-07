@@ -17,6 +17,10 @@ import { PaymentReceiptModal } from '@/components/organisms/reinsurance/document
 import { DocumentPrintLayout } from '@/components/organisms/reinsurance/documents/DocumentPrintLayout';
 import { DisbursementAdviceContent } from '@/components/molecules/documents/content/DisbursementAdviceContent';
 import { downloadReceiptsZip } from '@/lib/reinsurance/downloadReceiptsZip';
+import {
+  disbursementAdviceFileName,
+  disbursementAdviceZipFileName,
+} from '@/lib/reinsurance/disbursementAdviceFileName';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { premiumForeignSettlement } from '@/lib/reinsurance/premiumSettlement';
 import { extractError } from '@/lib/extractError';
@@ -90,15 +94,6 @@ function typeChipLabel(type: string): string {
 
 const BULK_RECEIPT_ROOT_PREFIX = 'bulk-disbursement-receipt-';
 
-function receiptFileName(payment: PlacementPayment): string {
-  const party = payment.counterparty.name
-    .trim()
-    .replace(/[^\w-]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  const date = payment.paymentDate.slice(0, 10);
-  return `disbursement-advice-${party || 'reinsurer'}-${date}`;
-}
-
 const STATUS_LABEL: Record<string, string> = {
   RECORDED: 'Recorded',
   BANK_CONFIRMED: 'Paid',
@@ -163,13 +158,14 @@ export function PaymentHistoryTab({ placementId, placement }: PaymentHistoryTabP
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     try {
       const policyLabel = displayPolicyNumber(placement.policyNumber) || placement.reference;
+      const insured = placement.title || policyLabel;
       await downloadReceiptsZip(
         disbursementReceipts.map((p) => ({
           rootId: `${BULK_RECEIPT_ROOT_PREFIX}${p.id}`,
-          fileName: receiptFileName(p),
+          fileName: disbursementAdviceFileName(p.counterparty.name, insured),
           title: `Disbursement Advice - ${policyLabel}`,
         })),
-        `disbursement-receipts-${policyLabel}`,
+        disbursementAdviceZipFileName(placement.cedant.name, insured),
         (done, total) => setDownloadProgress({ done, total }),
       );
     } catch (error) {
@@ -239,7 +235,7 @@ export function PaymentHistoryTab({ placementId, placement }: PaymentHistoryTabP
         return (
           <span className="font-medium text-gray-900">
             {rowFx
-              ? fmtAmount(parseFloat(row.amount) / rowFx.rate, rowFx.currency)
+              ? fmtAmount(parseFloat(row.amount) * rowFx.rate, rowFx.currency)
               : fmtAmount(row.amount, row.currency)}
           </span>
         );
@@ -253,7 +249,7 @@ export function PaymentHistoryTab({ placementId, placement }: PaymentHistoryTabP
         const rowFx = paymentDisplayFx(row, placementFx);
         return (
           <span className="text-xs text-gray-500">
-            {rowFx ? `1 ${rowFx.currency} = ${fmtRate(rowFx.rate)} ${row.currency}` : '—'}
+            {rowFx ? `1 ${row.currency} = ${fmtRate(rowFx.rate)} ${rowFx.currency}` : '—'}
           </span>
         );
       },

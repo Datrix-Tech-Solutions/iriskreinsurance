@@ -2,6 +2,7 @@
 
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { useDocumentFileName } from '@/lib/reinsurance/useDocumentFileName';
+import { disbursementAdviceFileName } from '@/lib/reinsurance/disbursementAdviceFileName';
 import { DocumentPreviewShell } from '@/components/molecules/documents/DocumentPreviewShell';
 import {
   PaymentReceiptContent,
@@ -27,11 +28,19 @@ export function PaymentReceiptModal({
 }: PaymentReceiptModalProps) {
   const isDisbursement = content.payment.type === 'REINSURER_DISBURSEMENT';
   const label = isDisbursement ? 'Disbursement Advice' : 'Payment Receipt';
-  const fileName = useDocumentFileName({
+  // Disbursement advices use the same `advice_<reinsurer>_<insured>` naming as the bulk
+  // "Download all receipts" zip so a single download matches its counterpart inside the zip.
+  const genericFileName = useDocumentFileName({
     documentName: label,
     placement: content.placement,
     recipientName: content.payment.counterparty?.name ?? null,
   });
+  const fileName = isDisbursement
+    ? disbursementAdviceFileName(
+        content.payment.counterparty?.name ?? '',
+        content.placement.title ?? '',
+      )
+    : genericFileName;
 
   return (
     <DocumentPreviewShell

@@ -11,6 +11,7 @@ import {
   FacultativeStatus,
   PaymentWorklistRow,
   PaymentWorklistStatusFilter,
+  PlacementPayment,
   toStatusLabel,
 } from '@/types/reinsurance';
 import { useCedants, usePaymentsWorklist, usePlacementPayments } from '@/hooks';
@@ -19,6 +20,8 @@ import { RiPerm } from '@/lib/reinsurance/permissions';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { cn } from '@/lib/utils';
 import AddPaymentForm from '@/components/organisms/reinsurance/AddPaymentForm';
+import { ReversePremiumModal } from '@/components/organisms/reinsurance/ReversePremiumModal';
+import { EditPremiumModal } from '@/components/organisms/reinsurance/EditPremiumModal';
 import { ViewOfferPanel } from '@/components/organisms/reinsurance/panels/ViewOfferPanel';
 
 const PAGE_SIZE = 10;
@@ -63,13 +66,14 @@ const PAYMENT_STATUS_CLASS: Record<PaymentWorklistRow['paymentStatus'], string> 
   Paid: 'text-xs text-green-600 font-medium',
 };
 
-// const STATUS_FILTER_OPTIONS = [
-//   { value: 'Placed', label: 'Placed' },
-//   { value: 'Closed', label: 'Closed' },
-//   { value: 'Pending', label: 'Pending' },
-//   { value: 'Part Payment', label: 'Part Payment' },
-//   { value: 'Paid', label: 'Paid' },
-// ];
+// "Unpaid" here is the Part Payment payment status — something has been paid but a balance
+// remains. Pending (recorded, not yet bank-confirmed) has no dedicated button and shows up
+// under "All" only, alongside Placed/Closed lifecycle states.
+const STATUS_FILTER_OPTIONS: { value: PaymentWorklistStatusFilter; label: string }[] = [
+  { value: 'Paid', label: 'Paid' },
+  { value: 'Part Payment', label: 'Unpaid' },
+  { value: 'Outstanding', label: 'Outstanding' },
+];
 
 function PaymentSummaryCell({ row }: { row: PaymentWorklistRow }) {
   const cur = row.currency ?? '';
@@ -263,14 +267,18 @@ export function PaymentsTable() {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
   const [search, setSearch] = useState('');
-  const [statusFilter] = useState<PaymentWorklistStatusFilter | ''>('');
+  const [statusFilter, setStatusFilter] = useState<PaymentWorklistStatusFilter | ''>('');
   const [cedantFilter, setCedantFilter] = useState('');
   const [page, setPage] = useState(1);
   const [isAddPaymentOpen, setIsAddPaymentOpen] = useState(false);
   const [addPaymentPlacementId, setAddPaymentPlacementId] = useState<string | undefined>(undefined);
   const [viewOfferRow, setViewOfferRow] = useState<PaymentWorklistRow | null>(null);
+  const [reversePlacementId, setReversePlacementId] = useState<string | null>(null);
+  const [editPickerPlacementId, setEditPickerPlacementId] = useState<string | null>(null);
+  const [editPayment, setEditPayment] = useState<PlacementPayment | null>(null);
 
   const canAddPayment = useAnyPermissionRules(RiPerm.addPayment);
+  const canReversePayment = useAnyPermissionRules(RiPerm.reversePayment);
 
   const openAddPayment = (row?: PaymentWorklistRow) => {
     setAddPaymentPlacementId(row?.id);
@@ -306,8 +314,24 @@ export function PaymentsTable() {
     };
     const disbursePayment: RowAction = {
       label: 'Disburse Payment',
+      variant: 'success',
       onClick: () => router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.id}`),
     };
+    // Reverse / Edit both act on the cedant premium payment. The modal decides whether a
+    // reversible premium exists (and blocks when a disbursement has already been made).
+    const premiumActions: RowAction[] = canReversePayment
+      ? [
+          {
+            label: 'Edit Premium',
+            onClick: () => setEditPickerPlacementId(row.placementId),
+          },
+          {
+            label: 'Reverse Premium',
+            danger: true,
+            onClick: () => setReversePlacementId(row.placementId),
+          },
+        ]
+      : [];
 
     switch (row.paymentStatus) {
       case 'Outstanding':
@@ -316,13 +340,14 @@ export function PaymentsTable() {
           ...(canAddPayment ? [{ label: 'Add Payment', onClick: () => openAddPayment(row) }] : []),
         ];
       case 'Paid':
-        return [viewOffer, ...(canAddPayment ? [disbursePayment] : [])];
+        return [viewOffer, ...(canAddPayment ? [disbursePayment] : []), ...premiumActions];
       case 'Part Payment':
         return [
           viewOffer,
           ...(canAddPayment
             ? [{ label: 'Make Payment', onClick: () => openAddPayment(row) }, disbursePayment]
             : []),
+          ...premiumActions,
         ];
       default:
         return [viewOffer];
@@ -343,7 +368,7 @@ export function PaymentsTable() {
           }}
         />
       </div>
-      {/* <div className="w-40">
+      <div className="w-40">
         <SearchSelect
           size="sm"
           placeholder="Status"
@@ -354,7 +379,7 @@ export function PaymentsTable() {
             setPage(1);
           }}
         />
-      </div> */}
+      </div>
     </>
   );
 
@@ -398,10 +423,33 @@ export function PaymentsTable() {
         defaultCedantId={cedantFilter || undefined}
       />
 
+      <AddPaymentForm
+        isOpen={!!editPayment}
+        onClose={() => setEditPayment(null)}
+        placementId={editPayment?.placementId}
+        editPayment={editPayment}
+      />
+
       <ViewOfferPanel
         isOpen={!!viewOfferRow}
         row={viewOfferRow}
         onClose={() => setViewOfferRow(null)}
+      />
+
+      <ReversePremiumModal
+        isOpen={!!reversePlacementId}
+        placementId={reversePlacementId}
+        onClose={() => setReversePlacementId(null)}
+      />
+
+      <EditPremiumModal
+        isOpen={!!editPickerPlacementId}
+        placementId={editPickerPlacementId}
+        onClose={() => setEditPickerPlacementId(null)}
+        onSelect={(payment) => {
+          setEditPickerPlacementId(null);
+          setEditPayment(payment);
+        }}
       />
     </>
   );
