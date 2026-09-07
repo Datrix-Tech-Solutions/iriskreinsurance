@@ -181,6 +181,7 @@ export class ReinsuranceClaimsWorklistService {
               FROM classified_claims
               WHERE "claimState"::text = 'FINALIZED'
                 AND "bucket" <> 'closed'
+                AND COALESCE("claimShare", 0) - COALESCE("recoveredAmount", 0) > 0.01
               GROUP BY "claimCurrency"
             ) totals
           ),
