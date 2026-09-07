@@ -273,6 +273,14 @@ else
   log "⚠ HR seed FAILED: demo employees not seeded (non-fatal)"
 fi
 
+section "HR baseline bootstrap"
+if docker_compose run --rm --no-deps hr-service \
+  node dist/scripts/bootstrap-hr-baseline.js --all-eligible; then
+  log "✓ HR baseline bootstrap complete"
+else
+  die "HR baseline bootstrap failed"
+fi
+
 section "Reachability"
 wait_for_http_ok "dev api-gateway" "http://127.0.0.1:4010/health"
 wait_for_http_ok "dev reinsurance via gateway" "http://127.0.0.1:4010/api/v1/operations/reinsurance/health"
