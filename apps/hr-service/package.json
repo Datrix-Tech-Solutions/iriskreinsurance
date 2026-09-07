@@ -21,6 +21,7 @@
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "ts-node prisma/seed.ts",
+    "bootstrap:hr-baseline": "node dist/scripts/bootstrap-hr-baseline.js",
     "backfill:public-holidays": "node dist/scripts/backfill-public-holidays.js",
     "backfill:public-holidays:ts": "ts-node src/scripts/backfill-public-holidays.ts",
     "backfill:encrypt-employees": "ts-node -r tsconfig-paths/register src/scripts/encrypt-employee-fields.ts"
