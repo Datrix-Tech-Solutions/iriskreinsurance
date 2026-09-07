@@ -1,0 +1,334 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [prod]
+  pull_request_target:
+    branches: [prod]
+    types: [closed]
+  workflow_dispatch:
+
+# ── Concurrency ────────────────────────────────────────────────────────────────
+# Collapse duplicate runs for the same target SHA (for example push + PR-merge
+# events for the same merge commit). Different prod SHAs still get their own
+# deployment groups.
+concurrency:
+  group: deploy-prod-${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  ORG: datrix-tech-solutions
+  IMAGE_PREFIX: ghcr.io/datrix-tech-solutions/work-phelo
+  COMPOSE_FILE: infrastructure/docker-compose.prod.yml
+  DEPLOY_PATH: /var/www/apps/workphelo.com/work-phelo
+  WEB_PUBLIC_API_URL: https://api.workphelo.com/api/v1
+  WEB_PUBLIC_APP_BASE_URL: https://app.workphelo.com
+  BUILD_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+  BUILD_REF: ${{ github.event.pull_request.base.ref || github.ref_name }}
+  CHECKOUT_REF: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+
+jobs:
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/prod') ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type checks
+        run: npm run check-types
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build validation
+        run: npm run build
+
+  detect-changes:
+    name: Detect Changed Services
+    runs-on: ubuntu-latest
+    needs: quality-gates
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/prod') ||
+      (github.event_name == 'pull_request_target' && github.event.pull_request.merged == true)
+
+    outputs:
+      changed: ${{ steps.filter.outputs.changes }}
+      api-gateway: ${{ steps.filter.outputs.api-gateway }}
+      auth-service: ${{ steps.filter.outputs.auth-service }}
+      hr-service: ${{ steps.filter.outputs.hr-service }}
+      notification-service: ${{ steps.filter.outputs.notification-service }}
+      reinsurance-service: ${{ steps.filter.outputs.reinsurance-service }}
+      nextjs-web: ${{ steps.filter.outputs.nextjs-web }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+
+      - name: Detect changed services
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            api-gateway:
+              - 'apps/api-gateway/**'
+              - 'packages/**'
+              - 'package*.json'
+              - 'tsconfig*.json'
+            auth-service:
+              - 'apps/auth-service/**'
+              - 'packages/**'
+              - 'package*.json'
+              - 'tsconfig*.json'
+            hr-service:
+              - 'apps/hr-service/**'
+              - 'packages/**'
+              - 'package*.json'
+              - 'tsconfig*.json'
+            notification-service:
+              - 'apps/notification-service/**'
+              - 'packages/**'
+              - 'package*.json'
+              - 'tsconfig*.json'
+            reinsurance-service:
+              - 'apps/reinsurance-service/**'
+              - 'packages/**'
+              - 'package*.json'
+              - 'tsconfig*.json'
+            nextjs-web:
+              - 'apps/web/work-phelo-web/**'
+          list-files: none
+
+  build-and-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: detect-changes
+
+    if: needs.detect-changes.outputs.changed != '[]' && needs.detect-changes.outputs.changed != ''
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      BUILDKIT_CACHE_SCOPE: ${{ matrix.service }}-prod
+      BUILDKIT_CACHE_MODE: min
+      BUILDKIT_CACHE_EXPORT_OPTIONAL: true
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: api-gateway
+            dockerfile: apps/api-gateway/Dockerfile
+          - service: auth-service
+            dockerfile: apps/auth-service/Dockerfile
+          - service: hr-service
+            dockerfile: apps/hr-service/Dockerfile
+          - service: notification-service
+            dockerfile: apps/notification-service/Dockerfile
+          - service: reinsurance-service
+            dockerfile: apps/reinsurance-service/Dockerfile
+          - service: nextjs-web
+            dockerfile: apps/web/work-phelo-web/Dockerfile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Check if service changed
+        id: changed
+        env:
+          SERVICE_CHANGED: ${{ needs.detect-changes.outputs[matrix.service] }}
+        run: |
+          if [[ "$SERVICE_CHANGED" == "true" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⚡ ${{ matrix.service }} unchanged — skipping build"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        if: steps.changed.outputs.skip == 'false'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || github.token }}
+
+      - name: Set up QEMU
+        if: steps.changed.outputs.skip == 'false'
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        if: steps.changed.outputs.skip == 'false'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log Docker cache settings
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          echo "Image: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}"
+          echo "BuildKit cache backend: gha"
+          echo "BuildKit cache scope: ${BUILDKIT_CACHE_SCOPE}"
+          echo "BuildKit cache mode: ${BUILDKIT_CACHE_MODE}"
+          echo "BuildKit cache export optional: ${BUILDKIT_CACHE_EXPORT_OPTIONAL}"
+
+      - name: Build and push ${{ matrix.service }}
+        if: steps.changed.outputs.skip == 'false'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:prod
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ env.BUILD_SHA }}
+          cache-from: type=gha,scope=${{ env.BUILDKIT_CACHE_SCOPE }}
+          cache-to: type=gha,scope=${{ env.BUILDKIT_CACHE_SCOPE }},mode=${{ env.BUILDKIT_CACHE_MODE }},ignore-error=true
+          build-args: |
+            BUILD_SHA=${{ env.BUILD_SHA }}
+            BUILD_REF=${{ env.BUILD_REF }}
+            NEXT_PUBLIC_API_URL=${{ env.WEB_PUBLIC_API_URL }}
+            NEXT_PUBLIC_APP_BASE_URL=${{ env.WEB_PUBLIC_APP_BASE_URL }}
+            NEXT_PUBLIC_MAPTILER_KEY=${{ secrets.PROD_MAPTILER_KEY }}
+
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [quality-gates, detect-changes, build-and-push]
+    if: |
+      always() &&
+      needs.quality-gates.result == 'success' &&
+      (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
+
+    permissions:
+      contents: read
+      packages: read
+
+    environment:
+      name: prod
+      url: https://workphelo.com
+
+    env:
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || github.token }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+      DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      RABBITMQ_URL: ${{ secrets.PROD_RABBITMQ_URL }}
+      JWT_SECRET: ${{ secrets.PROD_JWT_SECRET }}
+      REDIS_PASSWORD: ${{ secrets.PROD_REDIS_PASSWORD }}
+      ALLOWED_ORIGINS: ${{ vars.PROD_ALLOWED_ORIGINS }}
+      AUTH_FRONTEND_BASE_URL: ${{ vars.PROD_AUTH_FRONTEND_BASE_URL }}
+      AUTH_COOKIE_SECURE: ${{ vars.PROD_AUTH_COOKIE_SECURE }}
+      AUTH_COOKIE_SAME_SITE: ${{ vars.PROD_AUTH_COOKIE_SAME_SITE }}
+      AUTH_GOOGLE_CLIENT_ID: ${{ vars.PROD_AUTH_GOOGLE_CLIENT_ID }}
+      AUTH_GOOGLE_CALLBACK_URL: ${{ vars.PROD_AUTH_GOOGLE_CALLBACK_URL }}
+      AUTH_MICROSOFT_CLIENT_ID: ${{ vars.PROD_AUTH_MICROSOFT_CLIENT_ID }}
+      AUTH_MICROSOFT_CALLBACK_URL: ${{ vars.PROD_AUTH_MICROSOFT_CALLBACK_URL }}
+      AUTH_GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_AUTH_GOOGLE_CLIENT_SECRET }}
+      AUTH_MICROSOFT_CLIENT_SECRET: ${{ secrets.PROD_AUTH_MICROSOFT_CLIENT_SECRET }}
+      NOTIFY_RESEND_FROM_EMAIL: ${{ vars.PROD_NOTIFY_RESEND_FROM_EMAIL }}
+      NOTIFY_TERMII_SENDER_ID: ${{ vars.PROD_NOTIFY_TERMII_SENDER_ID }}
+      NOTIFY_RESEND_API_KEY: ${{ secrets.PROD_NOTIFY_RESEND_API_KEY }}
+      NOTIFY_TERMII_API_KEY: ${{ secrets.PROD_NOTIFY_TERMII_API_KEY }}
+      SUPER_ADMIN_PASSWORD: ${{ secrets.PROD_SUPER_ADMIN_PASSWORD }}
+      SUPER_ADMIN_EMAIL: ${{ secrets.PROD_SUPER_ADMIN_EMAIL }}
+      HR_FIELD_ENCRYPTION_KEY: ${{ secrets.PROD_HR_FIELD_ENCRYPTION_KEY }}
+      HR_FIELD_HMAC_KEY: ${{ secrets.PROD_HR_FIELD_HMAC_KEY }}
+      BUILD_SHA: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+      BUILD_REF: ${{ github.event.pull_request.base.ref || github.ref_name }}
+      IMAGE_PREFIX: ghcr.io/datrix-tech-solutions/work-phelo
+      CHANGED_SERVICES: ${{ needs.detect-changes.outputs.changed }}
+      AUTH_TENANT_ASSET_STORAGE_PROVIDER: ${{ vars.AUTH_TENANT_ASSET_STORAGE_PROVIDER }}
+      AUTH_TENANT_ASSET_S3_BUCKET: ${{ vars.AUTH_TENANT_ASSET_S3_BUCKET }}
+      AUTH_TENANT_ASSET_S3_REGION: ${{ vars.AUTH_TENANT_ASSET_S3_REGION }}
+      AUTH_TENANT_ASSET_S3_PREFIX: ${{ vars.AUTH_TENANT_ASSET_S3_PREFIX }}
+      AUTH_TENANT_ASSET_SIGNED_URL_TTL_SECONDS: ${{ vars.AUTH_TENANT_ASSET_SIGNED_URL_TTL_SECONDS }}
+      AUTH_TENANT_ASSET_CLOUDINARY_ROOT_FOLDER: ${{ vars.AUTH_TENANT_ASSET_CLOUDINARY_ROOT_FOLDER }}
+      CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+      CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+      CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      REINSURANCE_DOCUMENT_STORAGE_PROVIDER: cloudinary
+      REINSURANCE_DOCUMENT_CLOUDINARY_ROOT_FOLDER: workphelo/reinsurance
+      REINSURANCE_DOCUMENT_SIGNED_URL_TTL_SECONDS: 300
+      REINSURANCE_DOCUMENT_S3_BUCKET: ${{ vars.PROD_REINSURANCE_DOCUMENT_S3_BUCKET }}
+      REINSURANCE_DOCUMENT_S3_REGION: ${{ vars.PROD_REINSURANCE_DOCUMENT_S3_REGION }}
+      REINSURANCE_DOCUMENT_S3_PREFIX: ${{ vars.PROD_REINSURANCE_DOCUMENT_S3_PREFIX }}
+      REINSURANCE_DOCUMENT_S3_ENDPOINT: ${{ vars.PROD_REINSURANCE_DOCUMENT_S3_ENDPOINT }}
+      REINSURANCE_DOCUMENT_S3_FORCE_PATH_STYLE: ${{ vars.PROD_REINSURANCE_DOCUMENT_S3_FORCE_PATH_STYLE }}
+
+      INTERNAL_SERVICE_AUTH_SECRET: ${{ secrets.INTERNAL_SERVICE_AUTH_SECRET }}
+      INTERNAL_SERVICE_AUTH_ALLOWED_SERVICES: ${{ vars.INTERNAL_SERVICE_AUTH_ALLOWED_SERVICES }}
+      AUTH_SERVICE_URL: ${{ vars.AUTH_SERVICE_URL }}
+      REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS: ${{ vars.REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Validate deployment inputs
+        run: bash .github/scripts/validate-deploy-env.sh prod
+
+      - name: Preflight deployment host
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_ENV: prod
+          DEPLOY_MIN_FREE_GIB: 15
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          command_timeout: 5m
+          script_path: .github/scripts/deploy-host-preflight.sh
+          envs: DEPLOY_ENV,DEPLOY_PATH,DEPLOY_MIN_FREE_GIB
+
+      # Upload the compose file — the server needs nothing else from the repo.
+      # Source code is already baked into the images; git is not used on the server.
+      - name: Upload deployment assets to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          source: .github/scripts/deploy-common.sh,infrastructure/docker-compose.prod.yml
+          target: ${{ env.DEPLOY_PATH }}/
+          strip_components: 0
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.PROD_SERVER_HOST }}
+          username: ${{ secrets.PROD_SERVER_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          port: 22
+          command_timeout: 60m
+          script_path: .github/scripts/deploy-prod.sh
+          envs: GHCR_TOKEN,GHCR_USERNAME,DATABASE_URL,RABBITMQ_URL,JWT_SECRET,REDIS_PASSWORD,ALLOWED_ORIGINS,AUTH_FRONTEND_BASE_URL,AUTH_COOKIE_SECURE,AUTH_COOKIE_SAME_SITE,AUTH_GOOGLE_CLIENT_ID,AUTH_GOOGLE_CLIENT_SECRET,AUTH_GOOGLE_CALLBACK_URL,AUTH_MICROSOFT_CLIENT_ID,AUTH_MICROSOFT_CLIENT_SECRET,AUTH_MICROSOFT_CALLBACK_URL,NOTIFY_RESEND_API_KEY,NOTIFY_RESEND_FROM_EMAIL,NOTIFY_TERMII_API_KEY,NOTIFY_TERMII_SENDER_ID,SUPER_ADMIN_PASSWORD,SUPER_ADMIN_EMAIL,HR_FIELD_ENCRYPTION_KEY,HR_FIELD_HMAC_KEY,WEB_PUBLIC_API_URL,WEB_PUBLIC_APP_BASE_URL,BUILD_SHA,BUILD_REF,IMAGE_PREFIX,CHANGED_SERVICES,AUTH_TENANT_ASSET_STORAGE_PROVIDER,AUTH_TENANT_ASSET_S3_BUCKET,AUTH_TENANT_ASSET_S3_REGION,AUTH_TENANT_ASSET_S3_PREFIX,AUTH_TENANT_ASSET_SIGNED_URL_TTL_SECONDS,AUTH_TENANT_ASSET_CLOUDINARY_ROOT_FOLDER,CLOUDINARY_CLOUD_NAME,CLOUDINARY_API_KEY,CLOUDINARY_API_SECRET,INTERNAL_SERVICE_AUTH_SECRET,INTERNAL_SERVICE_AUTH_ALLOWED_SERVICES,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,REINSURANCE_DOCUMENT_STORAGE_PROVIDER,REINSURANCE_DOCUMENT_CLOUDINARY_ROOT_FOLDER,REINSURANCE_DOCUMENT_S3_BUCKET,REINSURANCE_DOCUMENT_S3_REGION,REINSURANCE_DOCUMENT_S3_PREFIX,REINSURANCE_DOCUMENT_S3_ENDPOINT,REINSURANCE_DOCUMENT_S3_FORCE_PATH_STYLE,REINSURANCE_DOCUMENT_SIGNED_URL_TTL_SECONDS,AUTH_SERVICE_URL,REINSURANCE_TENANT_PROFILE_CACHE_TTL_SECONDS

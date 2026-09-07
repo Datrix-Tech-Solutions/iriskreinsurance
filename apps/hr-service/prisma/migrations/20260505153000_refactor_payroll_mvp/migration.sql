@@ -1,0 +1,18 @@
+ALTER TABLE "hr"."TenantConfig"
+ADD COLUMN "payrollTier3Enabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "payrollTier3Rate" DECIMAL(5, 2),
+ADD COLUMN "payrollTier3SchemeName" TEXT;
+
+ALTER TABLE "hr"."PayrollRun"
+ADD COLUMN "submittedBy" TEXT,
+ADD COLUMN "submittedAt" TIMESTAMP(3),
+ADD COLUMN "tier3Enabled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "tier3Rate" DECIMAL(5, 2),
+ADD COLUMN "tier3SchemeName" TEXT,
+ADD COLUMN "totalTier3" DECIMAL(15, 2) NOT NULL DEFAULT 0;
+
+ALTER TABLE "hr"."PayrollItem"
+ADD COLUMN "transportAmount" DECIMAL(15, 2) NOT NULL DEFAULT 0,
+ADD COLUMN "otherDeductions" DECIMAL(15, 2) NOT NULL DEFAULT 0,
+ADD COLUMN "tier3Employee" DECIMAL(15, 2) NOT NULL DEFAULT 0,
+ADD COLUMN "taxableIncome" DECIMAL(15, 2) NOT NULL DEFAULT 0;

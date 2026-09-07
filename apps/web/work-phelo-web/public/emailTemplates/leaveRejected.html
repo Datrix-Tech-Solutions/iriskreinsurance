@@ -1,0 +1,126 @@
+`Your leave request has not been approved — ${leaveType}`,
+`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Leave Request Rejected</title>
+</head>
+<body style="margin:0; padding:0; background:#f4f4f4; font-family:Arial, sans-serif;">
+
+  <table align="center" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; margin:40px auto; border-radius:8px; overflow:hidden;">
+
+    <!-- Header -->
+    <tr>
+      <td style="padding:20px 30px;">
+        <h2 style="margin:0; font-weight:bold;">
+          <span style="color:#ff6a00;">WORK</span><span style="color:#1a3557;">Phelo</span>
+        </h2>
+      </td>
+    </tr>
+
+    <!-- Hero Section -->
+    <tr>
+      <td style="background:#eef1f4; padding:40px 30px;">
+        <table width="100%">
+          <tr>
+            <td style="font-size:28px; font-weight:600; color:#555;">
+              Leave Request Not Approved
+            </td>
+            <td align="right">
+<img src="public/mail_image.png" alt="" width="120" />            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Main Content -->
+    <tr>
+      <td style="padding:30px; color:#555; font-size:15px; line-height:1.6;">
+
+        <p>Hi ${employeeFirstName},</p>
+
+        <p>
+          Your leave request has not been approved.
+        </p>
+
+        <p><strong>Request details:</strong></p>
+        
+        <table style="width:100%; border-collapse:collapse; margin:15px 0; color:#555; font-size:15px;">
+          <tr>
+            <td style="padding:8px 0; width:170px; font-weight:500;">Leave type:</td>
+            <td style="padding:8px 0;">${leaveType}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Start date:</td>
+            <td style="padding:8px 0;">${startDate}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">End date:</td>
+            <td style="padding:8px 0;">${endDate}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Working days requested:</td>
+            <td style="padding:8px 0;">${numberOfDays}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Reviewed by:</td>
+            <td style="padding:8px 0;">${approverFullName}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Decision date:</td>
+            <td style="padding:8px 0;">${decisionDate}</td>
+          </tr>
+        </table>
+
+        <p><strong>Reason for rejection:</strong></p>
+        <p style="background:#f9f9f9; padding:16px; border-left:4px solid #ff6a00; margin:15px 0; color:#444; line-height:1.5;">
+          ${rejectionReason}
+        </p>
+
+        <p style="color:#555; margin-top:20px;">
+          Your leave balance has not been affected by this decision.
+        </p>
+
+        <p style="margin:30px 0;">
+          <a href="${submitNewRequestUrl}" style="
+            background:#1a3557;
+            color:#ffffff;
+            padding:12px 24px;
+            text-decoration:none;
+            border-radius:6px;
+            display:inline-block;
+            font-weight:500;
+          ">
+            Submit a New Request →
+          </a>
+        </p>
+
+        <p style="color:#777; font-size:14px;">
+          If you would like to submit a new request for different dates or a different leave type, you can do so by logging in.
+        </p>
+
+        <p style="color:#555;">
+          If you have questions about this decision, please speak with your manager or contact your HR administrator directly.
+        </p>
+
+        <p style="margin-top:30px;">Thank you,</p>
+
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding:20px 30px; border-top:1px solid #eee;">
+        <h3 style="margin:0;">
+          <span style="color:#ff6a00;">WORK</span><span style="color:#1a3557;">Phelo</span>
+        </h3>
+        <p style="color:#888; font-size:12px; margin-top:5px;">
+          © 2026 WorkPhelo All rights reserved
+        </p>
+      </td>
+    </tr>
+
+  </table>
+
+</body>
+</html>`

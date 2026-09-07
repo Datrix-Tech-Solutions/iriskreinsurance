@@ -1,0 +1,18 @@
+ALTER TABLE "w_auth"."TenantBranding"
+  ADD COLUMN "appName" TEXT,
+  ADD COLUMN "appLogoObjectKey" TEXT,
+  ADD COLUMN "appLogoMimeType" TEXT,
+  ADD COLUMN "appLogoFileName" TEXT,
+  ADD COLUMN "appLogoSizeBytes" INTEGER,
+  ADD COLUMN "sidebarLogoObjectKey" TEXT,
+  ADD COLUMN "sidebarLogoMimeType" TEXT,
+  ADD COLUMN "sidebarLogoFileName" TEXT,
+  ADD COLUMN "sidebarLogoSizeBytes" INTEGER,
+  ADD COLUMN "loginLogoObjectKey" TEXT,
+  ADD COLUMN "loginLogoMimeType" TEXT,
+  ADD COLUMN "loginLogoFileName" TEXT,
+  ADD COLUMN "loginLogoSizeBytes" INTEGER,
+  ADD COLUMN "faviconMimeType" TEXT,
+  ADD COLUMN "faviconFileName" TEXT,
+  ADD COLUMN "faviconSizeBytes" INTEGER,
+  ADD COLUMN "themeMode" TEXT NOT NULL DEFAULT 'LIGHT';

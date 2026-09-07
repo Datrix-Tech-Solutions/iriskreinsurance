@@ -1,0 +1,462 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+  output          = "./generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["w_auth"]
+}
+
+// ── Enums ──────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  EMPLOYEE
+
+  @@schema("w_auth")
+}
+
+enum TenantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+
+  @@schema("w_auth")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+
+  @@schema("w_auth")
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  MFA_SMS
+
+  @@schema("w_auth")
+}
+
+enum SocialProvider {
+  GOOGLE
+  MICROSOFT
+
+  @@schema("w_auth")
+}
+
+enum MfaMethod {
+  TOTP
+  SMS
+
+  @@schema("w_auth")
+}
+
+enum PermissionAction {
+  VIEW
+  CREATE
+  EDIT
+  DELETE
+  APPROVE
+  RUN
+  EXPORT
+  ASSIGN
+
+  @@schema("w_auth")
+}
+
+// ── Tenant ─────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id             String       @id @default(uuid())
+  name           String
+  slug           String       @unique
+  email          String       @unique
+  phone          String?
+  address        String?
+  country        String       @default("GH")
+  currency       String       @default("GHS")
+  status         TenantStatus @default(PENDING)
+  moduleConfig   Json         @default("{\"hr\": false, \"accounting\": false, \"marketing\": false}")
+  featureConfig  Json         @default("{\"hr\": {\"leave\": false, \"time\": false, \"payroll\": false, \"appraisals\": false, \"projects\": false, \"assets\": false}, \"marketing\": {\"leads\": false, \"pipeline\": false, \"contacts\": false}}")
+  integrationConfig Json      @default("{}")
+  logoUrl        String?
+  website        String?
+  industry       String?
+  size           String?
+  subscriptionId String?
+  trialEndsAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  users           User[]
+  permissionSets  PermissionSet[]
+  userPermissions UserPermission[]
+  branding        TenantBranding?
+  documentProfile TenantDocumentProfile?
+  bankAccounts    TenantBankAccount[]
+
+  @@schema("w_auth")
+}
+
+model TenantBranding {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  appName             String?
+  appLogoObjectKey    String?
+  appLogoMimeType     String?
+  appLogoFileName     String?
+  appLogoSizeBytes    Int?
+  sidebarLogoObjectKey String?
+  sidebarLogoMimeType  String?
+  sidebarLogoFileName  String?
+  sidebarLogoSizeBytes Int?
+  loginLogoObjectKey   String?
+  loginLogoMimeType    String?
+  loginLogoFileName    String?
+  loginLogoSizeBytes   Int?
+  logoObjectKey       String?
+  logoDisplayUrl      String?
+  faviconObjectKey    String?
+  faviconDisplayUrl   String?
+  faviconMimeType     String?
+  faviconFileName     String?
+  faviconSizeBytes    Int?
+  primaryColor        String?
+  secondaryColor      String?
+  accentColor         String?
+  sidebarColor        String?
+  emailHeaderColor    String?
+  documentHeaderColor String?
+  themeMode           String   @default("LIGHT")
+  updatedByUserId     String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  updatedBy User?  @relation("TenantBrandingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([updatedByUserId])
+  @@schema("w_auth")
+}
+
+model TenantDocumentProfile {
+  id                       String   @id @default(uuid())
+  tenantId                 String   @unique
+  displayName              String
+  legalName                String
+  registrationNumber       String?
+  taxNumber                String?
+  physicalAddress          String?
+  postalAddress            String?
+  phone                    String?
+  email                    String?
+  website                  String?
+  footerText               String?
+  defaultCurrency          String
+  logoObjectKey            String?
+  logoMimeType             String?
+  logoFileName             String?
+  logoSizeBytes            Int?
+  signatureObjectKey       String?
+  signatureMimeType        String?
+  signatureFileName        String?
+  signatureSizeBytes       Int?
+  authorizedSignatoryName  String?
+  authorizedSignatoryTitle String?
+  isActive                 Boolean  @default(true)
+  version                  Int      @default(1)
+  createdByUserId          String?
+  updatedByUserId          String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("TenantDocumentProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?  @relation("TenantDocumentProfileUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, isActive])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+  @@schema("w_auth")
+}
+
+model TenantBankAccount {
+  id              String   @id @default(uuid())
+  tenantId        String
+  bankName        String
+  branchName      String?
+  accountName     String
+  accountNumber   String
+  currency        String
+  swiftCode       String?
+  sortCode        String?
+  isDefault       Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation("TenantBankAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy User?  @relation("TenantBankAccountUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([id, tenantId])
+  @@index([tenantId, currency, isActive])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+  @@schema("w_auth")
+}
+
+// ── Resource ───────────────────────────────────────────────────────────────
+// Platform-wide resource definitions. Seeded once, never per-tenant.
+// resource.tenantId = null means it is a platform resource available to all tenants.
+
+model Resource {
+  id          String   @id @default(uuid())
+  name        String   @unique  // e.g. "employees", "leave", "payroll"
+  module      String            // e.g. "HR", "AUTH", "FINANCE"
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  userPermissions       UserPermission[]
+  permissionSetResources PermissionSetResource[]
+
+  @@schema("w_auth")
+}
+
+// ── UserPermission ─────────────────────────────────────────────────────────
+// Direct per-user permission grants. Never hard-deleted.
+// Revoke = soft update: is_active=false, revoked_by, revoked_at.
+
+model UserPermission {
+  id         String           @id @default(uuid())
+  tenantId   String                               // leading filter — always scope by this first
+  userId     String
+  resourceId String
+  action     PermissionAction
+  grantedBy  String                               // userId of who granted
+  grantedAt  DateTime         @default(now())
+  expiresAt  DateTime?                            // null = never expires
+  revokedBy  String?                              // userId of who revoked
+  revokedAt  DateTime?
+  isActive   Boolean          @default(true)      // false = soft-revoked
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User     @relation("UserPermissions", fields: [userId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id])
+  granter  User     @relation("GrantedPermissions", fields: [grantedBy], references: [id])
+
+  @@unique([userId, resourceId, action])
+  @@schema("w_auth")
+}
+
+// ── PermissionSet ──────────────────────────────────────────────────────────
+// A named bundle of resource+action permissions. Per-tenant.
+// e.g. "HR Manager Set" = VIEW employees + APPROVE leave + VIEW attendance
+
+model PermissionSet {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)   // system sets cannot be deleted
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  resources PermissionSetResource[]
+  users     UserPermissionSet[]
+
+  @@unique([tenantId, name])
+  @@schema("w_auth")
+}
+
+// ── PermissionSetResource ──────────────────────────────────────────────────
+// Which resource+action combinations belong to a permission set.
+
+model PermissionSetResource {
+  id              String           @id @default(uuid())
+  permissionSetId String
+  resourceId      String
+  action          PermissionAction
+
+  permissionSet PermissionSet @relation(fields: [permissionSetId], references: [id], onDelete: Cascade)
+  resource      Resource      @relation(fields: [resourceId], references: [id])
+
+  @@unique([permissionSetId, resourceId, action])
+  @@schema("w_auth")
+}
+
+// ── UserPermissionSet ──────────────────────────────────────────────────────
+// Which users are assigned to which permission sets.
+
+model UserPermissionSet {
+  id              String   @id @default(uuid())
+  userId          String
+  permissionSetId String
+  grantedBy       String
+  grantedAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permissionSet PermissionSet @relation(fields: [permissionSetId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionSetId])
+  @@schema("w_auth")
+}
+
+// ── User ───────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String      @id @default(uuid())
+  tenantId            String
+  email               String
+  password            String?
+  firstName           String
+  lastName            String
+  phone               String?
+  role                UserRole    @default(EMPLOYEE)
+  status              UserStatus  @default(PENDING_VERIFICATION)
+  avatarUrl           String?
+  isMfaEnabled        Boolean     @default(false)
+  mfaMethod           MfaMethod?
+  mfaSecret           String?
+  forcePasswordReset  Boolean     @default(false)
+  failedLoginAttempts Int         @default(0)
+  lockedUntil         DateTime?
+  inviteToken         String?     @unique
+  inviteExpiresAt     DateTime?
+  emailVerifiedAt     DateTime?
+  lastLoginAt         DateTime?
+  passwordChangedAt   DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens       RefreshToken[]
+  otpCodes            OtpCode[]
+  socialAccounts      SocialAccount[]
+  userPermissions     UserPermission[]    @relation("UserPermissions")
+  grantedPermissions  UserPermission[]    @relation("GrantedPermissions")
+  permissionSets      UserPermissionSet[]
+  brandingUpdates     TenantBranding[]     @relation("TenantBrandingUpdatedBy")
+  documentProfilesCreated   TenantDocumentProfile[] @relation("TenantDocumentProfileCreatedBy")
+  documentProfilesUpdated   TenantDocumentProfile[] @relation("TenantDocumentProfileUpdatedBy")
+  tenantBankAccountsCreated TenantBankAccount[]     @relation("TenantBankAccountCreatedBy")
+  tenantBankAccountsUpdated TenantBankAccount[]     @relation("TenantBankAccountUpdatedBy")
+
+  @@unique([tenantId, email])
+  @@schema("w_auth")
+}
+
+// ── RefreshToken ───────────────────────────────────────────────────────────
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  token       String   @unique
+  expiresAt   DateTime
+  ipAddress   String?
+  userAgent   String?
+  deviceName  String?
+  deviceId    String?
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("w_auth")
+}
+
+// ── OtpCode ────────────────────────────────────────────────────────────────
+
+model OtpCode {
+  id          String    @id @default(uuid())
+  userId      String
+  type        OtpType
+  code        String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  attempts    Int       @default(0)
+  lockedUntil DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("w_auth")
+}
+
+// ── SocialAccount ──────────────────────────────────────────────────────────
+
+model SocialAccount {
+  id         String         @id @default(uuid())
+  userId     String
+  provider   SocialProvider
+  providerId String
+  email      String?
+  createdAt  DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerId])
+  @@schema("w_auth")
+}
+
+// ── AuditLog ───────────────────────────────────────────────────────────────
+// Immutable — no updates or deletes ever. Append-only.
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  APPROVE
+  REVOKE
+  LOGIN
+  LOGOUT
+  EXPORT
+  ASSIGN
+  RUN
+
+  @@schema("w_auth")
+}
+
+enum AuditStatus {
+  SUCCESS
+  FAILURE
+
+  @@schema("w_auth")
+}
+
+model AuditLog {
+  id            String      @id @default(uuid())
+  tenantId      String
+  userId        String?
+  userEmail     String?
+  userRole      String?
+  action        AuditAction
+  resource      String
+  resourceId    String?
+  changes       Json?
+  ipAddress     String?
+  userAgent     String?
+  status        AuditStatus @default(SUCCESS)
+  failureReason String?
+  createdAt     DateTime    @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, resource])
+  @@index([tenantId, userId])
+  @@schema("w_auth")
+}

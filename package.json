@@ -1,0 +1,68 @@
+{
+  "name": "work-phelo",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "test:unit": "turbo run test:unit",
+    "test:integration": "turbo run test:integration",
+    "test:e2e": "turbo run test:e2e",
+    "test:cov": "turbo run test:cov",
+    "test:auth": "npm run test:all --workspace=apps/auth-service",
+    "test:hr": "npm run test:all --workspace=apps/hr-service",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
+    "db:generate:all": "turbo run db:generate",
+    "db:migrate:all": "turbo run db:migrate",
+    "dev:gateway": "turbo run dev --filter=api-gateway",
+    "dev:auth": "turbo run dev --filter=auth-service",
+    "dev:hr": "turbo run dev --filter=hr-service",
+    "dev:notify": "turbo run dev --filter=notification-service",
+    "dev:billing": "turbo run dev --filter=subscription-service",
+    "dev:marketing": "turbo run dev --filter=marketing-service",
+    "dev:reinsurance": "turbo run dev --filter=reinsurance-service",
+    "dev:accounting": "turbo run dev --filter=accounting-service",
+    "dev:infra": "docker compose -f infrastructure/docker-compose.dev.yml up rabbitmq redis -d",
+    "prepare": "husky",
+    "check-types": "turbo run check-types",
+    "check-rbac": "node scripts/check-rbac-alignment.mjs"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.4.0",
+    "@commitlint/config-conventional": "^19.4.0",
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^20.19.40",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "globals": "^16.5.0",
+    "husky": "^9.1.0",
+    "jest-util": "^29.7.0",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.7.4",
+    "turbo": "^2.8.16",
+    "typescript": "5.9.2",
+    "typescript-eslint": "^8.46.1"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "packageManager": "npm@11.10.0",
+  "workspaces": [
+    "apps/api-gateway",
+    "apps/auth-service",
+    "apps/hr-service",
+    "apps/notification-service",
+    "apps/subscription-service",
+    "apps/marketing-service",
+    "apps/reinsurance-service",
+    "apps/accounting-service",
+    "packages/*"
+  ],
+  "dependencies": {
+    "@nestjs/microservices": "^10.4.0",
+    "@nestjs/platform-express": "^10.4.0"
+  }
+}

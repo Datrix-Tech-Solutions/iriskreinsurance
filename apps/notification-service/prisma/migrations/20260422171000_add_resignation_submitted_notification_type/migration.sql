@@ -1,0 +1,1 @@
+ALTER TYPE "notify"."NotificationType" ADD VALUE 'RESIGNATION_SUBMITTED';

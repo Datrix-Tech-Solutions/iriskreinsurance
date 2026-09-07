@@ -1,0 +1,2 @@
+ALTER TABLE "w_auth"."Tenant"
+ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'GHS';

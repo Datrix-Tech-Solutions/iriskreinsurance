@@ -1,0 +1,112 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+  output          = "./generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["notify"]
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+
+  @@schema("notify")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+
+  @@schema("notify")
+}
+
+enum InAppNotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+
+  @@schema("notify")
+}
+
+enum NotificationType {
+  EMAIL_VERIFICATION
+  INVITE_USER
+  PASSWORD_RESET_LINK
+  PASSWORD_RESET_OTP
+  SMS_OTP
+  PUSH_GENERAL
+  EMPLOYEE_TERMINATION
+  RESIGNATION_SUBMITTED
+  LEAVE_REQUESTED
+  LEAVE_REVIEWED
+  LEAVE_CANCELLED
+  TIME_CORRECTION_SUBMITTED
+  APPRAISAL_CYCLE_STARTED
+  APPRAISAL_SELF_SUBMITTED
+  APPRAISAL_MANAGER_REVIEWED
+  APPRAISAL_SELF_REMINDER
+  APPRAISAL_MANAGER_REMINDER
+  SCHEDULE_PUBLISHED
+  SHIFT_SWAP_REQUESTED
+  SHIFT_SWAP_PENDING_MANAGER
+  SHIFT_SWAP_DECLINED
+  SHIFT_SWAP_APPROVED
+  SHIFT_SWAP_REJECTED
+  SHIFT_SWAP_EXPIRED
+  ANNOUNCEMENT_PUBLISHED
+  PAYROLL_APPROVAL_REQUESTED
+  PAYROLL_DECISION
+
+  @@schema("notify")
+}
+
+model NotificationLog {
+  id        String             @id @default(uuid())
+  tenantId  String?
+  userId    String?
+  type      NotificationType
+  channel   NotificationChannel
+  recipient String
+  subject   String?
+  status    NotificationStatus @default(PENDING)
+  error     String?
+  metadata  Json?
+  sentAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  @@schema("notify")
+}
+
+model InAppNotification {
+  id              String                    @id @default(uuid())
+  eventId         String?                   @unique
+  tenantId        String
+  recipientUserId String
+  type            String
+  title           String
+  message         String
+  link            String?
+  metadata        Json?
+  entityType      String?
+  entityId        String?
+  sourceService   String?
+  priority        InAppNotificationPriority @default(NORMAL)
+  isRead          Boolean                   @default(false)
+  readAt          DateTime?
+  archivedAt      DateTime?
+  createdAt       DateTime                  @default(now())
+
+  @@index([tenantId, recipientUserId, isRead, createdAt])
+  @@index([tenantId, recipientUserId, archivedAt])
+  @@index([tenantId, type])
+  @@index([tenantId, entityType, entityId])
+  @@schema("notify")
+}

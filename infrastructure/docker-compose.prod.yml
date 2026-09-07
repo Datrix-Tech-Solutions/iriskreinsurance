@@ -1,0 +1,182 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - app-network
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', '-a', "${REDIS_PASSWORD}", 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  auth-service:
+    image: ${AUTH_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4101:4001'
+    env_file:
+      - ../apps/auth-service/.env.prod
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4001/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  hr-service:
+    image: ${HR_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4102:4002'
+    env_file:
+      - ../apps/hr-service/.env.prod
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4002/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  notification-service:
+    image: ${NOTIFICATION_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4104:4004'
+    env_file:
+      - ../apps/notification-service/.env.prod
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4004/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  reinsurance-service:
+    image: ${REINSURANCE_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4107:4007'
+    env_file:
+      - ../apps/reinsurance-service/.env.prod
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4007/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api-gateway:
+    image: ${API_GATEWAY_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4110:4000'
+    env_file:
+      - ../apps/api-gateway/.env.prod
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      hr-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      reinsurance-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  nextjs:
+    image: ${NEXTJS_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    environment:
+      HOSTNAME: 0.0.0.0
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:-https://api.workphelo.com/api/v1}
+      NEXT_PUBLIC_APP_BASE_URL: ${WEB_PUBLIC_APP_BASE_URL:-https://app.workphelo.com}
+    ports:
+      - '127.0.0.1:3001:3000'
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+networks:
+  app-network:
+    name: workphelo-prod-network
+    driver: bridge
+
+volumes:
+  redis_data:
+    name: workphelo-prod-redis-data

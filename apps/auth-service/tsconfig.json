@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "paths": {
+      "@work-phelo/types": ["../../packages/types/dist"],
+      "@work-phelo/schemas": ["../../packages/schemas/dist"],
+      "@work-phelo/config": ["../../packages/config/dist"],
+      "@work-phelo/utils": ["../../packages/utils/dist"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

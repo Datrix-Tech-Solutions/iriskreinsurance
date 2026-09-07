@@ -1,0 +1,21 @@
+{
+  "name": "@work-phelo/utils",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "check-types": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@work-phelo/types": "*",
+    "date-fns": "^3.6.0",
+    "libphonenumber-js": "^1.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.40",
+    "typescript": "^5.4.0"
+  }
+}

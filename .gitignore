@@ -1,0 +1,84 @@
+# Dependencies
+node_modules/
+.npm
+
+# Build outputs
+dist/
+build/
+.next/
+
+# Environment files - NEVER commit these
+.env
+.env.local
+.env.*.local
+
+# Local session/cookie artifacts
+*.cookies
+
+# Turbo cache
+.turbo/
+
+# Logs
+*.log
+npm-debug.log*
+*.pid
+*.pid.lock
+
+# Local caches and temp files
+.eslintcache
+*.tsbuildinfo
+*.tmp
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Prisma generated
+prisma/migrations/
+# Compiled seed files (generated during build, not needed in repo)
+prisma/seed.js
+prisma/seed.d.ts*
+prisma/seed-resources.js
+prisma/seed-resources.d.ts*
+
+# Test coverage
+coverage/
+**/*.spec.ts
+# Allow committed unit specs in service src/ directories
+!apps/*/src/**/*.spec.ts
+# Allow Jest configs and unit specs in test/ directories
+!apps/*/test/jest.unit.config.js
+!apps/*/test/jest.integration.config.js
+!apps/*/test/setup/**
+!apps/*/test/unit/**/*.spec.ts
+# Keep e2e and integration specs local — they require a live database
+**/*.e2e-spec.ts
+apps/*/test/integration/
+apps/*/test/e2e/
+prisma/generated/
+packages/*/src/*.js
+packages/*/src/*.js.map
+packages/*/src/*.d.ts
+packages/*/src/*.d.ts.map
+
+# Prisma generated clients
+**/prisma/generated/
+CLAUDE.md
+HOME
+
+# Local UI specs / design references
+roles-ui-spec/
+
+# Local-only docs directories
+docs/
+**/docs/
+
+.compose.local.env
+.env.dev
+
+data_masking.md

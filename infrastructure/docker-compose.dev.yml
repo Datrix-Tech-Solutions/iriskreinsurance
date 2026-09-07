@@ -1,0 +1,291 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:5672:5672'
+      - '127.0.0.1:15672:15672'
+    environment:
+      RABBITMQ_DEFAULT_USER: erp
+      RABBITMQ_DEFAULT_PASS: erppassword
+      RABBITMQ_DEFAULT_VHOST: workphelo
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  auth-service:
+    image: ${AUTH_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4001:4001'
+    env_file:
+      - ../apps/auth-service/.env.dev
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4001/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 240s
+
+  hr-service:
+    image: ${HR_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4002:4002'
+    env_file:
+      - ../apps/hr-service/.env.dev
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4002/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  notification-service:
+    image: ${NOTIFICATION_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4004:4004'
+    env_file:
+      - ../apps/notification-service/.env.dev
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4004/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  subscription-service:
+    image: ${SUBSCRIPTION_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4005:4005'
+    env_file:
+      - ../apps/subscription-service/.env.dev
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4005/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  marketing-service:
+    image: ${MARKETING_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4006:4006'
+    env_file:
+      - ../apps/marketing-service/.env.dev
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4006/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  reinsurance-service:
+    image: ${REINSURANCE_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4007:4007'
+    env_file:
+      - ../apps/reinsurance-service/.env.dev
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4007/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  accounting-service:
+    image: ${ACCOUNTING_SERVICE_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4008:4008'
+    env_file:
+      - ../apps/accounting-service/.env.dev
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4008/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  api-gateway:
+    image: ${API_GATEWAY_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    ports:
+      - '127.0.0.1:4010:4000'
+    env_file:
+      - ../apps/api-gateway/.env.dev
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      hr-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      subscription-service:
+        condition: service_healthy
+      marketing-service:
+        condition: service_healthy
+      reinsurance-service:
+        condition: service_healthy
+      accounting-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  nextjs:
+    image: ${NEXTJS_IMAGE}
+    restart: unless-stopped
+    networks:
+      - app-network
+    environment:
+      HOSTNAME: 0.0.0.0
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:-https://dev-api.workphelo.com/api/v1}
+      NEXT_PUBLIC_APP_BASE_URL: ${WEB_PUBLIC_APP_BASE_URL:-https://dev-app.workphelo.com}
+      NEXT_PUBLIC_ENABLE_ANNOUNCEMENT_SMS: 'true'
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+networks:
+  app-network:
+    name: workphelo-dev-network
+    driver: bridge
+
+volumes:
+  redis_data:
+    name: workphelo-dev-redis-data
+  rabbitmq_data:
+    name: workphelo-dev-rabbitmq-data

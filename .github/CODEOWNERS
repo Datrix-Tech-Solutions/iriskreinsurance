@@ -1,0 +1,27 @@
+# WorkPhelo ERP — Code Ownership
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# ── DEFAULT OWNER ─────────────────────────────────────────────────────────────
+# Everything not explicitly listed below requires backend dev review
+* @AgyemangHenryDuah
+
+# ── BACKEND (backend dev owns all of these) ───────────────────────────────────
+apps/auth-service/          @AgyemangHenryDuah
+apps/hr-service/            @AgyemangHenryDuah
+apps/notification-service/  @AgyemangHenryDuah
+apps/subscription-service/  @AgyemangHenryDuah
+apps/marketing-service/     @AgyemangHenryDuah
+apps/api-gateway/           @AgyemangHenryDuah
+packages/                   @AgyemangHenryDuah
+infrastructure/             @AgyemangHenryDuah
+
+# ── FRONTEND (frontend dev owns this directory only) ──────────────────────────
+apps/web/                   @AgyemangHenryDuah @KwasiKonadu
+
+# ── CI/CD (backend dev owns workflows) ───────────────────────────────────────
+.github/workflows/          @AgyemangHenryDuah
+
+# ── SHARED CONFIG (both must review) ─────────────────────────────────────────
+package.json                @AgyemangHenryDuah
+turbo.json                  @AgyemangHenryDuah
+tsconfig.base.json          @AgyemangHenryDuah

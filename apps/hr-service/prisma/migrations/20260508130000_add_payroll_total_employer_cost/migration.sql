@@ -1,0 +1,1 @@
+ALTER TABLE "hr"."PayrollRun" ADD COLUMN "totalEmployerCost" DECIMAL(15,2) NOT NULL DEFAULT 0;

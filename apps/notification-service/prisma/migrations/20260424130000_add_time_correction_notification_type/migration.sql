@@ -1,0 +1,2 @@
+-- Add TIME_CORRECTION_SUBMITTED to NotificationType enum
+ALTER TYPE notify."NotificationType" ADD VALUE IF NOT EXISTS 'TIME_CORRECTION_SUBMITTED';
