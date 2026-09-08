@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
 FROM node:20-alpine AS builder
-RUN apk add --no-cache openssl
+RUN apk add --no-cache \
+  openssl \
+  python3 \
+  make \
+  g++
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/types ./packages/types
