@@ -4,12 +4,19 @@ on:
   push:
     branches: [prod]
   workflow_dispatch:
+    inputs:
+      full_build:
+        description: Build all production images
+        required: true
+        default: false
+        type: boolean
 
 # ── Concurrency ────────────────────────────────────────────────────────────────
-# Different production SHAs get their own deployment groups.
+# Serialize production deployments so migrations and rollouts are never
+# interrupted or overlapped by a newer production SHA.
 concurrency:
-  group: deploy-prod-${{ github.sha }}
-  cancel-in-progress: true
+  group: deploy-prod
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
@@ -63,16 +70,16 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/prod')
 
     outputs:
-      changed: ${{ steps.filter.outputs.changes }}
-      api-gateway: ${{ steps.filter.outputs.api-gateway }}
-      auth-service: ${{ steps.filter.outputs.auth-service }}
-      hr-service: ${{ steps.filter.outputs.hr-service }}
-      notification-service: ${{ steps.filter.outputs.notification-service }}
-      subscription-service: ${{ steps.filter.outputs.subscription-service }}
-      marketing-service: ${{ steps.filter.outputs.marketing-service }}
-      reinsurance-service: ${{ steps.filter.outputs.reinsurance-service }}
-      accounting-service: ${{ steps.filter.outputs.accounting-service }}
-      nextjs-web: ${{ steps.filter.outputs.nextjs-web }}
+      changed: ${{ steps.effective.outputs.changed }}
+      api-gateway: ${{ steps.effective.outputs.api-gateway }}
+      auth-service: ${{ steps.effective.outputs.auth-service }}
+      hr-service: ${{ steps.effective.outputs.hr-service }}
+      notification-service: ${{ steps.effective.outputs.notification-service }}
+      subscription-service: ${{ steps.effective.outputs.subscription-service }}
+      marketing-service: ${{ steps.effective.outputs.marketing-service }}
+      reinsurance-service: ${{ steps.effective.outputs.reinsurance-service }}
+      accounting-service: ${{ steps.effective.outputs.accounting-service }}
+      nextjs-web: ${{ steps.effective.outputs.nextjs-web }}
 
     steps:
       - name: Checkout code
@@ -130,6 +137,45 @@ jobs:
               - 'apps/web/work-phelo-web/**'
           list-files: none
 
+      - name: Resolve effective production build set
+        id: effective
+        env:
+          FULL_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.full_build == true }}
+          FILTER_CHANGED: ${{ steps.filter.outputs.changes }}
+          FILTER_API_GATEWAY: ${{ steps.filter.outputs.api-gateway }}
+          FILTER_AUTH_SERVICE: ${{ steps.filter.outputs.auth-service }}
+          FILTER_HR_SERVICE: ${{ steps.filter.outputs.hr-service }}
+          FILTER_NOTIFICATION_SERVICE: ${{ steps.filter.outputs.notification-service }}
+          FILTER_SUBSCRIPTION_SERVICE: ${{ steps.filter.outputs.subscription-service }}
+          FILTER_MARKETING_SERVICE: ${{ steps.filter.outputs.marketing-service }}
+          FILTER_REINSURANCE_SERVICE: ${{ steps.filter.outputs.reinsurance-service }}
+          FILTER_ACCOUNTING_SERVICE: ${{ steps.filter.outputs.accounting-service }}
+          FILTER_NEXTJS_WEB: ${{ steps.filter.outputs.nextjs-web }}
+        run: |
+          if [[ "$FULL_BUILD" == "true" ]]; then
+            echo 'changed=["api-gateway","auth-service","hr-service","notification-service","subscription-service","marketing-service","reinsurance-service","accounting-service","nextjs-web"]' >> "$GITHUB_OUTPUT"
+            echo "api-gateway=true" >> "$GITHUB_OUTPUT"
+            echo "auth-service=true" >> "$GITHUB_OUTPUT"
+            echo "hr-service=true" >> "$GITHUB_OUTPUT"
+            echo "notification-service=true" >> "$GITHUB_OUTPUT"
+            echo "subscription-service=true" >> "$GITHUB_OUTPUT"
+            echo "marketing-service=true" >> "$GITHUB_OUTPUT"
+            echo "reinsurance-service=true" >> "$GITHUB_OUTPUT"
+            echo "accounting-service=true" >> "$GITHUB_OUTPUT"
+            echo "nextjs-web=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=${FILTER_CHANGED}" >> "$GITHUB_OUTPUT"
+            echo "api-gateway=${FILTER_API_GATEWAY}" >> "$GITHUB_OUTPUT"
+            echo "auth-service=${FILTER_AUTH_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "hr-service=${FILTER_HR_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "notification-service=${FILTER_NOTIFICATION_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "subscription-service=${FILTER_SUBSCRIPTION_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "marketing-service=${FILTER_MARKETING_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "reinsurance-service=${FILTER_REINSURANCE_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "accounting-service=${FILTER_ACCOUNTING_SERVICE}" >> "$GITHUB_OUTPUT"
+            echo "nextjs-web=${FILTER_NEXTJS_WEB}" >> "$GITHUB_OUTPUT"
+          fi
+
   build-and-push:
     name: Build & Push — ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -180,9 +226,10 @@ jobs:
       - name: Check if service changed
         id: changed
         env:
+          FULL_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.full_build == true }}
           SERVICE_CHANGED: ${{ needs.detect-changes.outputs[matrix.service] }}
         run: |
-          if [[ "$SERVICE_CHANGED" == "true" ]]; then
+          if [[ "$FULL_BUILD" == "true" || "$SERVICE_CHANGED" == "true" ]]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "skip=true" >> "$GITHUB_OUTPUT"
