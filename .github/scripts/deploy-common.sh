@@ -69,6 +69,7 @@ required_env_vars_for() {
     ;;
   prod)
     required+=(DATABASE_URL REDIS_PASSWORD)
+    required+=(AUTH_COOKIE_DOMAIN)
     ;;
 esac
 
@@ -238,14 +239,10 @@ ensure_deploy_dirs() {
     "$DEPLOY_PATH/apps/auth-service" \
     "$DEPLOY_PATH/apps/hr-service" \
     "$DEPLOY_PATH/apps/notification-service" \
-    "$DEPLOY_PATH/apps/reinsurance-service"
-
-  if [[ "${DEPLOY_ENV}" == "dev" ]]; then
-    mkdir -p \
-      "$DEPLOY_PATH/apps/subscription-service" \
-      "$DEPLOY_PATH/apps/marketing-service" \
-      "$DEPLOY_PATH/apps/accounting-service"
-  fi
+    "$DEPLOY_PATH/apps/subscription-service" \
+    "$DEPLOY_PATH/apps/marketing-service" \
+    "$DEPLOY_PATH/apps/reinsurance-service" \
+    "$DEPLOY_PATH/apps/accounting-service"
 }
 
 write_env_file() {
@@ -331,7 +328,7 @@ deploy_path_for_env() {
       if [[ "${DEPLOY_ENV:-}" == "prod" && -n "${DEPLOY_PATH:-}" ]]; then
         printf '%s\n' "$DEPLOY_PATH"
       else
-        printf '%s\n' "${WORKPHELO_PROD_DEPLOY_PATH:-/var/www/apps/workphelo.com/work-phelo}"
+        printf '%s\n' "${IRISKRE_PROD_DEPLOY_PATH:-/srv/iriskre-prod}"
       fi
       ;;
     *)
@@ -836,17 +833,23 @@ validate_environment_boundaries() {
   local frontend_url="${AUTH_FRONTEND_BASE_URL:-}"
   local allowed_origins="${ALLOWED_ORIGINS:-}"
   local rabbitmq_url="${RABBITMQ_URL:-}"
+  local cookie_domain="${AUTH_COOKIE_DOMAIN:-}"
+
+  if [[ -n "$cookie_domain" ]] &&
+    { [[ "$cookie_domain" == *"://"* ]] || [[ "$cookie_domain" == *"/"* ]] || [[ "$cookie_domain" == *":"* ]]; }; then
+    die "AUTH_COOKIE_DOMAIN must be a bare domain without protocol, path, or port"
+  fi
 
   case "$deploy_env" in
   prod)
     [[ "${AUTH_COOKIE_SECURE}" == "true" ]] ||
       die "Production deployments require AUTH_COOKIE_SECURE=true"
 
-    if contains_any "$frontend_url" "localhost" "127.0.0.1" "dev.workphelo" "staging"; then
+    if contains_any "$frontend_url" "localhost" "127.0.0.1" "dev.workphelo" "dev.iriskreinsurance" "api-dev.iriskreinsurance" "staging"; then
       die "Production AUTH_FRONTEND_BASE_URL appears to point at a non-production host"
     fi
 
-    if contains_any "$allowed_origins" "localhost" "127.0.0.1" "dev.workphelo" "staging"; then
+    if contains_any "$allowed_origins" "localhost" "127.0.0.1" "dev.workphelo" "dev.iriskreinsurance" "api-dev.iriskreinsurance" "staging"; then
       die "Production ALLOWED_ORIGINS contains local/dev/staging origins"
     fi
 

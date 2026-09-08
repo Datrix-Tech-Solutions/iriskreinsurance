@@ -18,6 +18,14 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: 'https',
+        hostname: 'iriskreinsurance.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'api.iriskreinsurance.com',
+      },
+      {
+        protocol: 'https',
         hostname: 'workphelo.datrixtechsolutions.com',
       },
       {

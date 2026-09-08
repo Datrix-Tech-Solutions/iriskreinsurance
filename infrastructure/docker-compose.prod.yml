@@ -19,8 +19,6 @@ services:
     restart: always
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4101:4001'
     env_file:
       - ../apps/auth-service/.env.prod
     depends_on:
@@ -37,15 +35,13 @@ services:
       interval: 15s
       timeout: 5s
       retries: 10
-      start_period: 20s
+      start_period: 240s
 
   hr-service:
     image: ${HR_SERVICE_IMAGE}
     restart: always
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4102:4002'
     env_file:
       - ../apps/hr-service/.env.prod
     depends_on:
@@ -69,8 +65,6 @@ services:
     restart: always
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4104:4004'
     env_file:
       - ../apps/notification-service/.env.prod
     depends_on:
@@ -89,13 +83,51 @@ services:
       retries: 10
       start_period: 20s
 
+  subscription-service:
+    image: ${SUBSCRIPTION_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    env_file:
+      - ../apps/subscription-service/.env.prod
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4005/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  marketing-service:
+    image: ${MARKETING_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    env_file:
+      - ../apps/marketing-service/.env.prod
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4006/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   reinsurance-service:
     image: ${REINSURANCE_SERVICE_IMAGE}
     restart: always
     networks:
       - app-network
-    ports:
-      - '127.0.0.1:4107:4007'
     env_file:
       - ../apps/reinsurance-service/.env.prod
     healthcheck:
@@ -105,6 +137,26 @@ services:
           'node',
           '-e',
           "fetch('http://127.0.0.1:4007/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  accounting-service:
+    image: ${ACCOUNTING_SERVICE_IMAGE}
+    restart: always
+    networks:
+      - app-network
+    env_file:
+      - ../apps/accounting-service/.env.prod
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4008/api/health').then((res)=>{if(!res.ok)process.exit(1);}).catch(()=>process.exit(1))",
         ]
       interval: 15s
       timeout: 5s
@@ -127,7 +179,13 @@ services:
         condition: service_healthy
       notification-service:
         condition: service_healthy
+      subscription-service:
+        condition: service_healthy
+      marketing-service:
+        condition: service_healthy
       reinsurance-service:
+        condition: service_healthy
+      accounting-service:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -152,10 +210,11 @@ services:
     environment:
       HOSTNAME: 0.0.0.0
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:-https://api.workphelo.com/api/v1}
-      NEXT_PUBLIC_APP_BASE_URL: ${WEB_PUBLIC_APP_BASE_URL:-https://app.workphelo.com}
+      NEXT_PUBLIC_API_URL: ${WEB_PUBLIC_API_URL:-https://api.iriskreinsurance.com/api/v1}
+      NEXT_PUBLIC_APP_BASE_URL: ${WEB_PUBLIC_APP_BASE_URL:-https://iriskreinsurance.com}
+      NEXT_PUBLIC_ENABLE_ANNOUNCEMENT_SMS: 'true'
     ports:
-      - '127.0.0.1:3001:3000'
+      - '127.0.0.1:3100:3000'
     depends_on:
       api-gateway:
         condition: service_healthy
@@ -174,9 +233,9 @@ services:
 
 networks:
   app-network:
-    name: workphelo-prod-network
+    name: iriskre-prod-network
     driver: bridge
 
 volumes:
   redis_data:
-    name: workphelo-prod-redis-data
+    name: iriskre-prod-redis-data
