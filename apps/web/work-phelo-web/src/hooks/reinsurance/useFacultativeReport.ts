@@ -1,6 +1,13 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { useFacultatives, fetchPlacementClosings, placementClosingsKey } from './useFacultatives';
+import {
+  useFacultatives,
+  useFacultativeRowState,
+  fetchPlacementClosings,
+  placementClosingsKey,
+  fetchPlacementNotes,
+  facultativePlacementNotesKey,
+} from './useFacultatives';
 import { useRiskTypes } from './useRiskTypes';
 import { useRiskClasses } from './useRiskClasses';
 import {
@@ -15,6 +22,7 @@ import {
   FacultativeStatus,
   PlacementPayment,
   PlacementParticipantClosing,
+  PlacementNote,
 } from '@/types/reinsurance';
 import {
   cedantPaymentStatusFromPosition,
@@ -27,6 +35,9 @@ const OPEN_STATUSES = new Set(['DRAFT', 'MARKETING']);
 const QUALIFYING_PARTICIPANT_STATUSES = new Set(['ACCEPTED', 'CLOSED']);
 const REINSURER_ROLES = new Set(['REINSURER', 'LEAD_REINSURER', 'CO_REINSURER']);
 const RECEIVED_PAYMENT_STATUSES = new Set(['RECORDED', 'BANK_CONFIRMED']);
+
+const num = (v: string | number | null | undefined): number | null =>
+  v == null ? null : typeof v === 'number' ? v : parseFloat(v);
 
 export type FacultativeReportDateField = 'createdAt' | 'premiumPaid' | 'closingDate';
 
@@ -68,15 +79,37 @@ function reinsurerCountFor(p: Facultative): number {
 }
 
 /** One accepted reinsurer on the placement — the report explodes a row per entry
- *  of this list under the Reinsurer scope. */
+ *  of this list under the Reinsurer scope, with that reinsurer's own financials. */
 export interface FacultativeReinsurerBreakdown {
   reinsurerId: string;
   reinsurerName: string;
   /** Signed line % where set, else the negotiated share %. */
   sharePercent: number | null;
+  /** This reinsurer's own confirmed-closing date. */
+  closedAt: string | null;
+  /** effective 100% SI / premium × this reinsurer's share %. */
+  facSumInsured: number | null;
+  facPremium: number | null;
+  /** Fac premium realised by how much cedant premium has been collected. */
+  paidFacPremium: number | null;
+  brokerage: number | null;
+  brokeragePaid: number | null;
+  withholdingTax: number | null;
+  withholdingTaxPaid: number | null;
+  nicLevy: number | null;
+  nicLevyPaid: number | null;
+  /** From the financial position — what iRisk owes this reinsurer / has settled. */
+  netPremiumDueReinsurer: number | null;
+  netPremiumPaid: number | null;
 }
 
-function reinsurerBreakdownFor(p: Facultative): FacultativeReinsurerBreakdown[] {
+interface ReinsurerParticipant {
+  reinsurerId: string;
+  reinsurerName: string;
+  sharePercent: number | null;
+}
+
+function reinsurerParticipantsFor(p: Facultative): ReinsurerParticipant[] {
   return p.participants
     .filter((pt) => REINSURER_ROLES.has(pt.role) && QUALIFYING_PARTICIPANT_STATUSES.has(pt.status))
     .map((pt) => ({
@@ -107,17 +140,66 @@ export interface FacultativeReportParams {
   paymentStatuses?: CedantPaymentStatus[];
 }
 
+/** Per-placement financial detail for the Cedants scope. All figures in the
+ *  placement's own currency; nulls where the underlying data isn't available yet. */
+export interface FacultativeCedantFinancials {
+  /** 100% sum insured × accepted %. */
+  facSumInsured: number | null;
+  /** 100% premium × accepted %. */
+  facPremium: number | null;
+  /** Net premium due iRisk paid + cedant commission amount. */
+  paidFacPremium: number | null;
+  /** The placement's offer commission %. */
+  cedantCommissionPercent: number | null;
+  /** Fac premium × cedant commission %. */
+  cedantCommissionAmount: number | null;
+  /** What the cedant owes iRisk (premium net of cedant commission). */
+  netPremiumDueIrisk: number | null;
+  netPremiumDueIriskPaid: number | null;
+  /** Brokerage across every reinsurer's closing (credit note where available, else
+   *  the closing's snapshot); `*Paid` pro-rated by how much cedant premium has been
+   *  collected. */
+  brokerage: number | null;
+  brokeragePaid: number | null;
+  /** Sum of every reinsurer's net premium due / paid (from the financial position). */
+  netPremiumDueReinsurer: number | null;
+  netPremiumDueReinsurerPaid: number | null;
+}
+
+const EMPTY_CEDANT_FINANCIALS: FacultativeCedantFinancials = {
+  facSumInsured: null,
+  facPremium: null,
+  paidFacPremium: null,
+  cedantCommissionPercent: null,
+  cedantCommissionAmount: null,
+  netPremiumDueIrisk: null,
+  netPremiumDueIriskPaid: null,
+  brokerage: null,
+  brokeragePaid: null,
+  netPremiumDueReinsurer: null,
+  netPremiumDueReinsurerPaid: null,
+};
+
 export interface FacultativeReportRow {
   id: string;
   reference: string;
   policyNumber: string | null;
+  /** The insured party / risk name. */
+  title: string;
   cedantName: string;
   classOfBusiness: string | null;
   riskClassName: string | null;
+  /** Day the offer was entered into the system. */
+  offerDate: string | null;
+  /** Latest closing date (force-closed date, else latest issued closing). */
+  closedAt: string | null;
   sumInsured: number | null;
   premium: number | null;
   currency: string | null;
   commission: number | null;
+  /** The % of the risk ceded facultatively (the offer's `facultativeOffer`) — fixed
+   *  across the lifecycle, drives Fac. Share / Fac Sum Insured / Fac Premium. */
+  facultativeOfferPercent: number | null;
   totalOfferedPercent: number;
   totalAcceptedPercent: number;
   reinsurerCount: number;
@@ -125,6 +207,8 @@ export interface FacultativeReportRow {
   inceptionDate: string | null;
   expiryDate: string | null;
   paymentStatus: CedantPaymentStatus;
+  /** Cedants-scope financial detail; all-null under Reinsurer scope / before load. */
+  cedantFinancials: FacultativeCedantFinancials;
   /** Accepted reinsurers on the placement; drives the Reinsurer-scope row explosion. */
   reinsurers: FacultativeReinsurerBreakdown[];
 }
@@ -284,22 +368,217 @@ export function useFacultativeReport(
     return map;
   }, [filtered, positionQueries, paymentStatusPaymentsQueries]);
 
+  // Cedants-scope financial detail — closings give the closing date and brokerage;
+  // the financial position gives the net-premium figures.
+  const financialClosingQueries = useQueries({
+    queries: filtered.map((p) => ({
+      queryKey: placementClosingsKey(p.id),
+      queryFn: () => fetchPlacementClosings(p.id),
+    })),
+  });
+  const creditNoteQueries = useQueries({
+    queries: filtered.map((p) => ({
+      queryKey: facultativePlacementNotesKey(p.id),
+      queryFn: () => fetchPlacementNotes(p.id),
+    })),
+  });
+  const cedantFinancialsLoading =
+    financialClosingQueries.some((q) => q.isLoading) || creditNoteQueries.some((q) => q.isLoading);
+
+  // Endorsement effective terms — SI / premium / fac-offer % after every in-force
+  // endorsement. The backend echoes the base value when no endorsement applies.
+  const filteredIds = useMemo(() => filtered.map((p) => p.id), [filtered]);
+  const { data: rowStateData, isLoading: rowStateLoading } = useFacultativeRowState(filteredIds, {
+    enabled,
+  });
+  const effectiveTermsFor = useMemo(() => {
+    const map = new Map(
+      (rowStateData?.items ?? []).map((item) => [item.placementId, item] as const),
+    );
+    return (p: Facultative) => {
+      const eff = map.get(p.id);
+      return {
+        sumInsured: eff?.effectiveSumInsured ?? p.sumInsured,
+        premium: eff?.effectivePremium ?? p.premium,
+        facOfferPct: eff?.effectiveFacultativeOfferPercent ?? p.facultativeOffer,
+      };
+    };
+  }, [rowStateData?.items]);
+
+  const closedAtByPlacementId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    filtered.forEach((p, i) => {
+      map.set(p.id, closingDateFor(p, financialClosingQueries[i]?.data ?? []));
+    });
+    return map;
+  }, [filtered, financialClosingQueries]);
+
+  const cedantFinancialsByPlacementId = useMemo(() => {
+    const map = new Map<string, FacultativeCedantFinancials>();
+    filtered.forEach((p, i) => {
+      const position = positionQueries[i]?.data;
+      const notes = creditNoteQueries[i]?.data ?? [];
+      const closings = financialClosingQueries[i]?.data ?? [];
+
+      // Fac. Share is the offered % (fixed across the lifecycle, endorsement-adjusted),
+      // matching the debit note — not the accepted-so-far %.
+      const terms = effectiveTermsFor(p);
+      const facOfferPct = terms.facOfferPct;
+      const facSumInsured =
+        terms.sumInsured != null && facOfferPct != null
+          ? (terms.sumInsured * facOfferPct) / 100
+          : null;
+      const facPremium =
+        terms.premium != null && facOfferPct != null
+          ? (terms.premium * facOfferPct) / 100
+          : null;
+      const cedantCommissionPercent = p.commission;
+      const cedantCommissionAmount =
+        facPremium != null && cedantCommissionPercent != null
+          ? (facPremium * cedantCommissionPercent) / 100
+          : null;
+
+      const netPremiumDueIrisk = position ? position.cedant.currentObligation : null;
+      const netPremiumDueIriskPaid = position ? position.cedant.netSettled : null;
+      const paidFacPremium =
+        netPremiumDueIriskPaid != null
+          ? netPremiumDueIriskPaid + (cedantCommissionAmount ?? 0)
+          : null;
+
+      // Same collected ÷ due ratio the Brokerage report uses to realise its `*Paid` columns.
+      const due = position?.cedant.currentObligation ?? 0;
+      const paidToIrisk = position?.cedant.netSettled ?? 0;
+      const collectionRatio = due > 0.01 ? Math.min(1, Math.max(0, paidToIrisk / due)) : 0;
+
+      // Brokerage per confirmed reinsurer closing — the credit note is authoritative,
+      // falling back to the amount snapshotted on the closing itself.
+      const confirmedClosings = closings.filter((c) => c.status === 'CONFIRMED');
+      const creditNoteForClosing = (closingId: string, counterpartyId: string) =>
+        notes.find(
+          (n: PlacementNote) =>
+            n.type === 'CREDIT_NOTE' &&
+            n.status !== 'VOID' &&
+            !n.voidedAt &&
+            (n.closingId === closingId ||
+              (n.closingId == null && n.counterpartyId === counterpartyId)),
+        );
+      const brokerage = confirmedClosings.length
+        ? confirmedClosings.reduce((total, c) => {
+            const note = creditNoteForClosing(c.id, c.participant.counterpartyId);
+            return total + (num(note?.brokerageAmount) ?? num(c.brokerageAmount) ?? 0);
+          }, 0)
+        : null;
+      const realise = (v: number | null) => (v == null ? null : v * collectionRatio);
+
+      const reinsurerPositions = position?.reinsurers ?? [];
+      const netPremiumDueReinsurer = reinsurerPositions.length
+        ? reinsurerPositions.reduce((total, r) => total + (r.currentEffectivePayable ?? 0), 0)
+        : null;
+      const netPremiumDueReinsurerPaid = reinsurerPositions.length
+        ? reinsurerPositions.reduce((total, r) => total + (r.netSettled ?? 0), 0)
+        : null;
+
+      map.set(p.id, {
+        facSumInsured,
+        facPremium,
+        paidFacPremium,
+        cedantCommissionPercent,
+        cedantCommissionAmount,
+        netPremiumDueIrisk,
+        netPremiumDueIriskPaid,
+        brokerage,
+        brokeragePaid: realise(brokerage),
+        netPremiumDueReinsurer,
+        netPremiumDueReinsurerPaid,
+      });
+    });
+    return map;
+  }, [filtered, positionQueries, creditNoteQueries, financialClosingQueries, effectiveTermsFor]);
+
+  // Per-reinsurer financials — drives the Reinsurer scope's row-per-reinsurer explosion.
+  const reinsurerBreakdownByPlacementId = useMemo(() => {
+    const map = new Map<string, FacultativeReinsurerBreakdown[]>();
+    filtered.forEach((p, i) => {
+      const position = positionQueries[i]?.data;
+      const notes = creditNoteQueries[i]?.data ?? [];
+      const closings = financialClosingQueries[i]?.data ?? [];
+      const terms = effectiveTermsFor(p);
+
+      const due = position?.cedant.currentObligation ?? 0;
+      const paidToIrisk = position?.cedant.netSettled ?? 0;
+      const collectionRatio = due > 0.01 ? Math.min(1, Math.max(0, paidToIrisk / due)) : 0;
+      const realise = (v: number | null) => (v == null ? null : v * collectionRatio);
+
+      const confirmedClosings = closings.filter((c) => c.status === 'CONFIRMED');
+      const creditNoteFor = (closingId: string | undefined, counterpartyId: string) =>
+        notes.find(
+          (n: PlacementNote) =>
+            n.type === 'CREDIT_NOTE' &&
+            n.status !== 'VOID' &&
+            !n.voidedAt &&
+            ((closingId != null && n.closingId === closingId) ||
+              (n.closingId == null && n.counterpartyId === counterpartyId)),
+        );
+
+      const rows = reinsurerParticipantsFor(p).map((re): FacultativeReinsurerBreakdown => {
+        const closing = confirmedClosings.find(
+          (c) => c.participant.counterpartyId === re.reinsurerId,
+        );
+        const note = creditNoteFor(closing?.id, re.reinsurerId);
+        const posRe = position?.reinsurers.find((r) => r.counterpartyId === re.reinsurerId);
+
+        const share = re.sharePercent;
+        const facSumInsured =
+          terms.sumInsured != null && share != null ? (terms.sumInsured * share) / 100 : null;
+        const facPremium =
+          terms.premium != null && share != null ? (terms.premium * share) / 100 : null;
+        const brokerage = num(note?.brokerageAmount) ?? num(closing?.brokerageAmount);
+        const withholdingTax = num(note?.withholdingTaxAmount);
+        const nicLevy = num(note?.nicLevyAmount);
+
+        return {
+          ...re,
+          closedAt: closing?.confirmedAt ?? null,
+          facSumInsured,
+          facPremium,
+          paidFacPremium: realise(facPremium),
+          brokerage,
+          brokeragePaid: realise(brokerage),
+          withholdingTax,
+          withholdingTaxPaid: realise(withholdingTax),
+          nicLevy,
+          nicLevyPaid: realise(nicLevy),
+          netPremiumDueReinsurer: posRe ? posRe.currentEffectivePayable : null,
+          netPremiumPaid: posRe ? posRe.netSettled : null,
+        };
+      });
+      map.set(p.id, rows);
+    });
+    return map;
+  }, [filtered, positionQueries, creditNoteQueries, financialClosingQueries, effectiveTermsFor]);
+
   const rows = useMemo<FacultativeReportRow[]>(() => {
     const paymentStatuses = params.paymentStatuses?.length ? new Set(params.paymentStatuses) : null;
 
     return [...filtered]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .map((p) => ({
+      .map((p) => {
+      const terms = effectiveTermsFor(p);
+      return {
         id: p.id,
         reference: p.reference,
         policyNumber: p.policyNumber,
+        title: p.title,
         cedantName: p.cedant.name,
         classOfBusiness: p.classOfBusiness,
         riskClassName: riskClassNameFor(p.riskTypeId),
-        sumInsured: p.sumInsured,
-        premium: p.premium,
+        offerDate: p.createdAt,
+        closedAt: closedAtByPlacementId.get(p.id) ?? null,
+        sumInsured: terms.sumInsured,
+        premium: terms.premium,
         currency: p.currency,
         commission: p.commission,
+        facultativeOfferPercent: terms.facOfferPct,
         totalOfferedPercent: p.totalOfferedPercent,
         totalAcceptedPercent: acceptedPercentFor(p),
         reinsurerCount: reinsurerCountFor(p),
@@ -307,10 +586,21 @@ export function useFacultativeReport(
         inceptionDate: p.inceptionDate,
         expiryDate: p.expiryDate,
         paymentStatus: paymentStatusByPlacementId.get(p.id) ?? 'Outstanding',
-        reinsurers: reinsurerBreakdownFor(p),
-      }))
+        cedantFinancials: cedantFinancialsByPlacementId.get(p.id) ?? EMPTY_CEDANT_FINANCIALS,
+        reinsurers: reinsurerBreakdownByPlacementId.get(p.id) ?? [],
+      };
+      })
       .filter((row) => !paymentStatuses || paymentStatuses.has(row.paymentStatus));
-  }, [filtered, riskClassNameFor, paymentStatusByPlacementId, params.paymentStatuses]);
+  }, [
+    filtered,
+    riskClassNameFor,
+    effectiveTermsFor,
+    paymentStatusByPlacementId,
+    closedAtByPlacementId,
+    cedantFinancialsByPlacementId,
+    reinsurerBreakdownByPlacementId,
+    params.paymentStatuses,
+  ]);
 
   const summary = useMemo<FacultativeReportSummary>(() => {
     const total = filtered.length;
@@ -338,6 +628,12 @@ export function useFacultativeReport(
     rows,
     summary,
     currencyTotals,
-    isLoading: isLoading || premiumPaymentsLoading || closingsLoading || paymentStatusLoading,
+    isLoading:
+      isLoading ||
+      premiumPaymentsLoading ||
+      closingsLoading ||
+      paymentStatusLoading ||
+      cedantFinancialsLoading ||
+      rowStateLoading,
   };
 }

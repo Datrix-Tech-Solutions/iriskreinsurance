@@ -278,6 +278,80 @@ export function useCedantPlacementPaymentStatuses(
   }, [relevantPlacements, positionQueries]);
 }
 
+export interface TopCedantPaidOffersRow {
+  cedantId: string;
+  name: string;
+  count: number;
+  premiumByCurrency: Map<string, number>;
+}
+
+/**
+ * Top cedants ranked by the number of offers that became fully paid (the cedant's premium
+ * obligation settled in full) within [`sinceIso`, `untilIso`] — the Premiums row's
+ * "Top 5 Cedants by Paid Offers" chart. Diffs each placement's financial position as-of the
+ * window's start against its position as-of the end (or now), mirroring
+ * {@link usePremiumsPeriodSummary}: an offer counts once it reads fully paid at the window's
+ * end but did not at its start.
+ */
+export function useTopCedantsByPaidOffers(
+  placements: Facultative[],
+  sinceIso: string,
+  untilIso?: string,
+): { rows: TopCedantPaidOffersRow[]; isLoading: boolean } {
+  const endQueries = useQueries({
+    queries: placements.map((p) => ({
+      queryKey: placementFinancialPositionKey(p.id, untilIso),
+      queryFn: () => fetchPlacementFinancialPosition(p.id, untilIso),
+    })),
+  });
+  const startQueries = useQueries({
+    queries: placements.map((p) => ({
+      queryKey: placementFinancialPositionKey(p.id, sinceIso),
+      queryFn: () => fetchPlacementFinancialPosition(p.id, sinceIso),
+    })),
+  });
+
+  const isLoading = endQueries.some((q) => q.isLoading) || startQueries.some((q) => q.isLoading);
+
+  const rows = useMemo(() => {
+    const isFullyPaid = (pos?: PlacementFinancialPosition) => {
+      const due = pos?.cedant.currentObligation ?? 0;
+      const outstanding = pos?.cedant.outstanding ?? 0;
+      return due > 0.0001 && outstanding <= 0.0001;
+    };
+
+    const byCedant = new Map<string, TopCedantPaidOffersRow>();
+    placements.forEach((p, i) => {
+      const end = endQueries[i]?.data;
+      if (!end) return;
+      // Fully paid by the end of the window, but not yet at its start.
+      if (!isFullyPaid(end) || isFullyPaid(startQueries[i]?.data)) return;
+
+      const { id, name } = p.cedant;
+      const row = byCedant.get(id) ?? {
+        cedantId: id,
+        name,
+        count: 0,
+        premiumByCurrency: new Map<string, number>(),
+      };
+      row.count += 1;
+      if (p.premium != null && p.currency != null) {
+        row.premiumByCurrency.set(
+          p.currency,
+          (row.premiumByCurrency.get(p.currency) ?? 0) + p.premium,
+        );
+      }
+      byCedant.set(id, row);
+    });
+
+    return Array.from(byCedant.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [placements, endQueries, startQueries]);
+
+  return { rows, isLoading };
+}
+
 export interface CurrencyAmount {
   code: string;
   amount: number;
