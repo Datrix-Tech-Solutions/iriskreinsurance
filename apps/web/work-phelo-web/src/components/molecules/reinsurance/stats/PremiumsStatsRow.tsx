@@ -10,7 +10,7 @@ import {
   premiumsPeriodEnd,
 } from '@/components/atoms/PremiumsPeriodToggle';
 import { YearSelect } from '@/components/atoms/YearSelect';
-import { TopCedantsByOffersChart } from '@/components/molecules/reinsurance/stats/TopCedantsByOffersChart';
+import { TopCedantsByPaidOffersChart } from '@/components/molecules/reinsurance/stats/TopCedantsByPaidOffersChart';
 import {
   useFacultatives,
   usePremiumsSummary,
@@ -69,11 +69,11 @@ export function PremiumsStatsRow() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <TopCedantsByOffersChart
-          period="monthly"
-          closedOnly
+        <TopCedantsByPaidOffersChart
+          placements={closingPlacements}
           sinceIso={sinceIso}
           untilIso={untilIso}
+          isPastYear={isPastYear}
           className="h-65"
         />
 
