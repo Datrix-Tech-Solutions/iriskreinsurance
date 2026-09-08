@@ -49,7 +49,7 @@ export const HR_NAV_GROUPS: NavGroup[] = [
     items: [
       {
         key: 'employees',
-        label: 'Employees',
+        label: 'iRisk Team',
         icon: <EmployeesIcon />,
         href: 'employees',
         enabled: true,

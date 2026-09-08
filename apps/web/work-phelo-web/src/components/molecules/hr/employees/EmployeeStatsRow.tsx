@@ -19,7 +19,7 @@ export function EmployeeStatsRow({
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
       <KpiCard
-        label="Total Employees"
+        label="Team Members"
         value={total}
         icon={Users}
         iconColor="#6b7280"

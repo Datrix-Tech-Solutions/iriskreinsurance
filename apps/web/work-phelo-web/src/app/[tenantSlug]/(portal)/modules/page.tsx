@@ -27,13 +27,13 @@ const MODULE_DEFS: ModuleDef[] = [
     icon: <ModuleIcons.hr className="w-7 h-7" />,
     route: 'hr',
   },
-  {
-    key: 'marketing',
-    name: 'Marketing',
-    description: 'Manage campaigns, leads, and analytics',
-    icon: <ModuleIcons.marketing className="w-7 h-7" />,
-    route: 'marketing',
-  },
+  // {
+  //   key: 'marketing',
+  //   name: 'Marketing',
+  //   description: 'Manage campaigns, leads, and analytics',
+  //   icon: <ModuleIcons.marketing className="w-7 h-7" />,
+  //   route: 'marketing',
+  // },
   {
     key: 'accounting',
     name: 'Accounting',
@@ -41,13 +41,13 @@ const MODULE_DEFS: ModuleDef[] = [
     icon: <ModuleIcons.accounting className="w-7 h-7" />,
     route: 'accounting',
   },
-  {
-    key: 'recruitment',
-    name: 'Recruitment',
-    description: 'Manage job postings, applications, and onboarding',
-    icon: <ModuleIcons.recruitment className="w-7 h-7" />,
-    route: 'recruitment',
-  },
+  // {
+  //   key: 'recruitment',
+  //   name: 'Recruitment',
+  //   description: 'Manage job postings, applications, and onboarding',
+  //   icon: <ModuleIcons.recruitment className="w-7 h-7" />,
+  //   route: 'recruitment',
+  // },
   {
     key: 'operations',
     name: 'Operations',
@@ -98,7 +98,7 @@ export default function ModulesPage({ params }: { params: Promise<{ tenantSlug: 
             <p className="text-sm text-gray-400 mt-1">Click on a module to get started</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4 w-full">
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-3 gap-4 w-full">
             {MODULE_DEFS.map((mod) => {
               const enabled = enabledKeys.has(mod.key);
               return (

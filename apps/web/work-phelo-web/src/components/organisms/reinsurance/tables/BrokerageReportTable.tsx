@@ -21,6 +21,7 @@ import {
   BrokerageReportParams,
 } from '@/hooks/reinsurance/useBrokerageReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
+import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
 
 const PAGE_SIZE = 10;
@@ -30,6 +31,15 @@ const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = 
   // { value: 'Pending', label: 'Pending' },
   { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Paid', label: 'Paid' },
+];
+
+// A placement viewed from either the cedant side (one aggregated row, brokerage
+// summed across reinsurers) or the reinsurer side (one row per accepted reinsurer).
+type BrokerageReportScope = 'cedant' | 'reinsurer';
+
+const SCOPE_OPTIONS: { value: BrokerageReportScope; label: string }[] = [
+  { value: 'cedant', label: 'Cedants' },
+  { value: 'reinsurer', label: 'Reinsurer' },
 ];
 
 /* ── formatting ── */
@@ -122,31 +132,68 @@ function flattenRow(
   };
 }
 
+/** Cedant scope: one row per placement, with the per-reinsurer fac premium /
+ *  brokerage figures summed across every accepted reinsurer. */
+function aggregateRow(r: BrokerageReportRow): BrokerageReportDisplayRow {
+  const sum = (pick: (re: BrokerageReinsurerRow) => number | null): number | null =>
+    r.reinsurers.length
+      ? r.reinsurers.reduce((total, re) => total + (pick(re) ?? 0), 0)
+      : null;
+
+  return {
+    id: r.id,
+    placementId: r.id,
+    policyNumber: r.policyNumber,
+    title: r.title,
+    cedantName: r.cedantName,
+    policyType: r.policyType,
+    inceptionDate: r.inceptionDate,
+    expiryDate: r.expiryDate,
+    currency: r.currency,
+    sumInsured: r.sumInsured,
+    premium: r.premium,
+    exchangeRate: r.exchangeRate,
+    reinsurerId: null,
+    reinsurerName: null,
+    grossPremium: sum((re) => re.grossPremium),
+    brokerageAmount: sum((re) => re.brokerageAmount),
+    brokeragePaid: sum((re) => re.brokeragePaid),
+    withholdingTax: null,
+    withholdingTaxPaid: null,
+    nicLevy: null,
+    nicLevyPaid: null,
+  };
+}
+
 /* ── columns ── */
 type ReportColumn = Column<BrokerageReportDisplayRow> & {
   csv?: (row: BrokerageReportDisplayRow) => string | number;
 };
 
-const COLUMNS: ReportColumn[] = [
-  {
-    key: 'policyNumber',
-    label: 'Policy Number',
-    width: '130px',
-    render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
-    csv: (row) => row.policyNumber,
-  },
-  {
-    key: 'reinsurerName',
-    label: 'Reinsurer',
-    width: '150px',
-    render: (row) =>
-      row.reinsurerName ? (
-        <span className="text-gray-700">{row.reinsurerName}</span>
-      ) : (
-        <Muted>—</Muted>
-      ),
-    csv: (row) => row.reinsurerName ?? '',
-  },
+const POLICY_NUMBER_COLUMN: ReportColumn = {
+  key: 'policyNumber',
+  label: 'Policy Number',
+  width: '130px',
+  render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
+  csv: (row) => row.policyNumber,
+};
+
+const REINSURER_NAME_COLUMN: ReportColumn = {
+  key: 'reinsurerName',
+  label: 'Reinsurer',
+  width: '150px',
+  render: (row) =>
+    row.reinsurerName ? (
+      <span className="text-gray-700">{row.reinsurerName}</span>
+    ) : (
+      <Muted>—</Muted>
+    ),
+  csv: (row) => row.reinsurerName ?? '',
+};
+
+// Placement-level cells plus the fac-premium / brokerage figures — shared by both
+// scopes (summed across reinsurers under Cedants, per-reinsurer under Reinsurer).
+const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'insured',
     label: 'Insured',
@@ -230,6 +277,10 @@ const COLUMNS: ReportColumn[] = [
     render: (row) => fmtAmount(row.brokeragePaid, row.currency),
     csv: (row) => row.brokeragePaid ?? '',
   },
+];
+
+// Reinsurer scope only — each reinsurer's tax figures from its credit note.
+const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'wht',
     label: 'WHT',
@@ -264,6 +315,16 @@ const COLUMNS: ReportColumn[] = [
   },
 ];
 
+const COLUMNS_BY_SCOPE: Record<BrokerageReportScope, ReportColumn[]> = {
+  cedant: [POLICY_NUMBER_COLUMN, ...SHARED_COLUMNS],
+  reinsurer: [
+    POLICY_NUMBER_COLUMN,
+    REINSURER_NAME_COLUMN,
+    ...SHARED_COLUMNS,
+    ...REINSURER_TAIL_COLUMNS,
+  ],
+};
+
 export function BrokerageReportTable() {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
@@ -271,10 +332,11 @@ export function BrokerageReportTable() {
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [riskTypeId, setRiskTypeId] = useState('');
-  const [currency, setCurrency] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState('');
+  const [endDate, setEndDate] = useState(todayISODate());
+  const [riskTypeIds, setRiskTypeIds] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [paymentStatuses, setPaymentStatuses] = useState<string[]>([]);
+  const [scope, setScope] = useState<BrokerageReportScope>('reinsurer');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<BrokerageReportParams | null>(null);
@@ -284,6 +346,13 @@ export function BrokerageReportTable() {
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
   const { data: currencyOptions = [] } = useCurrencyOptions();
 
+  const handleScopeChange = (value: string) => {
+    setScope(value as BrokerageReportScope);
+    setCedantIds([]);
+    setReinsurerIds([]);
+    setPage(1);
+  };
+
   const { rows, isLoading } = useBrokerageReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
@@ -292,19 +361,24 @@ export function BrokerageReportTable() {
     setReportParams({
       startDate,
       endDate,
-      riskTypeId: riskTypeId || undefined,
-      currency: currency || undefined,
-      paymentStatus: (paymentStatus || undefined) as CedantPaymentStatus | undefined,
-      cedantIds: cedantIds.length ? cedantIds : undefined,
+      riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
+      currencies: currencies.length ? currencies : undefined,
+      paymentStatuses: paymentStatuses.length
+        ? (paymentStatuses as CedantPaymentStatus[])
+        : undefined,
+      cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
     });
     setPage(1);
   };
 
-  const columns = useMemo<ReportColumn[]>(() => COLUMNS, []);
+  const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
 
-  // Explode per confirmed reinsurer closing (shared placement cells repeated),
-  // then narrow to the selected reinsurers.
+  // Cedants scope: one aggregated row per placement (brokerage summed across
+  // reinsurers). Reinsurer scope: one row per confirmed reinsurer closing,
+  // narrowed to the selected reinsurers.
   const displayRows = useMemo<BrokerageReportDisplayRow[]>(() => {
+    if (scope === 'cedant') return rows.map(aggregateRow);
+
     const flat = rows.flatMap((r) =>
       r.reinsurers.length ? r.reinsurers.map((re) => flattenRow(r, re)) : [flattenRow(r, null)],
     );
@@ -313,7 +387,7 @@ export function BrokerageReportTable() {
       return flat.filter((row) => row.reinsurerId != null && selected.has(row.reinsurerId));
     }
     return flat;
-  }, [rows, reinsurerIds]);
+  }, [rows, scope, reinsurerIds]);
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const paged = displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -355,58 +429,72 @@ export function BrokerageReportTable() {
                 />
               </div>
               <div className="w-36">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Risk type"
                   options={riskTypeOptions}
-                  value={riskTypeId}
-                  onChange={setRiskTypeId}
+                  value={riskTypeIds}
+                  onChange={setRiskTypeIds}
                 />
               </div>
               <div className="w-32">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Currency"
                   options={currencyOptions}
-                  value={currency}
-                  onChange={setCurrency}
+                  value={currencies}
+                  onChange={setCurrencies}
+                />
+              </div>
+              <div className="w-36">
+                <MultiSelect
+                  size="sm"
+                  variant="inline"
+                  placeholder="Payment status"
+                  options={PAYMENT_STATUS_OPTIONS}
+                  value={paymentStatuses}
+                  onChange={setPaymentStatuses}
                 />
               </div>
               <div className="w-36">
                 <SearchSelect
                   size="sm"
-                  showAllOption
-                  placeholder="Payment status"
-                  options={PAYMENT_STATUS_OPTIONS}
-                  value={paymentStatus}
-                  onChange={setPaymentStatus}
+                  disableClear
+                  placeholder="Scope"
+                  options={SCOPE_OPTIONS}
+                  value={scope}
+                  onChange={handleScopeChange}
                 />
               </div>
-              <div className="w-44">
-                <MultiSelect
-                  size="sm"
-                  variant="inline"
-                  placeholder="Cedants"
-                  options={cedantOptions}
-                  value={cedantIds}
-                  onChange={setCedantIds}
-                />
-              </div>
-              <div className="w-44">
-                <MultiSelect
-                  size="sm"
-                  variant="inline"
-                  placeholder="Reinsurers"
-                  options={reinsurerOptions}
-                  value={reinsurerIds}
-                  onChange={(next) => {
-                    setReinsurerIds(next);
-                    setPage(1);
-                  }}
-                />
-              </div>
+              {scope === 'cedant' && (
+                <div className="w-44">
+                  <MultiSelect
+                    size="sm"
+                    variant="inline"
+                    placeholder="Cedants"
+                    options={cedantOptions}
+                    value={cedantIds}
+                    onChange={setCedantIds}
+                  />
+                </div>
+              )}
+              {scope === 'reinsurer' && (
+                <div className="w-44">
+                  <MultiSelect
+                    size="sm"
+                    variant="inline"
+                    placeholder="Reinsurers"
+                    options={reinsurerOptions}
+                    value={reinsurerIds}
+                    onChange={(next) => {
+                      setReinsurerIds(next);
+                      setPage(1);
+                    }}
+                  />
+                </div>
+              )}
             </div>
           }
           actionButton={{

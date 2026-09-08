@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
 import { DatePicker } from '@/components/atoms/DatePicker';
-import { SearchSelect } from '@/components/atoms/SearchSelect';
 import { MultiSelect } from '@/components/atoms/MultiSelect';
 import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
 import {
@@ -20,6 +19,7 @@ import {
 } from '@/hooks/reinsurance/useReinsurersReport';
 import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { facultativeStatusLabel } from '@/lib/reinsurance/placementStatus';
+import { todayISODate } from '@/lib/reinsurance/reportDates';
 
 const PAGE_SIZE = 10;
 
@@ -43,10 +43,10 @@ export function ReinsurersReportTable() {
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [riskTypeId, setRiskTypeId] = useState('');
-  const [currency, setCurrency] = useState('');
-  const [status, setStatus] = useState('');
+  const [endDate, setEndDate] = useState(todayISODate());
+  const [riskTypeIds, setRiskTypeIds] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [statuses, setStatuses] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<ReinsurersReportParams | null>(null);
 
@@ -62,9 +62,9 @@ export function ReinsurersReportTable() {
     setReportParams({
       startDate,
       endDate,
-      riskTypeId: riskTypeId || undefined,
-      currency: currency || undefined,
-      status: (status || undefined) as FacultativeStatus | undefined,
+      riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
+      currencies: currencies.length ? currencies : undefined,
+      statuses: statuses.length ? (statuses as FacultativeStatus[]) : undefined,
       reinsurerIds: reinsurerIds.length ? reinsurerIds : undefined,
     });
     setPage(1);
@@ -144,33 +144,33 @@ export function ReinsurersReportTable() {
                 />
               </div>
               <div className="w-36">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Risk type"
                   options={riskTypeOptions}
-                  value={riskTypeId}
-                  onChange={setRiskTypeId}
+                  value={riskTypeIds}
+                  onChange={setRiskTypeIds}
                 />
               </div>
               <div className="w-32">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Currency"
                   options={currencyOptions}
-                  value={currency}
-                  onChange={setCurrency}
+                  value={currencies}
+                  onChange={setCurrencies}
                 />
               </div>
               <div className="w-32">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Status"
                   options={STATUS_OPTIONS}
-                  value={status}
-                  onChange={setStatus}
+                  value={statuses}
+                  onChange={setStatuses}
                 />
               </div>
               <div className="w-44">

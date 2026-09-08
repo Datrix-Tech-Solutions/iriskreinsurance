@@ -29,6 +29,9 @@ interface SearchSelectProps {
   /** For filter bars: prepends a selectable "All" option (value `''`) — makes the already-implicit
    *  "nothing selected = no filter" state a visible, explicit choice instead of just an empty field. */
   showAllOption?: boolean;
+  /** Hides the inline clear (✕) button — for selects that must always hold a value (e.g. a report
+   *  scope that indexes a column set), where clearing to `''` would be an invalid state. */
+  disableClear?: boolean;
   /** Label for that "All" option. Defaults to "All {placeholder}" (e.g. "All Currency") so the
    *  field names its own dimension once collapsed, rather than showing a bare, ambiguous "All". */
   allLabel?: string;
@@ -55,6 +58,7 @@ export function SearchSelect({
   onQueryChange,
   rightSlot,
   showAllOption = false,
+  disableClear = false,
   allLabel,
   emptyState,
 }: SearchSelectProps) {
@@ -268,7 +272,7 @@ export function SearchSelect({
         <div className="flex items-center gap-1 shrink-0 ml-2">
           {rightSlot}
           {/* Clear button — only when something is selected */}
-          {value && !open && (
+          {value && !open && !disableClear && (
             <button
               type="button"
               onClick={handleClear}

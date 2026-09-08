@@ -113,7 +113,7 @@ export function EmployeeDirectory({ tenantSlug }: EmployeeDirectoryProps) {
   return (
     <div className="p-4 sm:p-6 lg:p-8 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto">
       {/* Header */}
-      <h1 className="text-xl font-bold text-gray-900 shrink-0">Employee Directory</h1>
+      <h1 className="text-xl font-bold text-gray-900 shrink-0">iRisk Team</h1>
 
       <EmployeeStatsRow isLoading={isStatsLoading} {...summary} />
 
