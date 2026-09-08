@@ -50,9 +50,10 @@ export interface CedantsReportParams {
   /** Restricts to placements whose inceptionDate (period of insurance start) falls in [startDate, endDate]. */
   startDate?: string;
   endDate?: string;
-  riskTypeId?: string;
-  currency?: string;
-  status?: FacultativeStatus;
+  riskTypeIds?: string[];
+  /** Row filter — include only placements in these currencies (native currency, no conversion). */
+  currencies?: string[];
+  statuses?: FacultativeStatus[];
   cedantIds?: string[];
 }
 
@@ -96,6 +97,9 @@ export function useCedantsReport(
     const to = params.endDate ? new Date(params.endDate) : null;
     if (to) to.setHours(23, 59, 59, 999);
     const cedantIds = params.cedantIds?.length ? new Set(params.cedantIds) : null;
+    const riskTypeIds = params.riskTypeIds?.length ? new Set(params.riskTypeIds) : null;
+    const statuses = params.statuses?.length ? new Set(params.statuses) : null;
+    const currencyFilter = params.currencies?.length ? new Set(params.currencies) : null;
 
     return placements.filter((p) => {
       if (from || to) {
@@ -104,8 +108,9 @@ export function useCedantsReport(
         if (from && inception < from) return false;
         if (to && inception > to) return false;
       }
-      if (params.riskTypeId && p.riskTypeId !== params.riskTypeId) return false;
-      if (params.status && p.status !== params.status) return false;
+      if (riskTypeIds && (!p.riskTypeId || !riskTypeIds.has(p.riskTypeId))) return false;
+      if (statuses && !statuses.has(p.status)) return false;
+      if (currencyFilter && (!p.currency || !currencyFilter.has(p.currency))) return false;
       if (cedantIds && !cedantIds.has(p.cedant.id)) return false;
       return true;
     });
@@ -114,15 +119,18 @@ export function useCedantsReport(
     enabled,
     params.startDate,
     params.endDate,
-    params.riskTypeId,
-    params.status,
+    params.riskTypeIds,
+    params.statuses,
+    params.currencies,
     params.cedantIds,
   ]);
 
-  const targetIso = useMemo(() => {
-    if (params.currency) return params.currency;
-    return currencies.find((c) => c.isBaseCurrency)?.isoCode ?? '';
-  }, [params.currency, currencies]);
+  // Everything rolls up into the base currency — the currency selector is a row
+  // filter now, not a conversion target.
+  const targetIso = useMemo(
+    () => currencies.find((c) => c.isBaseCurrency)?.isoCode ?? '',
+    [currencies],
+  );
   const targetRate = getRate(currencies, targetIso);
 
   const payableFiltered = useMemo(() => filtered.filter((p) => netPremiumFor(p) > 0), [filtered]);

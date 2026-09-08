@@ -42,10 +42,13 @@ export interface PremiumsReportParams {
   /** Restricts to placements whose inceptionDate (period of insurance start) falls in [startDate, endDate]. */
   startDate?: string;
   endDate?: string;
-  riskTypeId?: string;
-  currency?: string;
-  paymentStatus?: CedantPaymentStatus;
+  riskTypeIds?: string[];
+  currencies?: string[];
+  paymentStatuses?: CedantPaymentStatus[];
   cedantIds?: string[];
+  /** Offer status — 'closed' keeps only CLOSED placements, 'open' everything else
+   *  (all business not yet closed). Omit for all. */
+  offerStatus?: 'open' | 'closed';
 }
 
 /**
@@ -139,6 +142,8 @@ export function usePremiumsReport(
     const to = params.endDate ? new Date(params.endDate) : null;
     if (to) to.setHours(23, 59, 59, 999);
     const cedantIds = params.cedantIds?.length ? new Set(params.cedantIds) : null;
+    const riskTypeIds = params.riskTypeIds?.length ? new Set(params.riskTypeIds) : null;
+    const currencies = params.currencies?.length ? new Set(params.currencies) : null;
 
     return closingRows.filter((p) => {
       if (from || to) {
@@ -147,18 +152,21 @@ export function usePremiumsReport(
         if (from && inception < from) return false;
         if (to && inception > to) return false;
       }
-      if (params.riskTypeId && p.riskTypeId !== params.riskTypeId) return false;
-      if (params.currency && p.currency !== params.currency) return false;
+      if (riskTypeIds && (!p.riskTypeId || !riskTypeIds.has(p.riskTypeId))) return false;
+      if (currencies && (!p.currency || !currencies.has(p.currency))) return false;
       if (cedantIds && !cedantIds.has(p.cedant.id)) return false;
+      if (params.offerStatus === 'closed' && p.status !== 'CLOSED') return false;
+      if (params.offerStatus === 'open' && p.status === 'CLOSED') return false;
       return true;
     });
   }, [
     closingRows,
     params.startDate,
     params.endDate,
-    params.riskTypeId,
-    params.currency,
+    params.riskTypeIds,
+    params.currencies,
     params.cedantIds,
+    params.offerStatus,
   ]);
 
   const positionQueries = useQueries({
@@ -183,10 +191,12 @@ export function usePremiumsReport(
     })),
   });
 
-  const targetIso = useMemo(() => {
-    if (params.currency) return params.currency;
-    return currencies.find((c) => c.isBaseCurrency)?.isoCode ?? '';
-  }, [params.currency, currencies]);
+  // Summary totals roll up into the base currency — the currency selector is a
+  // row filter now, not a conversion target.
+  const targetIso = useMemo(
+    () => currencies.find((c) => c.isBaseCurrency)?.isoCode ?? '',
+    [currencies],
+  );
   const targetRate = getRate(currencies, targetIso);
 
   const allRows = useMemo<PremiumReportRow[]>(() => {
@@ -244,13 +254,12 @@ export function usePremiumsReport(
     });
   }, [filtered, positionQueries, paymentQueries, closingQueries, riskTypeName]);
 
-  const rows = useMemo(
-    () =>
-      params.paymentStatus
-        ? allRows.filter((r) => r.paymentStatus === params.paymentStatus)
-        : allRows,
-    [allRows, params.paymentStatus],
-  );
+  const rows = useMemo(() => {
+    const paymentStatuses = params.paymentStatuses?.length
+      ? new Set(params.paymentStatuses)
+      : null;
+    return paymentStatuses ? allRows.filter((r) => paymentStatuses.has(r.paymentStatus)) : allRows;
+  }, [allRows, params.paymentStatuses]);
 
   const summary = useMemo<PremiumsReportSummary>(() => {
     const targetCurrency = currencies.find((c) => c.isoCode === targetIso);

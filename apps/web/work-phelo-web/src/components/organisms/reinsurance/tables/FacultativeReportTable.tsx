@@ -27,6 +27,7 @@ import {
 import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
+import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
 
 const PAGE_SIZE = 10;
@@ -286,9 +287,9 @@ export function FacultativeReportTable() {
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [dateField, setDateField] = useState<FacultativeReportDateField>('createdAt');
   const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [endDate, setEndDate] = useState(todayISODate());
   const [riskClassIds, setRiskClassIds] = useState<string[]>([]);
-  const [currency, setCurrency] = useState('');
+  const [currencies, setCurrencies] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
   const [lifecycle, setLifecycle] = useState('');
   const [paymentStatuses, setPaymentStatuses] = useState<string[]>([]);
@@ -319,7 +320,7 @@ export function FacultativeReportTable() {
       startDate,
       endDate,
       riskClassIds: riskClassIds.length ? riskClassIds : undefined,
-      currency: currency || undefined,
+      currencies: currencies.length ? currencies : undefined,
       statuses: statuses.length ? (statuses as FacultativeStatus[]) : undefined,
       cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
       lifecycle: (lifecycle || undefined) as FacultativeReportLifecycle | undefined,
@@ -408,13 +409,13 @@ export function FacultativeReportTable() {
                 />
               </div>
               <div className="w-32">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Currency"
                   options={currencyOptions}
-                  value={currency}
-                  onChange={setCurrency}
+                  value={currencies}
+                  onChange={setCurrencies}
                 />
               </div>
               <div className="w-32">
@@ -450,6 +451,7 @@ export function FacultativeReportTable() {
               <div className="w-36">
                 <SearchSelect
                   size="sm"
+                  disableClear
                   placeholder="Scope"
                   options={SCOPE_OPTIONS}
                   value={scope}

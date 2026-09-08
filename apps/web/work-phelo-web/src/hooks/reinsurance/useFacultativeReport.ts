@@ -98,7 +98,7 @@ export interface FacultativeReportParams {
   startDate?: string;
   endDate?: string;
   riskClassIds?: string[];
-  currency?: string;
+  currencies?: string[];
   statuses?: FacultativeStatus[];
   cedantIds?: string[];
 
@@ -213,6 +213,7 @@ export function useFacultativeReport(
     const cedantIds = params.cedantIds?.length ? new Set(params.cedantIds) : null;
     const riskClassIds = params.riskClassIds?.length ? new Set(params.riskClassIds) : null;
     const statuses = params.statuses?.length ? new Set(params.statuses) : null;
+    const currencies = params.currencies?.length ? new Set(params.currencies) : null;
     const now = new Date();
 
     return placements.filter((p) => {
@@ -234,7 +235,7 @@ export function useFacultativeReport(
         const riskClassId = p.riskTypeId ? riskTypeMap.get(p.riskTypeId)?.riskClassId : undefined;
         if (!riskClassId || !riskClassIds.has(riskClassId)) return false;
       }
-      if (params.currency && p.currency !== params.currency) return false;
+      if (currencies && (!p.currency || !currencies.has(p.currency))) return false;
       if (statuses && !statuses.has(p.status)) return false;
       if (cedantIds && !cedantIds.has(p.cedant.id)) return false;
       return true;
@@ -248,7 +249,7 @@ export function useFacultativeReport(
     params.endDate,
     params.lifecycle,
     params.riskClassIds,
-    params.currency,
+    params.currencies,
     params.statuses,
     params.cedantIds,
   ]);

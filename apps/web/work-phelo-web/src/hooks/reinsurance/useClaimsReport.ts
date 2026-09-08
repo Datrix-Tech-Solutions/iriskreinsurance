@@ -19,8 +19,8 @@ export interface ClaimsReportParams {
   startDate?: string;
   endDate?: string;
   cedantIds?: string[];
-  currency?: string;
-  bucket?: ClaimsReportBucket;
+  currencies?: string[];
+  buckets?: ClaimsReportBucket[];
 }
 
 /**
@@ -347,21 +347,23 @@ export function useClaimsReport(
     const to = params.endDate ? new Date(params.endDate) : null;
     if (to) to.setHours(23, 59, 59, 999);
 
+    const currencies = params.currencies?.length ? new Set(params.currencies) : null;
+
     return allRows.filter((r) => {
       if (from || to) {
         const occurred = new Date(r.occurrenceDate);
         if (from && occurred < from) return false;
         if (to && occurred > to) return false;
       }
-      if (params.currency && r.currency !== params.currency) return false;
+      if (currencies && (!r.currency || !currencies.has(r.currency))) return false;
       return true;
     });
-  }, [allRows, params.startDate, params.endDate, params.currency]);
+  }, [allRows, params.startDate, params.endDate, params.currencies]);
 
-  const rows = useMemo(
-    () => (params.bucket ? dateFiltered.filter((r) => r.bucket === params.bucket) : dateFiltered),
-    [dateFiltered, params.bucket],
-  );
+  const rows = useMemo(() => {
+    const buckets = params.buckets?.length ? new Set(params.buckets) : null;
+    return buckets ? dateFiltered.filter((r) => buckets.has(r.bucket)) : dateFiltered;
+  }, [dateFiltered, params.buckets]);
 
   const summary = useMemo<ClaimsReportSummary>(() => {
     const openClaims = dateFiltered.filter((r) => r.bucket === 'open').length;

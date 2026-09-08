@@ -21,6 +21,7 @@ import {
   ClaimsReportParams,
 } from '@/hooks/reinsurance/useClaimsReport';
 import { exportToCsv } from '@/lib/exportCsv';
+import { todayISODate } from '@/lib/reinsurance/reportDates';
 
 const PAGE_SIZE = 10;
 const MS_PER_DAY = 86_400_000;
@@ -381,11 +382,11 @@ export function ClaimsReportTable() {
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [currency, setCurrency] = useState('');
-  const [bucket, setBucket] = useState('');
-  const [stage, setStage] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState('');
+  const [endDate, setEndDate] = useState(todayISODate());
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [buckets, setBuckets] = useState<string[]>([]);
+  const [stages, setStages] = useState<string[]>([]);
+  const [paymentStatuses, setPaymentStatuses] = useState<string[]>([]);
   const [scope, setScope] = useState<ClaimsReportScope>('general');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
@@ -402,9 +403,9 @@ export function ClaimsReportTable() {
     setPage(1);
   };
 
-  const handleStageChange = (value: string) => {
-    setStage(value);
-    if (value !== 'finalized') setPaymentStatus('');
+  const handleStageChange = (next: string[]) => {
+    setStages(next);
+    if (!next.includes('finalized')) setPaymentStatuses([]);
     setPage(1);
   };
 
@@ -416,8 +417,8 @@ export function ClaimsReportTable() {
     setReportParams({
       startDate,
       endDate,
-      currency: currency || undefined,
-      bucket: (bucket || undefined) as ClaimsReportBucket | undefined,
+      currencies: currencies.length ? currencies : undefined,
+      buckets: buckets.length ? (buckets as ClaimsReportBucket[]) : undefined,
       cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
     });
     setPage(1);
@@ -429,23 +430,23 @@ export function ClaimsReportTable() {
 
   // Stage (Pending/Finalized) and, when Finalized, iRisk-share payment status.
   const stageFilteredRows = useMemo<ClaimReportRow[]>(() => {
+    if (!stages.length) return rows;
+    const wantPending = stages.includes('pending');
+    const wantFinalized = stages.includes('finalized');
+    const paySel = paymentStatuses.length ? new Set(paymentStatuses) : null;
     return rows.filter((r) => {
       const finalized = r.finalizedAt != null;
-      if (stage === 'pending') return !finalized;
-      if (stage === 'finalized') {
-        if (!finalized) return false;
-        if (!paymentStatus) return true;
-        const paid = r.iriskSharePaid ?? 0;
-        const isFull = r.bucket === 'closed';
-        const isOutstanding = !isFull && paid <= 0.01;
-        const isPart = !isFull && !isOutstanding;
-        if (paymentStatus === 'full') return isFull;
-        if (paymentStatus === 'part') return isPart;
-        return isOutstanding;
-      }
-      return true;
+      if (!finalized) return wantPending;
+      if (!wantFinalized) return false;
+      if (!paySel) return true;
+      const paid = r.iriskSharePaid ?? 0;
+      const isFull = r.bucket === 'closed';
+      const isOutstanding = !isFull && paid <= 0.01;
+      const isPart = !isFull && !isOutstanding;
+      const key = isFull ? 'full' : isPart ? 'part' : 'outstanding';
+      return paySel.has(key);
     });
-  }, [rows, stage, paymentStatus]);
+  }, [rows, stages, paymentStatuses]);
 
   // Explode per reinsurer for General/Reinsurer; keep one row per claim for Cedants.
   const displayRows = useMemo<ClaimReportDisplayRow[]>(() => {
@@ -507,45 +508,45 @@ export function ClaimsReportTable() {
                 />
               </div>
               <div className="w-32">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Currency"
                   options={currencyOptions}
-                  value={currency}
-                  onChange={setCurrency}
+                  value={currencies}
+                  onChange={setCurrencies}
                 />
               </div>
               <div className="w-36">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Status"
                   options={BUCKET_OPTIONS}
-                  value={bucket}
-                  onChange={setBucket}
+                  value={buckets}
+                  onChange={setBuckets}
                 />
               </div>
               <div className="w-36">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Stages"
                   options={STAGE_OPTIONS}
-                  value={stage}
+                  value={stages}
                   onChange={handleStageChange}
                 />
               </div>
-              {stage === 'finalized' && (
+              {stages.includes('finalized') && (
                 <div className="w-40">
-                  <SearchSelect
+                  <MultiSelect
                     size="sm"
-                    showAllOption
+                    variant="inline"
                     placeholder="Payment status"
                     options={PAYMENT_STATUS_OPTIONS}
-                    value={paymentStatus}
-                    onChange={(value) => {
-                      setPaymentStatus(value);
+                    value={paymentStatuses}
+                    onChange={(next) => {
+                      setPaymentStatuses(next);
                       setPage(1);
                     }}
                   />
@@ -554,6 +555,7 @@ export function ClaimsReportTable() {
               <div className="w-36">
                 <SearchSelect
                   size="sm"
+                  disableClear
                   placeholder="Scope"
                   options={SCOPE_OPTIONS}
                   value={scope}

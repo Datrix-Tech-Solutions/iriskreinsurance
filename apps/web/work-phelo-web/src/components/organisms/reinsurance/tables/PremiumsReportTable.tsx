@@ -21,6 +21,7 @@ import {
   PremiumsReportParams,
 } from '@/hooks/reinsurance/usePremiumsReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
+import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
 
 const PAGE_SIZE = 10;
@@ -39,6 +40,12 @@ const SETTLEMENT_OPTIONS: { value: string; label: string }[] = [
   { value: 'paid', label: 'Paid' },
   { value: 'part', label: 'Part Payment' },
   { value: 'outstanding', label: 'Outstanding' },
+];
+
+// Offer status — Open is every closing-stage placement not yet CLOSED.
+const OFFER_STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'open', label: 'Open' },
+  { value: 'closed', label: 'Closed' },
 ];
 
 // Same scope filter as the Claims report, minus General — premiums are always
@@ -234,7 +241,7 @@ const MIDDLE_COLUMNS: ReportColumn[] = [
   {
     key: 'facShare',
     label: 'Fac Share',
-    width: '60px',
+    width: '70px',
     className: 'text-right',
     render: (row) => fmtPct(row.sharePercent),
     csv: (row) => row.sharePercent ?? '',
@@ -315,11 +322,12 @@ export function PremiumsReportTable() {
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [riskTypeId, setRiskTypeId] = useState('');
-  const [currency, setCurrency] = useState('');
-  const [paymentStatus, setPaymentStatus] = useState('');
-  const [settlement, setSettlement] = useState('');
+  const [endDate, setEndDate] = useState(todayISODate());
+  const [riskTypeIds, setRiskTypeIds] = useState<string[]>([]);
+  const [currencies, setCurrencies] = useState<string[]>([]);
+  const [offerStatus, setOfferStatus] = useState('');
+  const [paymentStatuses, setPaymentStatuses] = useState<string[]>([]);
+  const [settlements, setSettlements] = useState<string[]>([]);
   const [scope, setScope] = useState<PremiumsReportScope>('cedant');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
@@ -332,8 +340,12 @@ export function PremiumsReportTable() {
 
   const handleScopeChange = (value: string) => {
     setScope(value as PremiumsReportScope);
+    // Scope-specific filters — Payments (cedant receipts) vs. Settlement (reinsurer
+    // disbursements) — don't carry across a scope switch.
     setCedantIds([]);
     setReinsurerIds([]);
+    setPaymentStatuses([]);
+    setSettlements([]);
     setPage(1);
   };
 
@@ -345,20 +357,20 @@ export function PremiumsReportTable() {
     setReportParams({
       startDate,
       endDate,
-      riskTypeId: riskTypeId || undefined,
-      currency: currency || undefined,
-      paymentStatus: (paymentStatus || undefined) as CedantPaymentStatus | undefined,
+      riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
+      currencies: currencies.length ? currencies : undefined,
+      offerStatus: (offerStatus || undefined) as 'open' | 'closed' | undefined,
+      paymentStatuses:
+        scope === 'cedant' && paymentStatuses.length
+          ? (paymentStatuses as CedantPaymentStatus[])
+          : undefined,
       cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
     });
     setPage(1);
   };
 
-  // Column set depends on scope — Cedants adds the Reinsurer name column and the
-  // reinsurer-payable tail; Reinsurer swaps that tail for the commission/net-premium block.
   const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
 
-  // Explode per confirmed reinsurer closing (both scopes), then narrow to the
-  // selected reinsurers when Scope = Reinsurer, then by settlement status.
   const displayRows = useMemo<PremiumReportDisplayRow[]>(() => {
     let flat = rows.flatMap((r) =>
       r.reinsurers.length ? r.reinsurers.map((re) => flattenRow(r, re)) : [flattenRow(r, null)],
@@ -369,17 +381,22 @@ export function PremiumsReportTable() {
       flat = flat.filter((row) => row.reinsurerId != null && selected.has(row.reinsurerId));
     }
 
-    if (settlement) {
+    if (scope === 'reinsurer' && settlements.length) {
+      const selected = new Set(settlements);
       flat = flat.filter((row) => {
         const net = row.netPremium ?? 0;
         const paid = row.paidAmount ?? 0;
-        if (settlement === 'paid') return net > 0.01 && paid >= net - 0.01;
-        if (settlement === 'outstanding') return paid <= 0.01;
-        return paid > 0.01 && paid < net - 0.01; // part payment
+        const key =
+          paid <= 0.01
+            ? 'outstanding'
+            : net > 0.01 && paid >= net - 0.01
+              ? 'paid'
+              : 'part';
+        return selected.has(key);
       });
     }
     return flat;
-  }, [rows, scope, reinsurerIds, settlement]);
+  }, [rows, scope, reinsurerIds, settlements]);
 
   const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
   const paged = displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -421,51 +438,40 @@ export function PremiumsReportTable() {
                 />
               </div>
               <div className="w-36">
-                <SearchSelect
+                <MultiSelect
                   size="sm"
-                  showAllOption
+                  variant="inline"
                   placeholder="Risk type"
                   options={riskTypeOptions}
-                  value={riskTypeId}
-                  onChange={setRiskTypeId}
+                  value={riskTypeIds}
+                  onChange={setRiskTypeIds}
+                />
+              </div>
+              <div className="w-32">
+                <MultiSelect
+                  size="sm"
+                  variant="inline"
+                  placeholder="Currency"
+                  options={currencyOptions}
+                  value={currencies}
+                  onChange={setCurrencies}
                 />
               </div>
               <div className="w-32">
                 <SearchSelect
                   size="sm"
                   showAllOption
-                  placeholder="Currency"
-                  options={currencyOptions}
-                  value={currency}
-                  onChange={setCurrency}
-                />
-              </div>
-              <div className="w-36">
-                <SearchSelect
-                  size="sm"
-                  showAllOption
                   placeholder="Status"
-                  options={PAYMENT_STATUS_OPTIONS}
-                  value={paymentStatus}
-                  onChange={setPaymentStatus}
-                />
-              </div>
-              <div className="w-40">
-                <SearchSelect
-                  size="sm"
-                  showAllOption
-                  placeholder="Settlement"
-                  options={SETTLEMENT_OPTIONS}
-                  value={settlement}
-                  onChange={(value) => {
-                    setSettlement(value);
-                    setPage(1);
-                  }}
+                  allLabel="All"
+                  options={OFFER_STATUS_OPTIONS}
+                  value={offerStatus}
+                  onChange={setOfferStatus}
                 />
               </div>
               <div className="w-36">
                 <SearchSelect
                   size="sm"
+                  disableClear
                   placeholder="Scope"
                   options={SCOPE_OPTIONS}
                   value={scope}
@@ -473,31 +479,61 @@ export function PremiumsReportTable() {
                 />
               </div>
               {scope === 'cedant' && (
-                <div className="w-44">
-                  <MultiSelect
-                    size="sm"
-                    variant="inline"
-                    placeholder="Cedants"
-                    options={cedantOptions}
-                    value={cedantIds}
-                    onChange={setCedantIds}
-                  />
-                </div>
+                <>
+                  <div className="w-44">
+                    <MultiSelect
+                      size="sm"
+                      variant="inline"
+                      placeholder="Cedants"
+                      options={cedantOptions}
+                      value={cedantIds}
+                      onChange={setCedantIds}
+                    />
+                  </div>
+                  <div className="w-36">
+                    <MultiSelect
+                      size="sm"
+                      variant="inline"
+                      placeholder="Payments"
+                      options={PAYMENT_STATUS_OPTIONS}
+                      value={paymentStatuses}
+                      onChange={(next) => {
+                        setPaymentStatuses(next);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                </>
               )}
               {scope === 'reinsurer' && (
-                <div className="w-44">
-                  <MultiSelect
-                    size="sm"
-                    variant="inline"
-                    placeholder="Reinsurers"
-                    options={reinsurerOptions}
-                    value={reinsurerIds}
-                    onChange={(next) => {
-                      setReinsurerIds(next);
-                      setPage(1);
-                    }}
-                  />
-                </div>
+                <>
+                  <div className="w-44">
+                    <MultiSelect
+                      size="sm"
+                      variant="inline"
+                      placeholder="Reinsurers"
+                      options={reinsurerOptions}
+                      value={reinsurerIds}
+                      onChange={(next) => {
+                        setReinsurerIds(next);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                  <div className="w-40">
+                    <MultiSelect
+                      size="sm"
+                      variant="inline"
+                      placeholder="Settlement"
+                      options={SETTLEMENT_OPTIONS}
+                      value={settlements}
+                      onChange={(next) => {
+                        setSettlements(next);
+                        setPage(1);
+                      }}
+                    />
+                  </div>
+                </>
               )}
             </div>
           }
