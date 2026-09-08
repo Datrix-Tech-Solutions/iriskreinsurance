@@ -269,7 +269,9 @@ describe('ReinsuranceClaimsWorklistService', () => {
     const query = renderedSql(firstRawQuery(prisma.$queryRaw));
     expect(cte).toContain('classified_claims AS');
     expect(query).toContain('COUNT(*) FILTER (WHERE "bucket" =');
-    expect(query).toContain(`WHERE "claimState"::text = 'FINALIZED'`);
+    expect(query).toContain(
+      `WHERE "bucket" = 'open'\n                AND "claimState"::text = 'FINALIZED'`,
+    );
     expect(query).toContain(`WHERE "bucket" = 'open'`);
   });
 });
