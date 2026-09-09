@@ -15,6 +15,7 @@ import {
   useRiskClassOptions,
   useCurrencyOptions,
   useFacultativeReport,
+  useReportPagination,
 } from '@/hooks';
 import {
   FacultativeReportRow,
@@ -28,8 +29,6 @@ import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/p
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
-
-const PAGE_SIZE = 10;
 
 const STATUS_OPTIONS = FACULTATIVE_STATUSES.map((s) => ({
   value: s,
@@ -414,7 +413,6 @@ const COLUMNS_BY_SCOPE: Record<FacultativeReportScope, ReportColumn[]> = {
 export function FacultativeReportTable() {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
-  const [page, setPage] = useState(1);
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [dateField, setDateField] = useState<FacultativeReportDateField>('createdAt');
@@ -481,8 +479,8 @@ export function FacultativeReportTable() {
     return flat;
   }, [rows, scope, reinsurerIds]);
 
-  const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
-  const paged = displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } =
+    useReportPagination(displayRows);
 
   const handleExport = () => {
     const headers = columns.map((c) => c.label);
@@ -496,14 +494,18 @@ export function FacultativeReportTable() {
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={paged}
+          data={pagedRows}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.id}`)
           }
           onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
+          toolbarTrailing={rowsPerPageControl}
           extraFilters={
-            <div className="flex items-center gap-2 flex-wrap">
+            // w-full forces the filter group to own the first toolbar line, so the
+            // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
+            // always wrap onto a second line and sit flush right at its end.
+            <div className="flex w-full items-center gap-2 flex-wrap">
               <div className="w-40">
                 <SearchSelect
                   size="sm"

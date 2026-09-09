@@ -7,7 +7,11 @@ import { CLOSING_STATUSES, paymentsKey, fetchPlacementPayments } from './usePaym
 import { useRiskTypes } from './useRiskTypes';
 import { firstPremiumPaymentDate } from '@/lib/reinsurance/placementStatus';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
-import type { PlacementClaimAllocation, PlacementClaimRecoveryPosition } from '@/types/reinsurance';
+import type {
+  ClaimState,
+  PlacementClaimAllocation,
+  PlacementClaimRecoveryPosition,
+} from '@/types/reinsurance';
 
 const PLACEMENT_BASE = '/operations/reinsurance/placements';
 const MS_PER_DAY = 86_400_000;
@@ -67,6 +71,11 @@ export interface ClaimReportRow {
   finalLossAmount: number | null;
   /** finalLossAmount ?? estimatedLossAmount. */
   claimAmount: number;
+  /** PENDING vs FINALIZED (reinsurer allocations generated, financial inputs locked).
+   *  Only a meaningful distinction for `open` claims — `notification` claims are always
+   *  PENDING, `closed` claims always FINALIZED. Mirrors the Claims page's effective state:
+   *  trust the persisted enum, treat legacy rows (no enum, final loss set) as FINALIZED. */
+  claimState: ClaimState;
   finalizedAt: string | null;
   recoveredAmount: number | null;
   recoveredAt: string | null;
@@ -322,6 +331,8 @@ export function useClaimsReport(
         estimatedLossAmount: num(r.claim.estimatedLossAmount),
         finalLossAmount: r.claim.finalLossAmount != null ? num(r.claim.finalLossAmount) : null,
         claimAmount: num(r.claim.finalLossAmount ?? r.claim.estimatedLossAmount),
+        claimState:
+          r.claim.claimState ?? (r.claim.finalLossAmount != null ? 'FINALIZED' : 'PENDING'),
         finalizedAt: r.claim.finalizedAt ?? null,
         recoveredAmount: r.recoveredAmount ?? null,
         recoveredAt: r.recoveredAt ?? null,
