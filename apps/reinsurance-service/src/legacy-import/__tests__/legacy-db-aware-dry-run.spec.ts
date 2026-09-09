@@ -1,6 +1,6 @@
 import { PrismaClient } from '../../../prisma/generated/client';
 import { LegacyDbAwareDryRun } from '../legacy-db-aware-dry-run';
-import { sha256 } from '../legacy-hash';
+import { riskFieldDefinitionHash, sha256 } from '../legacy-hash';
 import { counterpartyAddressLegacyId } from '../legacy-offers.importer';
 import { LegacyOffersNormalizer } from '../legacy-offers.normalizer';
 import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
@@ -265,6 +265,95 @@ describe('LegacyDbAwareDryRun', () => {
         reason: 'legacy-import-map-match',
       }),
     ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('uses stable risk-field definition hashes independent of offer values', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'risk_type_field',
+        legacyId: '1:vehicle_make',
+        currentModel: 'RiskTypeField',
+        currentId: 'risk-field-vehicle-make',
+        rawHash: riskFieldDefinitionHash({
+          classId: '1',
+          key: 'Vehicle Make',
+          normalizedKey: 'vehicle_make',
+        }),
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [
+      offer({
+        offer_id: '6',
+        offer_detail: {
+          policy_number: 'POL-6',
+          insured_by: 'Insured',
+          currency: 'GHS',
+          offer_details: '[{"keydetail":"Vehicle Make","value":"Truck"}]',
+        },
+      }),
+      offer({
+        offer_id: '7',
+        offer_detail: {
+          policy_number: 'POL-7',
+          insured_by: 'Insured',
+          currency: 'GHS',
+          offer_details: '[{"keydetail":"Vehicle Make","value":"Bus"}]',
+        },
+      }),
+    ]);
+
+    expect(result.resolution.plannedEntities.riskTypeFields).toEqual([
+      expect.objectContaining({
+        legacyId: '1:vehicle_make',
+        action: 'skip',
+        reason: 'legacy-import-map-match',
+      }),
+    ]);
+    expect(result.plan.counts.conflicts).toBe(0);
+    expectNoWrites(writeFns);
+  });
+
+  it('rolls DB-aware conflicts into top-level plan counts', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'risk_type_field',
+        legacyId: '1:vehicle_make',
+        currentModel: 'RiskTypeField',
+        currentId: 'risk-field-vehicle-make',
+        rawHash: 'old-definition-hash',
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [offer()]);
+
+    expect(result.resolution.plannedEntities.riskTypeFields).toEqual([
+      expect.objectContaining({
+        legacyId: '1:vehicle_make',
+        action: 'conflict',
+        reason: 'legacy-import-map-raw-hash-mismatch',
+      }),
+    ]);
+    expect(result.plan.counts.conflicts).toBe(1);
     expectNoWrites(writeFns);
   });
 });

@@ -11,7 +11,7 @@ import {
   RiskTypeFieldSection,
   RiskTypeFieldType,
 } from '../../prisma/generated/client';
-import { sha256 } from './legacy-hash';
+import { riskFieldDefinitionHash, sha256 } from './legacy-hash';
 import {
   LEGACY_SOURCE_SYSTEM,
   LegacyImportPlan,
@@ -336,7 +336,11 @@ export class LegacyOffersImporter {
         legacyId: `${offer.classId}:${field.normalizedKey}`,
         currentModel: 'RiskTypeField',
         currentId: createdField.id,
-        rawHash: sha256(field),
+        rawHash: riskFieldDefinitionHash({
+          classId: offer.classId,
+          key: field.key,
+          normalizedKey: field.normalizedKey,
+        }),
         createdByImport: true,
       });
     }
