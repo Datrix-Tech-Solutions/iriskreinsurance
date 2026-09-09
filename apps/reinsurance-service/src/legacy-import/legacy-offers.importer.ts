@@ -20,6 +20,12 @@ import {
 } from './legacy-import.types';
 
 type LegacyImportPrisma = PrismaClient | Prisma.TransactionClient;
+type LegacyImportMapCache = Map<string, LegacyImportMapRecord | null>;
+
+export const LEGACY_IMPORT_TRANSACTION_OPTIONS = {
+  maxWait: 30_000,
+  timeout: 120_000,
+} as const;
 
 export type ApplyLegacyOffersInput = {
   tenantId: string;
@@ -56,6 +62,7 @@ export class LegacyOffersImporter {
     );
 
     return this.prisma.$transaction(async (tx) => {
+      const mapCache: LegacyImportMapCache = new Map();
       const importRunId = randomUUID();
       await tx.legacyImportRun.create({
         data: {
@@ -72,9 +79,17 @@ export class LegacyOffersImporter {
 
       const created = emptyCreatedCounts();
       for (const offer of offers) {
-        await this.ensureCurrency(tx, input, importRunId, offer, created);
+        await this.ensureCurrency(
+          tx,
+          mapCache,
+          input,
+          importRunId,
+          offer,
+          created,
+        );
         const riskTypeId = await this.ensureRisk(
           tx,
+          mapCache,
           input,
           importRunId,
           offer,
@@ -82,6 +97,7 @@ export class LegacyOffersImporter {
         );
         const cedantId = await this.ensureCedant(
           tx,
+          mapCache,
           input,
           importRunId,
           offer,
@@ -93,6 +109,7 @@ export class LegacyOffersImporter {
             participant.participantId,
             await this.ensureReinsurer(
               tx,
+              mapCache,
               input,
               importRunId,
               participant,
@@ -102,6 +119,7 @@ export class LegacyOffersImporter {
         }
         const placementId = await this.createPlacement(
           tx,
+          mapCache,
           input,
           importRunId,
           offer,
@@ -112,6 +130,7 @@ export class LegacyOffersImporter {
         for (const participant of offer.participants) {
           await this.createParticipant(
             tx,
+            mapCache,
             input,
             importRunId,
             placementId,
@@ -141,18 +160,25 @@ export class LegacyOffersImporter {
         conflicts: input.plan.counts.conflicts,
         rejected: input.plan.counts.rejected,
       };
-    });
+    }, LEGACY_IMPORT_TRANSACTION_OPTIONS);
   }
 
   private async ensureCurrency(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     offer: NormalizedLegacyOffer,
     created: Record<string, number>,
   ) {
     const legacyId = offer.currency;
-    const mapped = await this.findMap(tx, input.tenantId, 'currency', legacyId);
+    const mapped = await this.findMap(
+      tx,
+      mapCache,
+      input.tenantId,
+      'currency',
+      legacyId,
+    );
     if (mapped) return mapped.currentId;
     const existing = await tx.currency.findFirst({
       where: {
@@ -178,7 +204,7 @@ export class LegacyOffersImporter {
         })
       ).id;
     if (!existing) created.currencies += 1;
-    await this.createMap(tx, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
       entityType: 'currency',
       legacyId,
       currentModel: 'Currency',
@@ -191,6 +217,7 @@ export class LegacyOffersImporter {
 
   private async ensureRisk(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     offer: NormalizedLegacyOffer,
@@ -198,6 +225,7 @@ export class LegacyOffersImporter {
   ) {
     const mapped = await this.findMap(
       tx,
+      mapCache,
       input.tenantId,
       'classofbusiness',
       offer.classId,
@@ -235,7 +263,7 @@ export class LegacyOffersImporter {
       created.riskClasses += 1;
       createdRiskClass = true;
     }
-    await this.createMap(tx, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
       entityType: 'classofbusiness',
       legacyId: offer.classId,
       currentModel: 'RiskClass',
@@ -267,7 +295,7 @@ export class LegacyOffersImporter {
       created.riskTypes += 1;
       createdRiskType = true;
     }
-    await this.createMap(tx, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
       entityType: 'risk_type',
       legacyId: offer.classId,
       currentModel: 'RiskType',
@@ -303,7 +331,7 @@ export class LegacyOffersImporter {
         },
       });
       created.riskTypeFields += 1;
-      await this.createMap(tx, input.tenantId, importRunId, {
+      await this.createMap(tx, mapCache, input.tenantId, importRunId, {
         entityType: 'risk_type_field',
         legacyId: `${offer.classId}:${field.normalizedKey}`,
         currentModel: 'RiskTypeField',
@@ -317,12 +345,13 @@ export class LegacyOffersImporter {
 
   private async ensureCedant(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     offer: NormalizedLegacyOffer,
     created: Record<string, number>,
   ) {
-    return this.ensureCounterparty(tx, input, importRunId, {
+    return this.ensureCounterparty(tx, mapCache, input, importRunId, {
       entityType: 'insurer',
       legacyId: offer.insurerId,
       type: CounterpartyType.CEDANT,
@@ -337,12 +366,13 @@ export class LegacyOffersImporter {
 
   private async ensureReinsurer(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     participant: NormalizedLegacyParticipant,
     created: Record<string, number>,
   ) {
-    return this.ensureCounterparty(tx, input, importRunId, {
+    return this.ensureCounterparty(tx, mapCache, input, importRunId, {
       entityType: 'reinsurer',
       legacyId: participant.reinsurerId,
       type: CounterpartyType.REINSURER,
@@ -356,6 +386,7 @@ export class LegacyOffersImporter {
 
   private async ensureCounterparty(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     args: {
@@ -377,6 +408,7 @@ export class LegacyOffersImporter {
   ) {
     const mapped = await this.findMap(
       tx,
+      mapCache,
       input.tenantId,
       args.entityType,
       args.legacyId,
@@ -431,7 +463,7 @@ export class LegacyOffersImporter {
           },
         });
         args.created.counterpartyAddresses += 1;
-        await this.createMap(tx, input.tenantId, importRunId, {
+        await this.createMap(tx, mapCache, input.tenantId, importRunId, {
           entityType: 'counterparty_address',
           legacyId: counterpartyAddressLegacyId(args.entityType, args.legacyId),
           currentModel: 'CounterpartyAddress',
@@ -441,7 +473,7 @@ export class LegacyOffersImporter {
         });
       }
     }
-    await this.createMap(tx, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
       entityType: args.entityType,
       legacyId: args.legacyId,
       currentModel: 'Counterparty',
@@ -454,6 +486,7 @@ export class LegacyOffersImporter {
 
   private async createPlacement(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     offer: NormalizedLegacyOffer,
@@ -463,6 +496,7 @@ export class LegacyOffersImporter {
   ) {
     const existingMap = await this.findMap(
       tx,
+      mapCache,
       input.tenantId,
       'offer',
       offer.offerId,
@@ -510,7 +544,7 @@ export class LegacyOffersImporter {
       },
     });
     created.placements += 1;
-    await this.createMap(tx, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
       entityType: 'offer',
       legacyId: offer.offerId,
       currentModel: 'Placement',
@@ -523,6 +557,7 @@ export class LegacyOffersImporter {
 
   private async createParticipant(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     input: ApplyLegacyOffersInput,
     importRunId: string,
     placementId: string,
@@ -532,6 +567,7 @@ export class LegacyOffersImporter {
   ) {
     const existingMap = await this.findMap(
       tx,
+      mapCache,
       input.tenantId,
       'offer_participant',
       participant.participantId,
@@ -551,7 +587,7 @@ export class LegacyOffersImporter {
       },
     });
     created.participants += 1;
-    await this.createMap(tx, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
       entityType: 'offer_participant',
       legacyId: participant.participantId,
       currentModel: 'PlacementParticipant',
@@ -564,11 +600,14 @@ export class LegacyOffersImporter {
 
   private async findMap(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     tenantId: string,
     entityType: string,
     legacyId: string,
   ): Promise<LegacyImportMapRecord | null> {
-    return tx.legacyImportMap.findUnique({
+    const cacheKey = importMapCacheKey(tenantId, entityType, legacyId);
+    if (mapCache.has(cacheKey)) return mapCache.get(cacheKey) ?? null;
+    const map = await tx.legacyImportMap.findUnique({
       where: {
         tenantId_sourceSystem_entityType_legacyId: {
           tenantId,
@@ -578,10 +617,13 @@ export class LegacyOffersImporter {
         },
       },
     });
+    mapCache.set(cacheKey, map);
+    return map;
   }
 
   private async createMap(
     tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
     tenantId: string,
     importRunId: string,
     data: {
@@ -601,6 +643,11 @@ export class LegacyOffersImporter {
         ...data,
       },
     });
+    mapCache.set(importMapCacheKey(tenantId, data.entityType, data.legacyId), {
+      currentId: data.currentId,
+      currentModel: data.currentModel,
+      rawHash: data.rawHash,
+    });
   }
 }
 
@@ -609,6 +656,14 @@ export type LegacyImportMapRecord = {
   currentModel: string;
   rawHash: string;
 };
+
+function importMapCacheKey(
+  tenantId: string,
+  entityType: string,
+  legacyId: string,
+) {
+  return `${tenantId}:${entityType}:${legacyId}`;
+}
 
 function uniqueFields(fields: Array<{ key: string; normalizedKey: string }>) {
   return [
