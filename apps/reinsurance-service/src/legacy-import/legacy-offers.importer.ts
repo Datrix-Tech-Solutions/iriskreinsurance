@@ -204,7 +204,7 @@ export class LegacyOffersImporter {
         })
       ).id;
     if (!existing) created.currencies += 1;
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
       entityType: 'currency',
       legacyId,
       currentModel: 'Currency',
@@ -263,7 +263,7 @@ export class LegacyOffersImporter {
       created.riskClasses += 1;
       createdRiskClass = true;
     }
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
       entityType: 'classofbusiness',
       legacyId: offer.classId,
       currentModel: 'RiskClass',
@@ -295,7 +295,7 @@ export class LegacyOffersImporter {
       created.riskTypes += 1;
       createdRiskType = true;
     }
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
       entityType: 'risk_type',
       legacyId: offer.classId,
       currentModel: 'RiskType',
@@ -331,7 +331,7 @@ export class LegacyOffersImporter {
         },
       });
       created.riskTypeFields += 1;
-      await this.createMap(tx, mapCache, input.tenantId, importRunId, {
+      await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
         entityType: 'risk_type_field',
         legacyId: `${offer.classId}:${field.normalizedKey}`,
         currentModel: 'RiskTypeField',
@@ -467,24 +467,41 @@ export class LegacyOffersImporter {
           },
         });
         args.created.counterpartyAddresses += 1;
-        await this.createMap(tx, mapCache, input.tenantId, importRunId, {
-          entityType: 'counterparty_address',
-          legacyId: counterpartyAddressLegacyId(args.entityType, args.legacyId),
-          currentModel: 'CounterpartyAddress',
-          currentId: address.id,
-          rawHash: sha256(args.address),
-          createdByImport: true,
-        });
+        await this.createMap(
+          tx,
+          mapCache,
+          input.tenantId,
+          importRunId,
+          args.created,
+          {
+            entityType: 'counterparty_address',
+            legacyId: counterpartyAddressLegacyId(
+              args.entityType,
+              args.legacyId,
+            ),
+            currentModel: 'CounterpartyAddress',
+            currentId: address.id,
+            rawHash: sha256(args.address),
+            createdByImport: true,
+          },
+        );
       }
     }
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
-      entityType: args.entityType,
-      legacyId: args.legacyId,
-      currentModel: 'Counterparty',
-      currentId: counterparty.id,
-      rawHash: sha256(args.raw),
-      createdByImport: createdCounterparty,
-    });
+    await this.createMap(
+      tx,
+      mapCache,
+      input.tenantId,
+      importRunId,
+      args.created,
+      {
+        entityType: args.entityType,
+        legacyId: args.legacyId,
+        currentModel: 'Counterparty',
+        currentId: counterparty.id,
+        rawHash: sha256(args.raw),
+        createdByImport: createdCounterparty,
+      },
+    );
     return counterparty.id;
   }
 
@@ -548,7 +565,7 @@ export class LegacyOffersImporter {
       },
     });
     created.placements += 1;
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
       entityType: 'offer',
       legacyId: offer.offerId,
       currentModel: 'Placement',
@@ -591,7 +608,7 @@ export class LegacyOffersImporter {
       },
     });
     created.participants += 1;
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, {
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
       entityType: 'offer_participant',
       legacyId: participant.participantId,
       currentModel: 'PlacementParticipant',
@@ -630,6 +647,7 @@ export class LegacyOffersImporter {
     mapCache: LegacyImportMapCache,
     tenantId: string,
     importRunId: string,
+    created: Record<string, number>,
     data: {
       entityType: string;
       legacyId: string;
@@ -647,6 +665,7 @@ export class LegacyOffersImporter {
         ...data,
       },
     });
+    created.legacyImportMaps += 1;
     mapCache.set(importMapCacheKey(tenantId, data.entityType, data.legacyId), {
       currentId: data.currentId,
       currentModel: data.currentModel,

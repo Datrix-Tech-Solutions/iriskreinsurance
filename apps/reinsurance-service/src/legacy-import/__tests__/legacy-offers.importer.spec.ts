@@ -104,6 +104,7 @@ describe('LegacyOffersImporter', () => {
 
     const result = await new LegacyOffersImporter(prisma).apply(input);
 
+    expect(result.created.legacyImportMaps).toBe(0);
     expect(result.created.placements).toBe(0);
     expect(result.created.participants).toBe(0);
     expect(tx.currency.create).not.toHaveBeenCalled();
@@ -114,16 +115,34 @@ describe('LegacyOffersImporter', () => {
     expect(tx.placementParticipant.create).not.toHaveBeenCalled();
   });
 
+  it('reports the exact number of import maps created for a fresh fixture', async () => {
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([offer()]),
+    );
+
+    expect(result.created.legacyImportMaps).toBe(8);
+    expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(8);
+  });
+
   it('caches import maps created earlier in the same transaction', async () => {
     const sources = [offer({ offer_id: '1' }), offer({ offer_id: '2' })];
     const { prisma, tx } = prismaMock();
 
-    await new LegacyOffersImporter(prisma).apply(applyInput(sources));
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput(sources),
+    );
 
     const currencyLookups = findUniqueLookups(tx, 'currency', 'GHS');
     const cedantLookups = findUniqueLookups(tx, 'insurer', '15');
     expect(currencyLookups).toBe(1);
     expect(cedantLookups).toBe(1);
+    expect(mapCreates(tx, 'currency', 'GHS')).toBe(1);
+    expect(mapCreates(tx, 'insurer', '15')).toBe(1);
+    expect(result.created.legacyImportMaps).toBe(
+      tx.legacyImportMap.create.mock.calls.length,
+    );
   });
 
   it('writes risk-field definition hashes without occurrence values', async () => {
@@ -328,6 +347,17 @@ function findUniqueLookups(
   return tx.legacyImportMap.findUnique.mock.calls.filter(([input]) => {
     const where = legacyImportMapWhere(input);
     return where.entityType === entityType && where.legacyId === legacyId;
+  }).length;
+}
+
+function mapCreates(
+  tx: ReturnType<typeof transactionMock>,
+  entityType: string,
+  legacyId: string,
+) {
+  return tx.legacyImportMap.create.mock.calls.filter(([input]) => {
+    const data = legacyImportMapData(input);
+    return data.entityType === entityType && data.legacyId === legacyId;
   }).length;
 }
 
