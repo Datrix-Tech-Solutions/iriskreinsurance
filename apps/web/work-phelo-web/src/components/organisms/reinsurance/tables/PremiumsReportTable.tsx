@@ -14,6 +14,7 @@ import {
   useRiskTypeOptions,
   useCurrencyOptions,
   usePremiumsReport,
+  useReportPagination,
 } from '@/hooks';
 import {
   PremiumReportRow,
@@ -23,8 +24,6 @@ import {
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
-
-const PAGE_SIZE = 10;
 
 // Cedant-side premium payment status (has the cedant paid iRisk?).
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
@@ -318,7 +317,6 @@ const COLUMNS_BY_SCOPE: Record<PremiumsReportScope, ReportColumn[]> = {
 export function PremiumsReportTable() {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
-  const [page, setPage] = useState(1);
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [startDate, setStartDate] = useState('');
@@ -398,8 +396,8 @@ export function PremiumsReportTable() {
     return flat;
   }, [rows, scope, reinsurerIds, settlements]);
 
-  const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
-  const paged = displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } =
+    useReportPagination(displayRows);
 
   const handleExport = () => {
     const headers = columns.map((c) => c.label);
@@ -412,14 +410,18 @@ export function PremiumsReportTable() {
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={paged}
+          data={pagedRows}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
           onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
+          toolbarTrailing={rowsPerPageControl}
           extraFilters={
-            <div className="flex items-center gap-2 flex-wrap">
+            // w-full forces the filter group to own the first toolbar line, so the
+            // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
+            // always wrap onto a second line and sit flush right at its end.
+            <div className="flex w-full items-center gap-2 flex-wrap">
               <div className="w-50">
                 <DatePicker
                   size="sm"

@@ -37,6 +37,8 @@ interface DataTableProps<T extends { id: string | number }> {
   filterOptions?: { value: string; label: string }[];
   onFilter?: (value: string) => void;
   onExport?: () => void;
+  /** Rendered in the toolbar immediately after the Export button — e.g. a rows-per-page select. */
+  toolbarTrailing?: React.ReactNode;
   extraFilters?: React.ReactNode;
   /** Render extraFilters before the search input instead of after (default order is search, then extraFilters). */
   searchAfterFilters?: boolean;
@@ -191,6 +193,7 @@ export function DataTable<T extends { id: string | number }>({
   filterOptions,
   onFilter,
   onExport,
+  toolbarTrailing,
   extraFilters,
   searchAfterFilters = false,
   secondaryButton,
@@ -209,6 +212,7 @@ export function DataTable<T extends { id: string | number }>({
     extraFilters ||
     (filterOptions && onFilter) ||
     onExport ||
+    toolbarTrailing ||
     secondaryButton ||
     (secondaryButtons && secondaryButtons.length > 0) ||
     actionButton
@@ -275,6 +279,8 @@ export function DataTable<T extends { id: string | number }>({
                 </span>
               </Button>
             )}
+
+            {toolbarTrailing}
 
             {secondaryButton && (
               <Button
