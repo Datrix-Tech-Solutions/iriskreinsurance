@@ -3,6 +3,7 @@ import {
   LEGACY_IMPORT_TRANSACTION_OPTIONS,
   LegacyOffersImporter,
 } from '../legacy-offers.importer';
+import { riskFieldDefinitionHash } from '../legacy-hash';
 import { LegacyOffersNormalizer } from '../legacy-offers.normalizer';
 import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffer } from '../legacy-import.types';
@@ -123,6 +124,34 @@ describe('LegacyOffersImporter', () => {
     const cedantLookups = findUniqueLookups(tx, 'insurer', '15');
     expect(currencyLookups).toBe(1);
     expect(cedantLookups).toBe(1);
+  });
+
+  it('writes risk-field definition hashes without occurrence values', async () => {
+    const source = offer({
+      offer_detail: {
+        policy_number: 'POL-1',
+        insured_by: 'Insured',
+        currency: 'GHS',
+        offer_details: '[{"keydetail":"Vehicle Make","value":"Truck"}]',
+      },
+    });
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(applyInput([source]));
+
+    const riskFieldMapCreate = tx.legacyImportMap.create.mock.calls.find(
+      ([input]) =>
+        legacyImportMapData(input).entityType === 'risk_type_field' &&
+        legacyImportMapData(input).legacyId === '1:vehicle_make',
+    );
+    expect(riskFieldMapCreate).toBeDefined();
+    expect(legacyImportMapData(riskFieldMapCreate![0]).rawHash).toBe(
+      riskFieldDefinitionHash({
+        classId: '1',
+        key: 'Vehicle Make',
+        normalizedKey: 'vehicle_make',
+      }),
+    );
   });
 });
 
@@ -321,6 +350,7 @@ function legacyImportMapData(input: unknown) {
       legacyId: string;
       currentModel: string;
       currentId: string;
+      rawHash: string;
     };
   };
   return record.data;

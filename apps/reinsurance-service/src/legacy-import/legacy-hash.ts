@@ -17,3 +17,15 @@ export function stableJson(value: unknown): string {
 export function sha256(value: unknown): string {
   return createHash('sha256').update(stableJson(value)).digest('hex');
 }
+
+export function riskFieldDefinitionHash(input: {
+  classId: string;
+  key: string;
+  normalizedKey: string;
+}): string {
+  return sha256({
+    classId: input.classId,
+    key: input.key,
+    normalizedKey: input.normalizedKey,
+  });
+}

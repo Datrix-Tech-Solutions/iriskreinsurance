@@ -1,5 +1,5 @@
 import { PrismaClient } from '../../prisma/generated/client';
-import { sha256 } from './legacy-hash';
+import { riskFieldDefinitionHash, sha256 } from './legacy-hash';
 import {
   LEGACY_SOURCE_SYSTEM,
   LegacyDbAwareDryRunResolution,
@@ -87,6 +87,7 @@ export class LegacyDbAwareDryRun {
       plan: {
         ...input.plan,
         tenantId: tenant.id,
+        counts: countsWithDbResolutionConflicts(input.plan, resolution),
       },
       resolution,
       existingMaps,
@@ -246,7 +247,11 @@ export class LegacyDbAwareDryRun {
           legacyId: `${offer.classId}:${field.normalizedKey}`,
           key: field.normalizedKey,
           riskClassLegacyId: offer.classId,
-          rawHash: sha256(field),
+          rawHash: riskFieldDefinitionHash({
+            classId: offer.classId,
+            key: field.key,
+            normalizedKey: field.normalizedKey,
+          }),
         })),
       ),
       (item) => item.legacyId,
@@ -541,6 +546,22 @@ export class LegacyDbAwareDryRun {
       },
     };
   }
+}
+
+function countsWithDbResolutionConflicts(
+  plan: LegacyImportPlan,
+  resolution: LegacyDbAwareDryRunResolution,
+): LegacyImportPlan['counts'] {
+  return {
+    ...plan.counts,
+    conflicts: plan.counts.conflicts + countDbConflicts(resolution),
+  };
+}
+
+function countDbConflicts(resolution: LegacyDbAwareDryRunResolution) {
+  return Object.values(resolution.plannedEntities)
+    .flat()
+    .filter((entity) => entity.action === 'conflict').length;
 }
 
 function actionFor(input: {
