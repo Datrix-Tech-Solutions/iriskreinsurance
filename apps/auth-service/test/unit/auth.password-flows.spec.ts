@@ -9,6 +9,7 @@ import { AuditService } from '../../src/audit/audit.service';
 import { AuthService } from '../../src/auth/auth.service';
 import { RabbitMQPublisher } from '../../src/messaging/rabbitmq.publisher';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { TenantAssetStorageService } from '../../src/tenants/tenant-asset-storage.service';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn(),
@@ -68,6 +69,10 @@ describe('AuthService password flows', () => {
         },
         { provide: RabbitMQPublisher, useValue: rabbitmq },
         { provide: AuditService, useValue: { log: jest.fn() } },
+        {
+          provide: TenantAssetStorageService,
+          useValue: { resolveUserAvatarUrl: jest.fn() },
+        },
       ],
     }).compile();
 
