@@ -241,6 +241,44 @@ describe('TenantAssetStorageService', () => {
     now.mockRestore();
   });
 
+  it('resolves owned avatar keys to signed URLs without signing another tenant key', async () => {
+    const service = new TenantAssetStorageService();
+    const createSignedReadUrl = jest
+      .spyOn(service, 'createSignedReadUrl')
+      .mockResolvedValue({
+        readUrl: 'https://storage.example/avatar.png?signature=redacted',
+        expiresAt: new Date(Date.now() + 120_000).toISOString(),
+      });
+
+    await expect(
+      service.resolveUserAvatarUrl({
+        tenantId: 'tenant-1',
+        userId: 'user-1',
+        objectKey:
+          'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+      }),
+    ).resolves.toBe('https://storage.example/avatar.png?signature=redacted');
+    expect(createSignedReadUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectKey:
+          'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+        mimeType: 'image/png',
+      }),
+    );
+
+    await expect(
+      service.resolveUserAvatarUrl({
+        tenantId: 'tenant-2',
+        userId: 'user-2',
+        objectKey:
+          'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+      }),
+    ).resolves.toBe(
+      'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+    );
+    expect(createSignedReadUrl).toHaveBeenCalledTimes(1);
+  });
+
   it('selects the S3 provider for new uploads when configured', async () => {
     process.env.AUTH_TENANT_ASSET_STORAGE_PROVIDER = 's3';
     process.env.AUTH_TENANT_ASSET_S3_BUCKET = 'private-workphelo-assets';

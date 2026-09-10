@@ -221,24 +221,17 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get current authenticated user' })
   @ApiResponse({ status: 200, description: 'Current user returned' })
-  me(
+  async me(
     @Req() req: Request & { user: RequestUser },
     @Res({ passthrough: true }) res: Response,
   ) {
     setAccessTokenCookie(res, this.authService.signAccessToken(req.user));
 
     return {
-      user: {
-        id: req.user.id,
-        email: req.user.email,
-        role: req.user.role,
-        tenantId: req.user.tenantId,
-        tenantSlug: req.user.tenantSlug,
-        tenantName: req.user.tenantName,
-        firstName: req.user.firstName,
-        moduleConfig: req.user.moduleConfig ?? {},
-        featureConfig: req.user.featureConfig ?? {},
-      },
+      user: await this.authService.getCurrentUser(
+        req.user.id,
+        req.user.tenantId,
+      ),
       permissions: req.user.permissions ?? [],
     };
   }

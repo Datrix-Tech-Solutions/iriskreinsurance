@@ -18,6 +18,10 @@ import { WorkspaceUrl } from '../common/workspace-url.helper';
 import { AuditService } from '../audit/audit.service';
 import { syncUserSystemPermissionSet } from '../permissions/system-permission-sets';
 import { normalizeEmail } from '../common/email.helper';
+import { TenantAssetStorageService } from '../tenants/tenant-asset-storage.service';
+
+const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+const AVATAR_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 @Injectable()
 export class UsersService {
@@ -28,7 +32,143 @@ export class UsersService {
     private readonly rabbitmq: RabbitMQPublisher,
     private readonly jwtService: JwtService,
     private readonly audit: AuditService,
+    private readonly storage: TenantAssetStorageService,
   ) {}
+
+  async uploadAvatar(
+    tenantId: string,
+    userId: string,
+    file: Express.Multer.File | undefined,
+  ) {
+    if (!file || !file.buffer?.length) {
+      throw new BadRequestException('An image file is required.');
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      throw new BadRequestException('Avatar image must not exceed 5 MB.');
+    }
+    if (!AVATAR_MIME_TYPES.has(file.mimetype)) {
+      throw new BadRequestException(
+        'Only JPEG, PNG, and WebP images are supported.',
+      );
+    }
+    if (!this.hasValidImageSignature(file.buffer, file.mimetype)) {
+      throw new BadRequestException('The uploaded file is not a valid image.');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: {
+        id: true,
+        tenantId: true,
+        avatarUrl: true,
+        tenant: { select: { slug: true } },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const stored = await this.storage.storeUserAvatar({
+      tenantId,
+      tenantSlug: user.tenant.slug,
+      userId,
+      body: file.buffer,
+      contentType: file.mimetype,
+      originalFileName: `avatar.${this.extensionForMime(file.mimetype)}`,
+    });
+
+    let updated;
+    try {
+      updated = await this.prisma.user.update({
+        where: { id: userId },
+        data: { avatarUrl: stored.objectKey },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          role: true,
+          status: true,
+          avatarUrl: true,
+          tenantId: true,
+          updatedAt: true,
+        },
+      });
+    } catch (error) {
+      await this.storage
+        .delete(stored.objectKey)
+        .catch((cleanupError) =>
+          this.logger.warn(
+            `Failed to clean up avatar object after database failure: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+          ),
+        );
+      throw error;
+    }
+
+    if (
+      user.avatarUrl &&
+      user.avatarUrl !== stored.objectKey &&
+      this.storage.isUserAvatarObjectKey(user.avatarUrl, tenantId, userId)
+    ) {
+      await this.storage
+        .delete(user.avatarUrl)
+        .catch((error) =>
+          this.logger.warn(
+            `Failed to delete replaced avatar object: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+        );
+    }
+
+    const displayAvatarUrl = await this.resolveAvatarUrl(
+      tenantId,
+      userId,
+      updated.avatarUrl,
+    );
+    return {
+      user: { ...updated, avatarUrl: displayAvatarUrl },
+      avatarUrl: displayAvatarUrl,
+    };
+  }
+
+  private resolveAvatarUrl(
+    tenantId: string,
+    userId: string,
+    avatarUrl: string | null | undefined,
+  ) {
+    return this.storage.resolveUserAvatarUrl({
+      tenantId,
+      userId,
+      objectKey: avatarUrl,
+    });
+  }
+
+  private hasValidImageSignature(buffer: Buffer, mimeType: string): boolean {
+    if (mimeType === 'image/jpeg') {
+      return (
+        buffer.length >= 3 &&
+        buffer[0] === 0xff &&
+        buffer[1] === 0xd8 &&
+        buffer[2] === 0xff
+      );
+    }
+    if (mimeType === 'image/png') {
+      return buffer
+        .subarray(0, 8)
+        .equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+    }
+    return (
+      buffer.length >= 12 &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WEBP'
+    );
+  }
+
+  private extensionForMime(mimeType: string): string {
+    return mimeType === 'image/jpeg'
+      ? 'jpg'
+      : mimeType === 'image/png'
+        ? 'png'
+        : 'webp';
+  }
 
   private async validateInvitedEmployeePermissionSets(
     tenantId: string,
@@ -270,10 +410,20 @@ export class UsersService {
     const uniqueUserIds = Array.from(new Set(userIds));
     const users = await this.prisma.user.findMany({
       where: { tenantId, id: { in: uniqueUserIds } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, avatarUrl: true },
     });
 
-    return users.map((user) => ({ userId: user.id, status: user.status }));
+    return Promise.all(
+      users.map(async (user) => ({
+        userId: user.id,
+        status: user.status,
+        avatarUrl: await this.resolveAvatarUrl(
+          tenantId,
+          user.id,
+          user.avatarUrl,
+        ),
+      })),
+    );
   }
 
   async acceptInvite(dto: AcceptInviteDto) {
@@ -449,7 +599,7 @@ export class UsersService {
   }
 
   async findAll(tenantId: string) {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { tenantId },
       select: {
         id: true,
@@ -469,6 +619,16 @@ export class UsersService {
         forcePasswordReset: true,
       },
     });
+    return Promise.all(
+      users.map(async (user) => ({
+        ...user,
+        avatarUrl: await this.resolveAvatarUrl(
+          tenantId,
+          user.id,
+          user.avatarUrl,
+        ),
+      })),
+    );
   }
 
   async findById(tenantId: string, id: string) {
@@ -493,7 +653,10 @@ export class UsersService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return {
+      ...user,
+      avatarUrl: await this.resolveAvatarUrl(tenantId, id, user.avatarUrl),
+    };
   }
 
   async update(tenantId: string, id: string, dto: UpdateUserDto) {
@@ -503,7 +666,7 @@ export class UsersService {
         'The super admin account cannot be modified.',
       );
     }
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: {
@@ -519,6 +682,10 @@ export class UsersService {
         updatedAt: true,
       },
     });
+    return {
+      ...updated,
+      avatarUrl: await this.resolveAvatarUrl(tenantId, id, updated.avatarUrl),
+    };
   }
 
   async deactivate(tenantId: string, id: string) {

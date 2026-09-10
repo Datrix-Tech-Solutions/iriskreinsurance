@@ -28,6 +28,6 @@ import { AuditModule } from '../audit/audit.module';
     TenantAssetStorageService,
     TenantDocumentProfileService,
   ],
-  exports: [TenantLifecycleService],
+  exports: [TenantAssetStorageService, TenantLifecycleService],
 })
 export class TenantsModule {}

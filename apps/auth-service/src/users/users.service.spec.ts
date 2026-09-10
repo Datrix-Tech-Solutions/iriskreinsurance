@@ -3,6 +3,7 @@ import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RabbitMQPublisher } from '../messaging/rabbitmq.publisher';
 import { AuditService } from '../audit/audit.service';
+import { TenantAssetStorageService } from '../tenants/tenant-asset-storage.service';
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn().mockResolvedValue('hashed-password'),
@@ -52,14 +53,318 @@ function makeService(
       .mockReturnValueOnce('access-token')
       .mockReturnValueOnce('refresh-token'),
   },
+  storage = {
+    storeUserAvatar: jest.fn().mockResolvedValue({
+      objectKey:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/avatar.webp',
+      mimeType: 'image/webp',
+      fileName: 'avatar.webp',
+      sizeBytes: 16,
+    }),
+    delete: jest.fn().mockResolvedValue(undefined),
+    isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+    resolveUserAvatarUrl: jest
+      .fn()
+      .mockImplementation(({ objectKey }) => Promise.resolve(objectKey)),
+  },
 ) {
   return new UsersService(
     prisma as unknown as PrismaService,
     rabbit as unknown as RabbitMQPublisher,
     jwtService as never,
     audit as unknown as AuditService,
+    storage as unknown as TenantAssetStorageService,
   );
 }
+
+describe('UsersService.uploadAvatar', () => {
+  const user = {
+    id: 'user-1',
+    tenantId: 'tenant-1',
+    avatarUrl: null,
+    tenant: { slug: 'acme-ghana' },
+  };
+  const updated = {
+    id: 'user-1',
+    email: 'ama@acmeghana.com',
+    firstName: 'Ama',
+    lastName: 'Mensah',
+    phone: null,
+    role: 'EMPLOYEE',
+    status: 'ACTIVE',
+    avatarUrl:
+      'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/avatar.webp',
+    tenantId: 'tenant-1',
+    updatedAt: new Date(),
+  };
+
+  const file = (mimetype: string, buffer: Buffer): Express.Multer.File =>
+    ({
+      buffer,
+      mimetype,
+      originalname: 'avatar.webp',
+      size: buffer.length,
+    }) as Express.Multer.File;
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it.each([
+    ['image/jpeg', Buffer.from([0xff, 0xd8, 0xff, 0x00])],
+    ['image/png', Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])],
+    ['image/webp', Buffer.from('RIFFxxxxWEBP')],
+  ])(
+    'accepts %s and updates only the authenticated user',
+    async (mimetype, buffer) => {
+      const prisma = makePrisma();
+      prisma.user.findFirst.mockResolvedValue(user);
+      prisma.user.update.mockResolvedValue(updated);
+      const storage = {
+        storeUserAvatar: jest.fn().mockResolvedValue({
+          objectKey: updated.avatarUrl,
+          mimeType: mimetype,
+          fileName: 'avatar.webp',
+          sizeBytes: buffer.length,
+        }),
+        delete: jest.fn().mockResolvedValue(undefined),
+        isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+        resolveUserAvatarUrl: jest.fn().mockResolvedValue(updated.avatarUrl),
+      };
+      const service = makeService(
+        prisma,
+        makeRabbit(),
+        makeAudit(),
+        { sign: jest.fn() },
+        storage,
+      );
+
+      const result = await service.uploadAvatar(
+        'tenant-1',
+        'user-1',
+        file(mimetype, buffer),
+      );
+
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+        where: { id: 'user-1', tenantId: 'tenant-1' },
+        select: expect.objectContaining({ tenant: { select: { slug: true } } }),
+      });
+      expect(storage.storeUserAvatar).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-1', userId: 'user-1' }),
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'user-1' },
+          data: { avatarUrl: updated.avatarUrl },
+        }),
+      );
+      expect(result.avatarUrl).toBe(updated.avatarUrl);
+    },
+  );
+
+  it('rejects missing, unsupported, oversized, and malformed files', async () => {
+    const service = makeService();
+
+    await expect(
+      service.uploadAvatar('tenant-1', 'user-1', undefined),
+    ).rejects.toThrow('An image file is required');
+    await expect(
+      service.uploadAvatar(
+        'tenant-1',
+        'user-1',
+        file('image/gif', Buffer.from('GIF89a')),
+      ),
+    ).rejects.toThrow('Only JPEG');
+    await expect(
+      service.uploadAvatar(
+        'tenant-1',
+        'user-1',
+        file('image/png', Buffer.alloc(5 * 1024 * 1024 + 1)),
+      ),
+    ).rejects.toThrow('must not exceed 5 MB');
+    await expect(
+      service.uploadAvatar(
+        'tenant-1',
+        'user-1',
+        file('image/png', Buffer.from('not-png')),
+      ),
+    ).rejects.toThrow('valid image');
+  });
+
+  it('deletes the previous avatar only after a successful replacement', async () => {
+    const prisma = makePrisma();
+    prisma.user.findFirst.mockResolvedValue({
+      ...user,
+      avatarUrl:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/old.png',
+    });
+    prisma.user.update.mockResolvedValue(updated);
+    const storage = {
+      storeUserAvatar: jest.fn().mockResolvedValue({
+        objectKey: updated.avatarUrl,
+        mimeType: 'image/png',
+        fileName: 'avatar.png',
+        sizeBytes: 16,
+      }),
+      delete: jest.fn().mockResolvedValue(undefined),
+      isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest.fn().mockResolvedValue(updated.avatarUrl),
+    };
+    const service = makeService(
+      prisma,
+      makeRabbit(),
+      makeAudit(),
+      { sign: jest.fn() },
+      storage,
+    );
+
+    await service.uploadAvatar(
+      'tenant-1',
+      'user-1',
+      file('image/png', Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    );
+
+    expect(storage.delete).toHaveBeenCalledWith(
+      'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/old.png',
+    );
+  });
+
+  it('cleans up the new object and leaves the old pointer when the database update fails', async () => {
+    const prisma = makePrisma();
+    prisma.user.findFirst.mockResolvedValue({
+      ...user,
+      avatarUrl:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/old.png',
+    });
+    const databaseError = new Error('database unavailable');
+    prisma.user.update.mockRejectedValue(databaseError);
+    const storage = {
+      storeUserAvatar: jest.fn().mockResolvedValue({
+        objectKey: updated.avatarUrl,
+        mimeType: 'image/jpeg',
+        fileName: 'avatar.jpg',
+        sizeBytes: 4,
+      }),
+      delete: jest.fn().mockResolvedValue(undefined),
+      isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest.fn().mockResolvedValue(updated.avatarUrl),
+    };
+    const service = makeService(
+      prisma,
+      makeRabbit(),
+      makeAudit(),
+      { sign: jest.fn() },
+      storage,
+    );
+
+    await expect(
+      service.uploadAvatar(
+        'tenant-1',
+        'user-1',
+        file('image/jpeg', Buffer.from([0xff, 0xd8, 0xff, 0x00])),
+      ),
+    ).rejects.toBe(databaseError);
+    expect(storage.delete).toHaveBeenCalledWith(updated.avatarUrl);
+    expect(storage.delete).not.toHaveBeenCalledWith(
+      expect.stringContaining('/old.png'),
+    );
+  });
+
+  it('does not update the database when object storage fails', async () => {
+    const prisma = makePrisma();
+    prisma.user.findFirst.mockResolvedValue(user);
+    const storage = {
+      storeUserAvatar: jest
+        .fn()
+        .mockRejectedValue(new Error('storage unavailable')),
+      delete: jest.fn(),
+      isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest.fn(),
+    };
+    const service = makeService(
+      prisma,
+      makeRabbit(),
+      makeAudit(),
+      { sign: jest.fn() },
+      storage,
+    );
+
+    await expect(
+      service.uploadAvatar(
+        'tenant-1',
+        'user-1',
+        file('image/jpeg', Buffer.from([0xff, 0xd8, 0xff, 0x00])),
+      ),
+    ).rejects.toThrow('storage unavailable');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('cannot change another user or tenant because both identities come from the principal lookup', async () => {
+    const prisma = makePrisma();
+    prisma.user.findFirst.mockResolvedValue(null);
+    const service = makeService(prisma);
+
+    await expect(
+      service.uploadAvatar(
+        'tenant-2',
+        'user-2',
+        file('image/jpeg', Buffer.from([0xff, 0xd8, 0xff, 0x00])),
+      ),
+    ).rejects.toThrow('User not found');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('UsersService avatar reads', () => {
+  it('returns a display URL while leaving the stored key untouched', async () => {
+    const prisma = makePrisma();
+    prisma.user.findFirst.mockResolvedValue({
+      id: 'user-1',
+      tenantId: 'tenant-1',
+      avatarUrl:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+      email: 'ama@acmeghana.com',
+      firstName: 'Ama',
+      lastName: 'Mensah',
+      phone: null,
+      role: 'EMPLOYEE',
+      status: 'ACTIVE',
+      isMfaEnabled: false,
+      mfaMethod: null,
+      lastLoginAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      forcePasswordReset: false,
+    });
+    const storage = {
+      storeUserAvatar: jest.fn(),
+      delete: jest.fn(),
+      isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest
+        .fn()
+        .mockResolvedValue(
+          'https://storage.example/avatar.png?signature=redacted',
+        ),
+    };
+    const service = makeService(
+      prisma,
+      makeRabbit(),
+      makeAudit(),
+      { sign: jest.fn() },
+      storage,
+    );
+
+    const result = await service.findById('tenant-1', 'user-1');
+
+    expect(result.avatarUrl).toBe(
+      'https://storage.example/avatar.png?signature=redacted',
+    );
+    expect(storage.resolveUserAvatarUrl).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      objectKey:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+    });
+  });
+});
 
 describe('UsersService.resendInvite', () => {
   const pendingUser = {

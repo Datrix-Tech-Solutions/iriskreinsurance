@@ -17,6 +17,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RabbitMQPublisher } from '../messaging/rabbitmq.publisher';
 import { AuditService } from '../audit/audit.service';
+import { TenantAssetStorageService } from '../tenants/tenant-asset-storage.service';
 
 // ─── Shared test fixtures ──────────────────────────────────────────────────
 
@@ -134,6 +135,16 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: jwt },
         { provide: RabbitMQPublisher, useValue: rabbitmq },
         { provide: AuditService, useValue: audit },
+        {
+          provide: TenantAssetStorageService,
+          useValue: {
+            resolveUserAvatarUrl: jest
+              .fn()
+              .mockImplementation(({ objectKey }) =>
+                Promise.resolve(objectKey),
+              ),
+          },
+        },
       ],
     }).compile();
 
@@ -993,6 +1004,39 @@ describe('AuthService', () => {
       await expect(service.changePassword(USER_BASE.id, dto)).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+  });
+
+  describe('getCurrentUser()', () => {
+    it('returns a signed display URL without changing the stored avatar key', async () => {
+      const avatarKey =
+        'tenant-assets/tenants/tenant-uuid/user-avatar/users/user-uuid/avatar/id.png';
+      prisma.user.findFirst.mockResolvedValue({
+        ...USER_BASE,
+        avatarUrl: avatarKey,
+        tenant: {
+          ...TENANT,
+          moduleConfig: { hr: true },
+          featureConfig: { hr: { leave: true } },
+        },
+      });
+      const storage = service['storage'] as unknown as {
+        resolveUserAvatarUrl: jest.Mock;
+      };
+      storage.resolveUserAvatarUrl.mockResolvedValue(
+        'https://storage.example/avatar.png?signature=redacted',
+      );
+
+      const result = await service.getCurrentUser('user-uuid', 'tenant-uuid');
+
+      expect(result.avatarUrl).toBe(
+        'https://storage.example/avatar.png?signature=redacted',
+      );
+      expect(storage.resolveUserAvatarUrl).toHaveBeenCalledWith({
+        tenantId: 'tenant-uuid',
+        userId: 'user-uuid',
+        objectKey: avatarKey,
+      });
     });
   });
 });

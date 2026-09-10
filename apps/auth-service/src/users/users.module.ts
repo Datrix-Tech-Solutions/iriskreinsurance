@@ -6,9 +6,16 @@ import { AuthModule } from '../auth/auth.module';
 import { RabbitMQModule } from '../messaging/rabbitmq.module';
 import { AuditModule } from '../audit/audit.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TenantsModule } from '../tenants/tenants.module';
 
 @Module({
-  imports: [AuthModule, RabbitMQModule, AuditModule, PrismaModule],
+  imports: [
+    AuthModule,
+    RabbitMQModule,
+    AuditModule,
+    PrismaModule,
+    TenantsModule,
+  ],
   controllers: [UsersController, UsersHandler],
   providers: [UsersService],
   exports: [UsersService],

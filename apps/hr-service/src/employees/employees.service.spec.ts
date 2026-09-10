@@ -71,6 +71,30 @@ describe('EmployeesService', () => {
     return calls.at(-1)?.[0].data ?? {};
   }
 
+  it('prefers the canonical Auth avatar while preserving a legacy HR avatar fallback', () => {
+    const withUserStatus = (
+      service as unknown as {
+        withUserStatus: (
+          employee: { userId: string; avatarUrl?: string | null },
+          statusMap: Map<string, { status: string; avatarUrl?: string | null }>,
+        ) => { avatarUrl?: string | null; userStatus: string };
+      }
+    ).withUserStatus.bind(service);
+
+    expect(
+      withUserStatus(
+        { userId: 'user-1', avatarUrl: 'legacy-url' },
+        new Map([['user-1', { status: 'ACTIVE', avatarUrl: 'signed-url' }]]),
+      ),
+    ).toMatchObject({ avatarUrl: 'signed-url', userStatus: 'ACTIVE' });
+    expect(
+      withUserStatus(
+        { userId: 'user-1', avatarUrl: 'legacy-url' },
+        new Map([['user-1', { status: 'ACTIVE', avatarUrl: null }]]),
+      ),
+    ).toMatchObject({ avatarUrl: 'legacy-url', userStatus: 'ACTIVE' });
+  });
+
   it('clears employee fixedTaxAmount when tax policy changes away from FIXED_AMOUNT', async () => {
     const existing = {
       id: 'employee-uuid',
