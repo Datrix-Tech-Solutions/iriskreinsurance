@@ -13,9 +13,11 @@ export function useHrManagementAccess() {
   const canManagePayroll = usePermission(Permission.RUN_PAYROLL);
 
   const canAccessRoles = canViewPermissionSets || canGrantPermissions;
+  // Appraisal configuration and Leave settings (Types / Public Holidays) live
+  // in their own sections now (hr/appraisal/settings, hr/leave/settings) — so
+  // canConfigureAppraisal / canManageLeaveTypes no longer unlock anything in
+  // HR Settings and don't count toward this section's access.
   const hasAnyManagementAccess =
-    canManageLeaveTypes ||
-    canConfigureAppraisal ||
     canAccessRoles ||
     canViewAuditLogs ||
     canReadDepartments ||

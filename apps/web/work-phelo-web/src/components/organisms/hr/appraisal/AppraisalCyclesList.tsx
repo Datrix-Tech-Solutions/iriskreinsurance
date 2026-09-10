@@ -144,7 +144,7 @@ export function AppraisalCyclesList({ tenantSlug }: Props) {
       width: 'minmax(200px, 1fr)',
       render: (row) => (
         <Link
-          href={`/${tenantSlug}/hr/hrmanagement/appraisal/cycles/${row.id}`}
+          href={`/${tenantSlug}/hr/appraisal/settings/cycles/${row.id}`}
           className="font-medium text-gray-900 hover:text-brand hover:underline transition-colors"
           onClick={(e) => e.stopPropagation()}
         >

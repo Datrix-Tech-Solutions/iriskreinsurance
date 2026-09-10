@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useMemo, useCallback } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/atoms/Button';
 import { SearchSelect } from '@/components/atoms/SearchSelect';
 import { useMyPayslips } from '@/hooks/hr/usePayroll';
+import { usePermission } from '@/hooks/hr/usePermission';
+import { Permission } from '@/lib/permissionMap';
 import { useAuthStore } from '@/store/auth.store';
 import { useTenant, useMyProfile } from '@/hooks';
 import { PayslipDocument } from '@/components/molecules/hr/payroll/PayslipDocument';
@@ -26,6 +29,10 @@ function payslipLabel(p: PayrollItem) {
 }
 
 export function ProfilePayslipTab() {
+  const { tenantSlug } = useParams<{ tenantSlug: string }>();
+  const router = useRouter();
+  const canManagePayroll = usePermission(Permission.RUN_PAYROLL);
+
   const [selectedId, setSelectedId] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [taxReturnsOpen, setTaxReturnsOpen] = useState(false);
@@ -96,78 +103,91 @@ export function ProfilePayslipTab() {
   const runStatus = selected?.payrollRun?.status ?? '';
   const canDownload = runStatus === 'APPROVED' || runStatus === 'PAID';
 
-  if (payslips.length === 0) {
-    return <p className="py-8 text-center text-sm text-gray-400">No payslips available yet.</p>;
-  }
+  const hasPayslips = payslips.length > 0;
 
   return (
     <>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="outline" onClick={() => setTaxReturnsOpen(true)}>
-            Tax Returns
-          </Button>
-          <div className="w-48">
-            <SearchSelect
-              placeholder="Select month…"
-              options={payslips.map((p) => ({
-                value: p.id,
-                label: payslipLabel(p),
-                sublabel: p.payrollRun?.status ?? undefined,
-              }))}
-              value={selected?.id ?? ''}
-              onChange={setSelectedId}
-            />
+        {(hasPayslips || canManagePayroll) && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {canManagePayroll && (
+              <Button variant="outline" onClick={() => router.push(`/${tenantSlug}/hr/payroll`)}>
+                Manage
+              </Button>
+            )}
+            {hasPayslips && (
+              <Button variant="outline" onClick={() => setTaxReturnsOpen(true)}>
+                Tax Returns
+              </Button>
+            )}
+            {hasPayslips && (
+              <div className="w-48">
+                <SearchSelect
+                  placeholder="Select month…"
+                  options={payslips.map((p) => ({
+                    value: p.id,
+                    label: payslipLabel(p),
+                    sublabel: p.payrollRun?.status ?? undefined,
+                  }))}
+                  value={selected?.id ?? ''}
+                  onChange={setSelectedId}
+                />
+              </div>
+            )}
+            {hasPayslips && canDownload && (
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                disabled={downloading}
+                onClick={async () => {
+                  if (!selected) return;
+                  setDownloading(true);
+                  try {
+                    await downloadPayslipPDF(
+                      selected,
+                      payslipLabel(selected),
+                      companyInfo,
+                      employeeInfo,
+                      calcYTD(selected),
+                    );
+                  } finally {
+                    setDownloading(false);
+                  }
+                }}
+              >
+                {downloading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                {downloading ? 'Generating…' : 'Download PDF'}
+              </Button>
+            )}
           </div>
-          {canDownload && (
-            <Button
-              variant="outline"
-              className="flex items-center gap-2"
-              disabled={downloading}
-              onClick={async () => {
-                if (!selected) return;
-                setDownloading(true);
-                try {
-                  await downloadPayslipPDF(
-                    selected,
-                    payslipLabel(selected),
-                    companyInfo,
-                    employeeInfo,
-                    calcYTD(selected),
-                  );
-                } finally {
-                  setDownloading(false);
-                }
-              }}
-            >
-              {downloading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Download className="w-4 h-4" />
-              )}
-              {downloading ? 'Generating…' : 'Download PDF'}
-            </Button>
-          )}
-        </div>
+        )}
 
-        {selected && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2">
+            {selected ? (
               <PayslipDocument
                 item={selected}
                 companyName={user?.tenantName ?? ''}
                 employeeName={myProfile ? `${myProfile.firstName} ${myProfile.lastName}` : ''}
               />
-            </div>
-            <div className="lg:col-span-1 flex flex-col gap-4">
-              {myProfile && <BankingComplianceCard employee={myProfile} />}
-              <PayslipAllowancesPanel
-                allowances={myProfile?.allowances ?? []}
-                deductions={myProfile?.deductions ?? []}
-              />
-            </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/60 py-12 px-6 text-center">
+                <p className="text-sm text-gray-400">No payslips available yet.</p>
+              </div>
+            )}
           </div>
-        )}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+            {myProfile && <BankingComplianceCard employee={myProfile} />}
+            <PayslipAllowancesPanel
+              allowances={myProfile?.allowances ?? []}
+              deductions={myProfile?.deductions ?? []}
+            />
+          </div>
+        </div>
       </div>
 
       <TaxReturnsPanel

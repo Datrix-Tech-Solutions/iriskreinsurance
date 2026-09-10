@@ -28,8 +28,7 @@ export function EmployeeDetailSidebar({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Pass empty roles so the Roles section doesn't duplicate — EmployeeRolesCard handles that */}
-      <ProfileSummaryCard employee={employee} managerName={managerName} roles={[]} />
+      <ProfileSummaryCard employee={employee} managerName={managerName} />
 
       {employee.userId && (
         <EmployeeRolesCard

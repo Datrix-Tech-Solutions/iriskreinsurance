@@ -48,7 +48,7 @@ export function AnnouncementCard({ announcements }: AnnouncementCardProps) {
     return (
       <div className={cardClass('p-5 flex flex-col gap-3 min-h-60 flex-1 border-gray-200')}>
         <div className="flex items-center gap-2 shrink-0">
-          <h2 className="text-base font-bold text-gray-900">General Announcements</h2>
+          <h2 className="text-base font-bold text-(--module-btn-bg,var(--color-brand))">General Announcements</h2>
         </div>
         <div className="h-px bg-gray-100 -mx-5" />
         <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center py-8">
@@ -67,7 +67,9 @@ export function AnnouncementCard({ announcements }: AnnouncementCardProps) {
         {/* Header */}
         <div className="flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-gray-900">General Announcements</h2>
+            <h2 className="text-base font-bold text-(--module-btn-bg,var(--color-brand))">
+              General Announcements
+            </h2>
             {unreadCount > 0 && (
               <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-orange-500 text-white text-[10px] font-bold">
                 {unreadCount > 9 ? '9+' : unreadCount}

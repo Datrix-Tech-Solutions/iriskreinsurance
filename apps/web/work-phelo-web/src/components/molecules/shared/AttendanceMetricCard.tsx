@@ -1,26 +1,51 @@
 'use client';
 
-import { useState } from 'react';
-import { Clock, CheckCircle2, Loader2, LogIn, LogOut, MapPin } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2, MapPin } from 'lucide-react';
 import { Button } from '@/components/atoms/Button';
 import { Modal } from '@/components/organisms/shared/Modal';
 import { useClockInLocation } from '@/hooks';
-import { cardClass, waterIconStyle } from '@/lib/utils';
+import { cardClass, cn } from '@/lib/utils';
 
 interface AttendanceMetricCardProps {
   clockedIn: boolean;
   isDone: boolean;
   clockInTime?: string;
+  /** Raw ISO timestamp of the clock-in, used to tick the live "worked" duration. */
+  clockedInAt?: string;
   hoursWorked?: string;
   onClockIn: (location?: string) => void;
   onClockOut: () => void;
   isLoading?: boolean;
 }
 
+function formatElapsed(fromMs: number, toMs: number) {
+  const mins = Math.max(0, Math.floor((toMs - fromMs) / 60000));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
+}
+
+function formatClock(d: Date) {
+  return d.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatDate(d: Date) {
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 export function AttendanceMetricCard({
   clockedIn,
   isDone,
   clockInTime,
+  clockedInAt,
   hoursWorked,
   onClockIn,
   onClockOut,
@@ -30,89 +55,113 @@ export function AttendanceMetricCard({
   const [confirmClockOut, setConfirmClockOut] = useState(false);
   const location = useClockInLocation();
 
+  // Ticking every second for the live clock / worked duration.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   function openClockInConfirm() {
     setConfirmClockIn(true);
     location.capture();
   }
 
-  // Success green when done; otherwise no real semantic color, so fall back to the module color.
-  const iconColor = isDone ? '#22c55e' : 'var(--module-btn-bg, var(--brand))';
+  // Green pulsing state only while a shift is genuinely running.
+  const active = clockedIn && !isDone;
+
+  // Prefer the server total; otherwise tick it up locally from the clock-in time.
+  const parsedClockInMs = clockedInAt ? Date.parse(clockedInAt) : NaN;
+  const liveWorked =
+    active && Number.isFinite(parsedClockInMs)
+      ? formatElapsed(parsedClockInMs, now.getTime())
+      : undefined;
+  const worked = hoursWorked ?? liveWorked;
+
+  const summaryValue = (() => {
+    if (isDone) return worked ? `worked ${worked}` : '0h 0m';
+    if (active && clockInTime) {
+      return worked ? `since ${clockInTime} · worked ${worked}` : `since ${clockInTime}`;
+    }
+    return '0h 0m';
+  })();
 
   return (
-    <div className={cardClass('px-5 py-5 flex flex-col', 'glass')}>
-      {/* Header */}
+    <div className={cardClass('px-5 py-5 flex flex-col gap-4', 'glass')}>
+      {/* Header — date + live status */}
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-500 font-medium">
-          {clockedIn || isDone ? "Today's Attendance" : 'Clock In'}
-        </span>
-        <div
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-          style={waterIconStyle(iconColor)}
+        <span
+          className="text-sm text-gray-500 font-medium tracking-wide"
+          suppressHydrationWarning
         >
-          {isDone ? (
-            <CheckCircle2
-              className="w-4.5 h-4.5"
-              style={{ color: `color-mix(in oklab, ${iconColor} 65%, black)` }}
-            />
-          ) : (
-            <Clock
-              className="w-4.5 h-4.5"
-              style={{ color: `color-mix(in oklab, ${iconColor} 65%, black)` }}
-            />
+          {formatDate(now)}
+        </span>
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wider',
+            active
+              ? 'border-green-200 bg-green-50 text-green-700'
+              : 'border-gray-200 bg-gray-100 text-gray-500',
           )}
-        </div>
+        >
+          <span
+            className={cn(
+              'w-1.5 h-1.5 rounded-full',
+              active ? 'bg-green-500 animate-pulse' : 'bg-gray-400',
+            )}
+          />
+          {active ? 'CLOCKED IN' : 'CLOCKED OUT'}
+        </span>
       </div>
 
-      {/* Content */}
-      <div className="flex flex-col gap-3 flex-1 justify-end mt-2">
-        <div className="text-sm min-w-0">
-          {isDone ? (
-            <div className="flex flex-col gap-0.5">
-              <p className="font-semibold text-green-600">All done for today!</p>
-              {hoursWorked && <p className="text-xs text-gray-400">{hoursWorked} hours worked</p>}
-            </div>
-          ) : clockedIn ? (
-            <p className="text-gray-700">
-              Clocked in at <span className="font-semibold text-gray-900">{clockInTime}</span>
-            </p>
-          ) : (
-            <p className="text-gray-400">You haven&apos;t clocked in yet</p>
-          )}
-        </div>
+      {/* Live clock */}
+      <div className="text-center py-1">
+        <span
+          className="font-mono text-4xl font-semibold tabular-nums tracking-tight text-(--module-btn-bg,var(--color-brand))"
+          suppressHydrationWarning
+        >
+          {formatClock(now)}
+        </span>
+      </div>
 
-        {/* Action Button */}
-        <div>
-          {isDone ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 rounded-full border border-green-200">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Completed
-            </span>
-          ) : clockedIn ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmClockOut(true)}
-              disabled={isLoading}
-              //look for a better for clock out
-              icon={<LogOut className="w-4 h-4" />}
-              className="text-orange-600 border-orange-200 hover:bg-orange-50"
-            >
-              Clock Out
-            </Button>
-          ) : (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={openClockInConfirm}
-              disabled={isLoading}
-              //look for a better for clock in
-              icon={<LogIn className="w-4 h-4" />}
-              className="bg-brand hover:bg-brand-hover"
-            >
-              Clock In
-            </Button>
-          )}
-        </div>
+      {/* Punch action */}
+      {isDone ? (
+        <Button
+          variant="outline"
+          disabled
+          className="w-full text-green-700 border-green-200 hover:bg-green-50"
+        >
+          All done for today
+        </Button>
+      ) : clockedIn ? (
+        <Button
+          variant="outline"
+          onClick={() => setConfirmClockOut(true)}
+          disabled={isLoading}
+          className="w-full"
+        >
+          Clock out
+        </Button>
+      ) : (
+        <Button
+          variant="primary"
+          onClick={openClockInConfirm}
+          disabled={isLoading}
+          className="w-full"
+        >
+          Clock in
+        </Button>
+      )}
+
+      {/* Summary */}
+      <div className="flex items-center justify-between border-t border-gray-100 pt-3">
+        <span className="text-xs text-gray-500">Today</span>
+        <span
+          className="font-mono text-sm font-semibold tabular-nums text-gray-900"
+          suppressHydrationWarning
+        >
+          {summaryValue}
+        </span>
       </div>
 
       <Modal

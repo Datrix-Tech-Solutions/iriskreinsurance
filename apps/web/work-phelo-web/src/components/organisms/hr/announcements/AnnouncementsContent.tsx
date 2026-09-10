@@ -163,15 +163,6 @@ export function AnnouncementsContent() {
 
   return (
     <>
-      <div className="flex items-center justify-between shrink-0">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Announcements</h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {meta.total} announcement{meta.total !== 1 ? 's' : ''}
-          </p>
-        </div>
-      </div>
-
       <DataTable
         columns={columns}
         data={rows}

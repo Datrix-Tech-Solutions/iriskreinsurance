@@ -2,12 +2,12 @@
 
 import { useRef, useState, ClipboardEvent, KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { AppLogo } from '@/components/atoms/AppLogo';
 import { useVerifyOtp, useResendOtp, useForgotPassword } from '@/hooks';
 import { Button } from '@/components/atoms/Button';
-import { cardClass, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { extractError } from '@/lib/extractError';
 import { useToast } from '@/hooks/useToast';
+import { AuthCard } from '@/components/organisms/login/AuthCard';
 
 const OTP_LENGTH = 6;
 
@@ -99,16 +99,11 @@ export function OtpVerification({ tenantSlug, mode = 'email-verification' }: Otp
   };
 
   return (
-    <div className={cardClass('w-full max-w-sm px-8 py-10')}>
-      <div className="flex justify-center mb-6">
-        <AppLogo />
-      </div>
-
-      <h1 className="text-2xl font-semibold text-gray-900 text-center mb-2">Verify Your Email</h1>
-      <p className="text-sm text-gray-500 text-center mb-8">
-        Enter the 6-digit code we sent to your email address.
-      </p>
-
+    <AuthCard
+      title="Verify Your Email"
+      tenantSlug={tenantSlug}
+      subtitle="Enter the 6-digit code we sent to your email address."
+    >
       {/* OTP boxes */}
       <div className="flex justify-center gap-3 mb-6">
         {digits.map((digit, i) => (
@@ -125,10 +120,10 @@ export function OtpVerification({ tenantSlug, mode = 'email-verification' }: Otp
             onKeyDown={(e) => handleKeyDown(i, e)}
             onPaste={handlePaste}
             className={cn(
-              'w-11 h-13 text-center text-lg font-semibold border rounded-input',
+              'w-11 h-13 text-center text-lg font-semibold border rounded-input bg-transparent',
               'focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand',
-              'transition-colors text-gray-900',
-              verifyError ? 'border-red-500' : digit ? 'border-brand' : 'border-gray-300',
+              'transition-colors text-white/95',
+              verifyError ? 'border-red-400' : digit ? 'border-brand' : 'border-white/75',
             )}
           />
         ))}
@@ -146,16 +141,16 @@ export function OtpVerification({ tenantSlug, mode = 'email-verification' }: Otp
         Verify Code
       </Button>
 
-      <p className="text-center text-xs text-gray-400 mt-6">
+      <p className="text-center text-xs text-white/55 mt-6">
         Didn&apos;t receive a code?{' '}
         <button
           onClick={handleResend}
           disabled={isResending || isResendingForgot}
-          className="text-brand font-medium hover:underline disabled:opacity-50"
+          className="text-white/85 font-medium hover:underline disabled:opacity-50"
         >
           {isResending || isResendingForgot ? 'Resending...' : 'Resend'}
         </button>
       </p>
-    </div>
+    </AuthCard>
   );
 }
