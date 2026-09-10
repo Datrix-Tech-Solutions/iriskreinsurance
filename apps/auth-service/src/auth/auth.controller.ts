@@ -236,6 +236,7 @@ export class AuthController {
         tenantSlug: req.user.tenantSlug,
         tenantName: req.user.tenantName,
         firstName: req.user.firstName,
+        avatarUrl: req.user.avatarUrl ?? null,
         moduleConfig: req.user.moduleConfig ?? {},
         featureConfig: req.user.featureConfig ?? {},
       },

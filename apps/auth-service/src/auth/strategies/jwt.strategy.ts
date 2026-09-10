@@ -74,6 +74,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       tenantSlug: user.tenant.slug,
       tenantName: user.tenant.name,
       firstName: user.firstName,
+      avatarUrl: user.avatarUrl,
       moduleConfig: (user.tenant.moduleConfig as Record<string, boolean>) ?? {},
       featureConfig:
         (user.tenant.featureConfig as Record<

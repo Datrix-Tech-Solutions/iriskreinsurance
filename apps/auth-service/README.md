@@ -81,6 +81,11 @@ signatories and bank details for downstream document rendering. Asset storage
 uses the configured tenant asset provider; API responses and docs must not
 expose private object keys or credentials.
 
+Authenticated user avatars use the same private tenant asset provider and are
+stored under a tenant/user-scoped `user-avatar` namespace. The canonical
+`User.avatarUrl` value is the private object key; a display URL must be signed
+by the owning Auth service rather than persisted as a short-lived URL.
+
 ## Tenant Asset Storage Providers
 
 `AUTH_TENANT_ASSET_STORAGE_PROVIDER` supports:
