@@ -18,6 +18,13 @@ import {
   NormalizedLegacyOffer,
   NormalizedLegacyParticipant,
 } from './legacy-import.types';
+import {
+  legacyRiskClassLegacyId,
+  normalizeLegacyRiskTypeName,
+  resolveLegacyRiskClass,
+  riskClassDefinitionHash,
+  riskTypeDefinitionHash,
+} from './legacy-risk-taxonomy';
 
 type LegacyImportPrisma = PrismaClient | Prisma.TransactionClient;
 type LegacyImportMapCache = Map<string, LegacyImportMapRecord | null>;
@@ -223,38 +230,44 @@ export class LegacyOffersImporter {
     offer: NormalizedLegacyOffer,
     created: Record<string, number>,
   ) {
-    const mapped = await this.findMap(
+    const riskClassMapping = resolveLegacyRiskClass(offer.className);
+    if (!riskClassMapping) {
+      throw new Error(
+        `Legacy class of business '${offer.className}' has no approved RiskClass mapping`,
+      );
+    }
+    const riskClassLegacyId = legacyRiskClassLegacyId(riskClassMapping);
+    const mappedRiskType = await this.findMap(
       tx,
       mapCache,
       input.tenantId,
-      'classofbusiness',
+      'risk_type',
       offer.classId,
     );
-    if (mapped) {
-      const riskType = await tx.riskType.findFirst({
-        where: {
-          tenantId: input.tenantId,
-          riskClassId: mapped.currentId,
-          name: offer.className,
-        },
-      });
-      if (riskType) return riskType.id;
-    }
+    if (mappedRiskType) return mappedRiskType.currentId;
 
     let createdRiskClass = false;
+    const mappedRiskClass = await this.findMap(
+      tx,
+      mapCache,
+      input.tenantId,
+      'risk_class',
+      riskClassLegacyId,
+    );
     let riskClass = await tx.riskClass.findFirst({
       where: {
         tenantId: input.tenantId,
-        name: offer.className,
-        archivedAt: null,
+        ...(mappedRiskClass
+          ? { id: mappedRiskClass.currentId }
+          : { name: riskClassMapping.name, archivedAt: null }),
       },
     });
     if (!riskClass) {
       riskClass = await tx.riskClass.create({
         data: {
           tenantId: input.tenantId,
-          name: offer.className,
-          description: 'Imported from legacy iRisk class of business.',
+          name: riskClassMapping.name,
+          description: 'Imported from approved legacy iRisk risk taxonomy.',
           isActive: true,
           createdByUserId: input.importUserId,
           updatedByUserId: input.importUserId,
@@ -263,23 +276,24 @@ export class LegacyOffersImporter {
       created.riskClasses += 1;
       createdRiskClass = true;
     }
-    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
-      entityType: 'classofbusiness',
-      legacyId: offer.classId,
-      currentModel: 'RiskClass',
-      currentId: riskClass.id,
-      rawHash: sha256(offer.source.classofbusiness),
-      createdByImport: createdRiskClass,
-    });
+    if (!mappedRiskClass) {
+      await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
+        entityType: 'risk_class',
+        legacyId: riskClassLegacyId,
+        currentModel: 'RiskClass',
+        currentId: riskClass.id,
+        rawHash: riskClassDefinitionHash(riskClassMapping),
+        createdByImport: createdRiskClass,
+      });
+    }
 
     let createdRiskType = false;
-    let riskType = await tx.riskType.findFirst({
-      where: {
-        tenantId: input.tenantId,
-        riskClassId: riskClass.id,
-        name: offer.className,
-      },
-    });
+    let riskType = await findRiskTypeByCanonicalName(
+      tx,
+      input.tenantId,
+      riskClass.id,
+      offer.className,
+    );
     if (!riskType) {
       riskType = await tx.riskType.create({
         data: {
@@ -300,7 +314,11 @@ export class LegacyOffersImporter {
       legacyId: offer.classId,
       currentModel: 'RiskType',
       currentId: riskType.id,
-      rawHash: sha256({ classId: offer.classId, className: offer.className }),
+      rawHash: riskTypeDefinitionHash({
+        legacyClassId: offer.classId,
+        riskTypeName: offer.className,
+        riskClass: riskClassMapping,
+      }),
       createdByImport: createdRiskType,
     });
 
@@ -309,6 +327,15 @@ export class LegacyOffersImporter {
       ...offer.offerFields,
     ]);
     for (const field of allFields) {
+      const riskFieldLegacyId = `${offer.classId}:${field.normalizedKey}`;
+      const mappedRiskField = await this.findMap(
+        tx,
+        mapCache,
+        input.tenantId,
+        'risk_type_field',
+        riskFieldLegacyId,
+      );
+      if (mappedRiskField) continue;
       const existingField = await tx.riskTypeField.findFirst({
         where: {
           tenantId: input.tenantId,
@@ -317,31 +344,32 @@ export class LegacyOffersImporter {
           fieldKey: field.normalizedKey,
         },
       });
-      if (existingField) continue;
-      const createdField = await tx.riskTypeField.create({
-        data: {
-          tenantId: input.tenantId,
-          riskTypeId: riskType.id,
-          section: RiskTypeFieldSection.OFFER_DETAILS,
-          fieldKey: field.normalizedKey,
-          label: field.key,
-          fieldType: RiskTypeFieldType.TEXT,
-          required: false,
-          isActive: true,
-        },
-      });
-      created.riskTypeFields += 1;
+      const createdField =
+        existingField ??
+        (await tx.riskTypeField.create({
+          data: {
+            tenantId: input.tenantId,
+            riskTypeId: riskType.id,
+            section: RiskTypeFieldSection.OFFER_DETAILS,
+            fieldKey: field.normalizedKey,
+            label: field.key,
+            fieldType: RiskTypeFieldType.TEXT,
+            required: false,
+            isActive: true,
+          },
+        }));
+      if (!existingField) created.riskTypeFields += 1;
       await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
         entityType: 'risk_type_field',
-        legacyId: `${offer.classId}:${field.normalizedKey}`,
+        legacyId: riskFieldLegacyId,
         currentModel: 'RiskTypeField',
         currentId: createdField.id,
         rawHash: riskFieldDefinitionHash({
-          classId: offer.classId,
+          riskTypeLegacyId: offer.classId,
           key: field.key,
           normalizedKey: field.normalizedKey,
         }),
-        createdByImport: true,
+        createdByImport: !existingField,
       });
     }
     return riskType.id;
@@ -696,6 +724,28 @@ function uniqueFields(fields: Array<{ key: string; normalizedKey: string }>) {
 
 function normalizeCounterpartyName(name: string) {
   return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+async function findRiskTypeByCanonicalName(
+  tx: LegacyImportPrisma,
+  tenantId: string,
+  riskClassId: string,
+  riskTypeName: string,
+) {
+  const riskTypes = await tx.riskType.findMany({
+    where: {
+      tenantId,
+      riskClassId,
+      archivedAt: null,
+    },
+  });
+  const normalizedName = normalizeLegacyRiskTypeName(riskTypeName);
+  return (
+    riskTypes.find(
+      (riskType) =>
+        normalizeLegacyRiskTypeName(riskType.name) === normalizedName,
+    ) ?? null
+  );
 }
 
 export function counterpartyAddressLegacyId(

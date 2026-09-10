@@ -11,6 +11,7 @@ import {
 import { LegacyOffersClassifier } from './legacy-offers.classifier';
 import { LegacyOffersNormalizer } from './legacy-offers.normalizer';
 import { LegacyOffersValidator } from './legacy-offers.validator';
+import { resolveLegacyRiskClass } from './legacy-risk-taxonomy';
 
 export type ExistingImportMap = {
   entityType: string;
@@ -46,7 +47,10 @@ export class LegacyOffersPlanGenerator {
             fixtureOfferIds.includes(String(offer.offer_id)),
           )
         : input.offers;
-    const validationIssues = this.validator.validate(selectedOffers);
+    const validationIssues = [
+      ...this.validator.validate(selectedOffers),
+      ...unmappedRiskClassIssues(selectedOffers),
+    ];
     const duplicateLegacyIds = validationIssues.filter(
       (issue) => issue.code === 'DUPLICATE_LEGACY_ID',
     );
@@ -213,4 +217,39 @@ function summarize(records: LegacyImportPlan['records']) {
     if (record.action === 'reject') summary.rejected += 1;
   }
   return summary;
+}
+
+function unmappedRiskClassIssues(
+  offers: LegacyOffer[],
+): LegacyValidationIssue[] {
+  const issues: LegacyValidationIssue[] = [];
+  offers.forEach((offer, index) => {
+    const businessName = clean(offer.classofbusiness?.business_name);
+    if (!businessName || resolveLegacyRiskClass(businessName)) return;
+    const offerId = clean(offer.offer_id);
+    issues.push({
+      offerId: offerId ?? undefined,
+      entityType: 'classofbusiness',
+      legacyId: clean(offer.classofbusiness?.class_of_business_id) ?? undefined,
+      severity: 'error',
+      code: 'UNMAPPED_LEGACY_RISK_CLASS',
+      message: `Legacy class of business '${businessName}' has no approved RiskClass mapping`,
+      path: `offers.${index}.classofbusiness.business_name`,
+      rawValue: businessName,
+    });
+  });
+  return issues;
+}
+
+function clean(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (
+    typeof value !== 'string' &&
+    typeof value !== 'number' &&
+    typeof value !== 'bigint'
+  ) {
+    return null;
+  }
+  const cleaned = String(value).trim();
+  return cleaned.length > 0 ? cleaned : null;
 }

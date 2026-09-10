@@ -19,12 +19,12 @@ export function sha256(value: unknown): string {
 }
 
 export function riskFieldDefinitionHash(input: {
-  classId: string;
+  riskTypeLegacyId: string;
   key: string;
   normalizedKey: string;
 }): string {
   return sha256({
-    classId: input.classId,
+    riskTypeLegacyId: input.riskTypeLegacyId,
     key: input.key,
     normalizedKey: input.normalizedKey,
   });

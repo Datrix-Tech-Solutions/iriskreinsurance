@@ -24,6 +24,13 @@ export class LegacyOffersRollback {
         select: { currentModel: true, currentId: true },
       });
       const ids = byModel(maps);
+      const riskTypeFieldIds = await filterIdsWithoutSurvivingImportMap(
+        tx,
+        tenantId,
+        importRunId,
+        'RiskTypeField',
+        ids.RiskTypeField ?? [],
+      );
       const deleted: Record<string, number> = {};
 
       deleted.placementParticipants = await deleteMany(
@@ -52,15 +59,26 @@ export class LegacyOffersRollback {
       });
       deleted.riskTypeFields = await deleteMany(tx, 'riskTypeField', {
         tenantId,
-        id: { in: ids.RiskTypeField ?? [] },
+        id: { in: riskTypeFieldIds },
       });
+      const riskTypeIds = await filterRiskTypeIdsSafeToDelete(
+        tx,
+        tenantId,
+        importRunId,
+        ids.RiskType ?? [],
+      );
       deleted.riskTypes = await deleteMany(tx, 'riskType', {
         tenantId,
-        id: { in: ids.RiskType ?? [] },
+        id: { in: riskTypeIds },
       });
+      const riskClassIds = await filterRiskClassIdsSafeToDelete(
+        tx,
+        tenantId,
+        ids.RiskClass ?? [],
+      );
       deleted.riskClasses = await deleteMany(tx, 'riskClass', {
         tenantId,
-        id: { in: ids.RiskClass ?? [] },
+        id: { in: riskClassIds },
       });
       deleted.currencies = await deleteMany(tx, 'currency', {
         tenantId,
@@ -87,9 +105,81 @@ export class LegacyOffersRollback {
 
 function byModel(rows: Array<{ currentModel: string; currentId: string }>) {
   return rows.reduce<Record<string, string[]>>((acc, row) => {
-    acc[row.currentModel] = [...(acc[row.currentModel] ?? []), row.currentId];
+    acc[row.currentModel] = [
+      ...new Set([...(acc[row.currentModel] ?? []), row.currentId]),
+    ];
     return acc;
   }, {});
+}
+
+async function filterRiskTypeIdsSafeToDelete(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  importRunId: string,
+  ids: string[],
+) {
+  const withoutSurvivingMaps = await filterIdsWithoutSurvivingImportMap(
+    tx,
+    tenantId,
+    importRunId,
+    'RiskType',
+    ids,
+  );
+  if (withoutSurvivingMaps.length === 0) return [];
+  const referencedPlacements = await tx.placement.findMany({
+    where: {
+      tenantId,
+      riskTypeId: { in: withoutSurvivingMaps },
+    },
+    select: { riskTypeId: true },
+  });
+  const referencedRiskTypeIds = new Set(
+    referencedPlacements
+      .map((placement) => placement.riskTypeId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  return withoutSurvivingMaps.filter((id) => !referencedRiskTypeIds.has(id));
+}
+
+async function filterRiskClassIdsSafeToDelete(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return [];
+  const survivingRiskTypes = await tx.riskType.findMany({
+    where: {
+      tenantId,
+      riskClassId: { in: ids },
+    },
+    select: { riskClassId: true },
+  });
+  const referencedRiskClassIds = new Set(
+    survivingRiskTypes.map((riskType) => riskType.riskClassId),
+  );
+  return ids.filter((id) => !referencedRiskClassIds.has(id));
+}
+
+async function filterIdsWithoutSurvivingImportMap(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  importRunId: string,
+  currentModel: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return [];
+  const survivingMaps = await tx.legacyImportMap.findMany({
+    where: {
+      tenantId,
+      sourceSystem: LEGACY_SOURCE_SYSTEM,
+      currentModel,
+      currentId: { in: ids },
+      importRunId: { not: importRunId },
+    },
+    select: { currentId: true },
+  });
+  const survivingIds = new Set(survivingMaps.map((map) => map.currentId));
+  return ids.filter((id) => !survivingIds.has(id));
 }
 
 async function deleteMany(

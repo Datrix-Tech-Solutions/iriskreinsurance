@@ -5,6 +5,11 @@ import { counterpartyAddressLegacyId } from '../legacy-offers.importer';
 import { LegacyOffersNormalizer } from '../legacy-offers.normalizer';
 import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffer } from '../legacy-import.types';
+import {
+  resolveLegacyRiskClass,
+  riskClassDefinitionHash,
+  riskTypeDefinitionHash,
+} from '../legacy-risk-taxonomy';
 
 describe('LegacyDbAwareDryRun', () => {
   it('performs read-only planning and continues when tracking tables are absent', async () => {
@@ -285,7 +290,7 @@ describe('LegacyDbAwareDryRun', () => {
         currentModel: 'RiskTypeField',
         currentId: 'risk-field-vehicle-make',
         rawHash: riskFieldDefinitionHash({
-          classId: '1',
+          riskTypeLegacyId: '1',
           key: 'Vehicle Make',
           normalizedKey: 'vehicle_make',
         }),
@@ -321,6 +326,284 @@ describe('LegacyDbAwareDryRun', () => {
       }),
     ]);
     expect(result.plan.counts.conflicts).toBe(0);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans Motor Comprehensive as RiskClass Motor and a legacy-id RiskType', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+
+    const result = await resolveOffers(prisma, [
+      offer({
+        classofbusiness: {
+          class_of_business_id: '1',
+          business_name: 'Motor Comprehensive',
+          business_details: '[{"keydetail":"Vehicle Make"}]',
+        },
+      }),
+    ]);
+
+    expect(result.resolution.plannedEntities.riskClasses).toEqual([
+      expect.objectContaining({
+        entityType: 'risk_class',
+        legacyId: 'motor',
+        action: 'create',
+      }),
+    ]);
+    expect(result.resolution.plannedEntities.riskTypes).toEqual([
+      expect.objectContaining({
+        entityType: 'risk_type',
+        legacyId: '1',
+        action: 'create',
+      }),
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans multiple RiskTypes under one shared mapped RiskClass', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+
+    const result = await resolveOffers(prisma, [
+      offer({
+        offer_id: '6',
+        classofbusiness: {
+          class_of_business_id: '40',
+          business_name: 'Performance Bond',
+          business_details: '[{"keydetail":"Bond Description"}]',
+        },
+      }),
+      offer({
+        offer_id: '7',
+        classofbusiness: {
+          class_of_business_id: '41',
+          business_name: 'Advance Payment Bond',
+          business_details: '[{"keydetail":"Bond Description"}]',
+        },
+      }),
+    ]);
+
+    expect(result.resolution.plannedEntities.riskClasses).toEqual([
+      expect.objectContaining({
+        entityType: 'risk_class',
+        legacyId: 'bond',
+        action: 'create',
+      }),
+    ]);
+    expect(result.resolution.plannedEntities.riskTypes).toEqual([
+      expect.objectContaining({ legacyId: '40', action: 'create' }),
+      expect.objectContaining({ legacyId: '41', action: 'create' }),
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans one current RiskType create for same-run aliases', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+
+    const result = await resolveOffers(prisma, [
+      retentionBondOffer('5', '8'),
+      retentionBondOffer('30', '9'),
+    ]);
+
+    expect(result.resolution.plannedEntities.riskTypes).toEqual([
+      expect.objectContaining({ legacyId: '5', action: 'create' }),
+      expect.objectContaining({
+        legacyId: '30',
+        action: 'reuse',
+        reason: 'same-run-risk-type-alias-would-reuse-current-risk-type',
+      }),
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans unioned fields and shared field alias maps for duplicate RiskTypes', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma: retentionPrisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+
+    const retention = await resolveOffers(retentionPrisma, [
+      retentionBondOffer('5', '10'),
+      retentionBondOffer('30', '11'),
+    ]);
+    const { prisma: customsPrisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+    const customs = await resolveOffers(customsPrisma, [
+      customsTransitBondOffer('44', '12'),
+      customsTransitBondOffer('65', '13'),
+    ]);
+
+    expect(retention.resolution.plannedEntities.riskTypeFields).toEqual([
+      expect.objectContaining({
+        legacyId: '5:project_description',
+        action: 'create',
+      }),
+      expect.objectContaining({
+        legacyId: '5:obligee_interest',
+        action: 'create',
+      }),
+      expect.objectContaining({
+        legacyId: '30:project_description',
+        action: 'reuse',
+        reason:
+          'same-run-risk-type-field-alias-would-reuse-current-risk-type-field',
+      }),
+      expect.objectContaining({
+        legacyId: '30:obligee_interest',
+        action: 'reuse',
+      }),
+    ]);
+    expect(
+      customs.resolution.plannedEntities.riskTypeFields.map(
+        (field) => field.legacyId,
+      ),
+    ).toEqual([
+      '44:transit',
+      '44:obligee_authority',
+      '44:nature_of_goods',
+      '65:description_of_bond',
+      '65:obligee_employer',
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans alias maps as idempotent skips on rerun', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const riskClass = resolveLegacyRiskClass('Retention Bond')!;
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'risk_type',
+        legacyId: '5',
+        currentModel: 'RiskType',
+        currentId: 'risk-type-retention',
+        rawHash: riskTypeDefinitionHash({
+          legacyClassId: '5',
+          riskTypeName: 'Retention Bond',
+          riskClass,
+        }),
+      },
+      {
+        entityType: 'risk_type',
+        legacyId: '30',
+        currentModel: 'RiskType',
+        currentId: 'risk-type-retention',
+        rawHash: riskTypeDefinitionHash({
+          legacyClassId: '30',
+          riskTypeName: 'Retention Bond',
+          riskClass,
+        }),
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [
+      retentionBondOffer('5', '14'),
+      retentionBondOffer('30', '15'),
+    ]);
+
+    expect(result.resolution.plannedEntities.riskTypes).toEqual([
+      expect.objectContaining({ legacyId: '5', action: 'skip' }),
+      expect.objectContaining({ legacyId: '30', action: 'skip' }),
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans mapped risk taxonomy maps as idempotent skips', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const riskClass = resolveLegacyRiskClass('Motor Comprehensive')!;
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'risk_class',
+        legacyId: 'motor',
+        currentModel: 'RiskClass',
+        currentId: 'risk-class-motor',
+        rawHash: riskClassDefinitionHash(riskClass),
+      },
+      {
+        entityType: 'risk_type',
+        legacyId: '1',
+        currentModel: 'RiskType',
+        currentId: 'risk-type-motor-comprehensive',
+        rawHash: riskTypeDefinitionHash({
+          legacyClassId: '1',
+          riskTypeName: 'Motor Comprehensive',
+          riskClass,
+        }),
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [
+      offer({
+        classofbusiness: {
+          class_of_business_id: '1',
+          business_name: 'Motor Comprehensive',
+          business_details: '[{"keydetail":"Vehicle Make"}]',
+        },
+      }),
+    ]);
+
+    expect(result.resolution.plannedEntities.riskClasses[0]).toEqual(
+      expect.objectContaining({
+        legacyId: 'motor',
+        action: 'skip',
+        reason: 'legacy-import-map-match',
+      }),
+    );
+    expect(result.resolution.plannedEntities.riskTypes[0]).toEqual(
+      expect.objectContaining({
+        legacyId: '1',
+        action: 'skip',
+        reason: 'legacy-import-map-match',
+      }),
+    );
     expectNoWrites(writeFns);
   });
 
@@ -503,5 +786,63 @@ function offerWithAddressIdCollision(): LegacyOffer {
         },
       },
     ],
+  });
+}
+
+function retentionBondOffer(classId: string, offerId: string): LegacyOffer {
+  return offer({
+    offer_id: offerId,
+    classofbusiness: {
+      class_of_business_id: classId,
+      business_name: 'Retention Bond',
+      business_details:
+        '[{"keydetail":"Project Description"},{"keydetail":"Obligee/Interest"}]',
+    },
+    offer_detail: {
+      policy_number: `POL-${offerId}`,
+      insured_by: 'Insured',
+      currency: 'GHS',
+      offer_details:
+        '[{"keydetail":"Project Description","value":"Project"},{"keydetail":"Obligee/Interest","value":"Authority"}]',
+    },
+  });
+}
+
+function customsTransitBondOffer(
+  classId: '44' | '65',
+  offerId: string,
+): LegacyOffer {
+  return offer({
+    offer_id: offerId,
+    classofbusiness:
+      classId === '44'
+        ? {
+            class_of_business_id: classId,
+            business_name: 'Customs Transit Bond',
+            business_details:
+              '[{"keydetail":"Transit "},{"keydetail":"Obligee/Authority "},{"keydetail":"Nature of Goods"}]',
+          }
+        : {
+            class_of_business_id: classId,
+            business_name: 'Customs Transit Bond',
+            business_details:
+              '[{"keydetail":"Description of Bond"},{"keydetail":"Obligee/Employer "}]',
+          },
+    offer_detail:
+      classId === '44'
+        ? {
+            policy_number: `POL-${offerId}`,
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details:
+              '[{"keydetail":"Transit ","value":"Road"},{"keydetail":"Obligee/Authority ","value":"GRA"},{"keydetail":"Nature of Goods","value":"Cargo"}]',
+          }
+        : {
+            policy_number: `POL-${offerId}`,
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details:
+              '[{"keydetail":"Description of Bond","value":"Bond"},{"keydetail":"Obligee/Employer ","value":"GRA"}]',
+          },
   });
 }
