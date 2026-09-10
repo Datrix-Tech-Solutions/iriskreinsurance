@@ -143,6 +143,27 @@ export class TenantAssetStorageService {
     );
   }
 
+  async resolveUserAvatarUrl(input: {
+    objectKey: string | null | undefined;
+    tenantId: string;
+    userId: string;
+  }): Promise<string | null> {
+    if (!input.objectKey) return null;
+    if (
+      !this.isUserAvatarObjectKey(input.objectKey, input.tenantId, input.userId)
+    ) {
+      return input.objectKey;
+    }
+
+    const extension = this.avatarExtension(input.objectKey);
+    const signed = await this.createSignedReadUrl({
+      objectKey: input.objectKey,
+      mimeType: this.avatarMimeType(extension),
+      fileName: `avatar.${extension}`,
+    });
+    return signed.readUrl;
+  }
+
   async delete(objectKey: string): Promise<void> {
     await this.providerForObjectKey(objectKey).delete(objectKey);
   }
@@ -181,6 +202,21 @@ export class TenantAssetStorageService {
     return reference.provider === 'cloudinary'
       ? this.cloudinary()
       : this.s3(this.s3Config());
+  }
+
+  private avatarExtension(objectKey: string): 'jpg' | 'png' | 'webp' {
+    const match = objectKey.match(/\.(jpg|jpeg|png|webp)(?:$|[?#])/i);
+    if (match?.[1]?.toLowerCase() === 'png') return 'png';
+    if (match?.[1]?.toLowerCase() === 'webp') return 'webp';
+    return 'jpg';
+  }
+
+  private avatarMimeType(extension: 'jpg' | 'png' | 'webp'): string {
+    return extension === 'png'
+      ? 'image/png'
+      : extension === 'webp'
+        ? 'image/webp'
+        : 'image/jpeg';
   }
 
   private s3(config: S3TenantAssetStorageConfig): S3TenantAssetStorageProvider {
@@ -435,7 +471,12 @@ export class CloudinaryTenantAssetStorageProvider implements TenantAssetStorageP
     }
 
     return {
-      objectKey: this.toCloudinaryObjectKey(upload.public_id),
+      objectKey: this.toCloudinaryObjectKey(
+        upload.public_id,
+        namespace === 'user-avatar'
+          ? this.extensionForMime(input.contentType)
+          : undefined,
+      ),
       mimeType: input.contentType,
       fileName,
       sizeBytes: input.body.byteLength,
@@ -556,13 +597,19 @@ export class CloudinaryTenantAssetStorageProvider implements TenantAssetStorageP
     return `${sanitizedSlug}--${shortId}`;
   }
 
-  private toCloudinaryObjectKey(publicId: string): string {
+  private toCloudinaryObjectKey(publicId: string, extension?: string): string {
     return [
       CLOUDINARY_OBJECT_KEY_PREFIX,
       CLOUDINARY_RESOURCE_TYPE,
       CLOUDINARY_DELIVERY_TYPE,
-      publicId,
+      extension ? `${publicId}.${extension}` : publicId,
     ].join(':');
+  }
+
+  private extensionForMime(contentType: string): 'jpg' | 'png' | 'webp' {
+    if (contentType === 'image/png') return 'png';
+    if (contentType === 'image/webp') return 'webp';
+    return 'jpg';
   }
 
   private parseCloudinaryObjectKey(
@@ -584,7 +631,10 @@ export class CloudinaryTenantAssetStorageProvider implements TenantAssetStorageP
       provider: 'cloudinary',
       resourceType: CLOUDINARY_RESOURCE_TYPE,
       deliveryType: CLOUDINARY_DELIVERY_TYPE,
-      publicId: parts.slice(3).join(':'),
+      publicId: parts
+        .slice(3)
+        .join(':')
+        .replace(/\.(?:jpg|jpeg|png|webp)$/i, ''),
     };
   }
 

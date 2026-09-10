@@ -31,7 +31,6 @@ export interface RequestUser {
   tenantSlug: string;
   tenantName: string;
   firstName: string;
-  avatarUrl?: string | null;
   companyRoleId?: string | null;
   moduleConfig: Record<string, boolean>;
   featureConfig: Record<string, Record<string, boolean>>;

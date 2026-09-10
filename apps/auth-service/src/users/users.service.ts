@@ -118,7 +118,27 @@ export class UsersService {
         );
     }
 
-    return { user: updated, avatarUrl: updated.avatarUrl };
+    const displayAvatarUrl = await this.resolveAvatarUrl(
+      tenantId,
+      userId,
+      updated.avatarUrl,
+    );
+    return {
+      user: { ...updated, avatarUrl: displayAvatarUrl },
+      avatarUrl: displayAvatarUrl,
+    };
+  }
+
+  private resolveAvatarUrl(
+    tenantId: string,
+    userId: string,
+    avatarUrl: string | null | undefined,
+  ) {
+    return this.storage.resolveUserAvatarUrl({
+      tenantId,
+      userId,
+      objectKey: avatarUrl,
+    });
   }
 
   private hasValidImageSignature(buffer: Buffer, mimeType: string): boolean {
@@ -390,10 +410,20 @@ export class UsersService {
     const uniqueUserIds = Array.from(new Set(userIds));
     const users = await this.prisma.user.findMany({
       where: { tenantId, id: { in: uniqueUserIds } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, avatarUrl: true },
     });
 
-    return users.map((user) => ({ userId: user.id, status: user.status }));
+    return Promise.all(
+      users.map(async (user) => ({
+        userId: user.id,
+        status: user.status,
+        avatarUrl: await this.resolveAvatarUrl(
+          tenantId,
+          user.id,
+          user.avatarUrl,
+        ),
+      })),
+    );
   }
 
   async acceptInvite(dto: AcceptInviteDto) {
@@ -569,7 +599,7 @@ export class UsersService {
   }
 
   async findAll(tenantId: string) {
-    return this.prisma.user.findMany({
+    const users = await this.prisma.user.findMany({
       where: { tenantId },
       select: {
         id: true,
@@ -589,6 +619,16 @@ export class UsersService {
         forcePasswordReset: true,
       },
     });
+    return Promise.all(
+      users.map(async (user) => ({
+        ...user,
+        avatarUrl: await this.resolveAvatarUrl(
+          tenantId,
+          user.id,
+          user.avatarUrl,
+        ),
+      })),
+    );
   }
 
   async findById(tenantId: string, id: string) {
@@ -613,7 +653,10 @@ export class UsersService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return {
+      ...user,
+      avatarUrl: await this.resolveAvatarUrl(tenantId, id, user.avatarUrl),
+    };
   }
 
   async update(tenantId: string, id: string, dto: UpdateUserDto) {
@@ -623,7 +666,7 @@ export class UsersService {
         'The super admin account cannot be modified.',
       );
     }
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: dto,
       select: {
@@ -639,6 +682,10 @@ export class UsersService {
         updatedAt: true,
       },
     });
+    return {
+      ...updated,
+      avatarUrl: await this.resolveAvatarUrl(tenantId, id, updated.avatarUrl),
+    };
   }
 
   async deactivate(tenantId: string, id: string) {

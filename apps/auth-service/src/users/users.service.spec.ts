@@ -63,6 +63,9 @@ function makeService(
     }),
     delete: jest.fn().mockResolvedValue(undefined),
     isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+    resolveUserAvatarUrl: jest
+      .fn()
+      .mockImplementation(({ objectKey }) => Promise.resolve(objectKey)),
   },
 ) {
   return new UsersService(
@@ -124,6 +127,7 @@ describe('UsersService.uploadAvatar', () => {
         }),
         delete: jest.fn().mockResolvedValue(undefined),
         isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+        resolveUserAvatarUrl: jest.fn().mockResolvedValue(updated.avatarUrl),
       };
       const service = makeService(
         prisma,
@@ -202,6 +206,7 @@ describe('UsersService.uploadAvatar', () => {
       }),
       delete: jest.fn().mockResolvedValue(undefined),
       isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest.fn().mockResolvedValue(updated.avatarUrl),
     };
     const service = makeService(
       prisma,
@@ -240,6 +245,7 @@ describe('UsersService.uploadAvatar', () => {
       }),
       delete: jest.fn().mockResolvedValue(undefined),
       isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest.fn().mockResolvedValue(updated.avatarUrl),
     };
     const service = makeService(
       prisma,
@@ -271,6 +277,7 @@ describe('UsersService.uploadAvatar', () => {
         .mockRejectedValue(new Error('storage unavailable')),
       delete: jest.fn(),
       isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest.fn(),
     };
     const service = makeService(
       prisma,
@@ -303,6 +310,59 @@ describe('UsersService.uploadAvatar', () => {
       ),
     ).rejects.toThrow('User not found');
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('UsersService avatar reads', () => {
+  it('returns a display URL while leaving the stored key untouched', async () => {
+    const prisma = makePrisma();
+    prisma.user.findFirst.mockResolvedValue({
+      id: 'user-1',
+      tenantId: 'tenant-1',
+      avatarUrl:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+      email: 'ama@acmeghana.com',
+      firstName: 'Ama',
+      lastName: 'Mensah',
+      phone: null,
+      role: 'EMPLOYEE',
+      status: 'ACTIVE',
+      isMfaEnabled: false,
+      mfaMethod: null,
+      lastLoginAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      forcePasswordReset: false,
+    });
+    const storage = {
+      storeUserAvatar: jest.fn(),
+      delete: jest.fn(),
+      isUserAvatarObjectKey: jest.fn().mockReturnValue(true),
+      resolveUserAvatarUrl: jest
+        .fn()
+        .mockResolvedValue(
+          'https://storage.example/avatar.png?signature=redacted',
+        ),
+    };
+    const service = makeService(
+      prisma,
+      makeRabbit(),
+      makeAudit(),
+      { sign: jest.fn() },
+      storage,
+    );
+
+    const result = await service.findById('tenant-1', 'user-1');
+
+    expect(result.avatarUrl).toBe(
+      'https://storage.example/avatar.png?signature=redacted',
+    );
+    expect(storage.resolveUserAvatarUrl).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      objectKey:
+        'tenant-assets/tenants/tenant-1/user-avatar/users/user-1/avatar/id.png',
+    });
   });
 });
 
