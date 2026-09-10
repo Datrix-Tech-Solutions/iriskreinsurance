@@ -1,33 +1,28 @@
 import { NavGroup } from '@/components/organisms/shared/Sidebar';
 
 import {
-  LayoutDashboard,
-  CircleDollarSign,
   Users,
-  CalendarRange,
-  Trophy,
-  Timer,
-  CalendarCheck,
-  MonitorSmartphone,
-  FileSliders,
-  Megaphone,
-  FolderKanban,
+  DollarSign,
+  Handshake,
+  House,
+  Settings,
+  UserCircle,
+  // Wallet,
+  // Trophy,
+  // CalendarRange,
 } from 'lucide-react';
 
 /* ── Icons ── */
-const DashboardIcon = () => <LayoutDashboard className="w-5 h-5" />;
-const EmployeesIcon = () => <Users className="w-5 h-5" />;
-const LeaveIcon = () => <CalendarRange className="w-5 h-5" />;
-const AppraisalIcon = () => <Trophy className="w-5 h-5" />;
-const TimeClockIcon = () => <Timer className="w-5 h-5" />;
-const SchedulingIcon = () => <CalendarCheck className="w-5 h-5" />;
-const PayrollIcon = () => <CircleDollarSign className="w-5 h-5" />;
-const AssetIcon = () => <MonitorSmartphone className="w-5 h-5" />;
-const ManagementIcon = () => <FileSliders className="w-5 h-5" />;
-const MegaphoneIcon = () => <Megaphone className="w-5 h-5" />;
-const ProjectsIcon = () => <FolderKanban className="w-5 h-5" />;
-
-/* ── Nav groups — all items default enabled & active ── */
+const DashboardIcon = () => <House className="w-5 h-5" />;
+const ProfileIcon = () => <UserCircle className="w-5 h-5" />;
+const TeamIcon = () => <Users className="w-5 h-5" />;
+const SettingsIcon = () => <Settings className="w-5 h-5" />;
+// const PayrollIcon = () => <Wallet className="w-5 h-5" />;
+// const AppraisalIcon = () => <Trophy className="w-5 h-5" />;
+// const LeaveIcon = () => <CalendarRange className="w-5 h-5" />;
+const HrIcon = () => <Users className="w-5 h-5" />;
+const AccountingIcon = () => <DollarSign className="w-5 h-5" />;
+const OperationsIcon = () => <Handshake className="w-5 h-5" />;
 
 export const HR_NAV_GROUPS: NavGroup[] = [
   {
@@ -35,113 +30,94 @@ export const HR_NAV_GROUPS: NavGroup[] = [
     items: [
       {
         key: 'dashboard',
-        label: 'Dashboard',
+        label: 'Home',
         icon: <DashboardIcon />,
         href: '',
         enabled: true,
         active: true,
         exact: true,
       },
-    ],
-  },
-  {
-    label: 'People Management',
-    items: [
+      {
+        key: 'profile',
+        label: 'Profile',
+        icon: <ProfileIcon />,
+        href: 'profile',
+        enabled: true,
+        active: true,
+      },
       {
         key: 'employees',
-        label: 'iRisk Team',
-        icon: <EmployeesIcon />,
+        label: 'My Team',
+        icon: <TeamIcon />,
         href: 'employees',
         enabled: true,
-        active: false,
-      },
-      {
-        key: 'leave',
-        label: 'Leave Management',
-        icon: <LeaveIcon />,
-        href: 'leave',
-        enabled: true,
-        active: false,
-      },
-
-      {
-        key: 'assets',
-        label: 'Asset Management',
-        icon: <AssetIcon />,
-        href: 'assets',
-        enabled: true,
-        active: false,
-      },
-      {
-        key: 'payroll',
-        label: 'Payroll',
-        icon: <PayrollIcon />,
-        href: 'payroll',
-        enabled: true,
-        active: false,
-      },
-      {
-        key: 'announcements',
-        label: 'Announcements',
-        icon: <MegaphoneIcon />,
-        href: 'announcements',
-        enabled: true,
-        active: false,
+        active: true,
       },
     ],
   },
-  {
-    label: 'Workforce Management',
-    items: [
-      {
-        key: 'timeclock',
-        label: 'Time Clock',
-        icon: <TimeClockIcon />,
-        href: 'time-clock',
-        enabled: true,
-        active: false,
-      },
-      {
-        key: 'scheduling',
-        label: 'Smart Scheduling',
-        icon: <SchedulingIcon />,
-        href: 'scheduling',
-        enabled: true,
-        active: false,
-      },
-      {
-        key: 'appraisal',
-        label: 'Appraisal',
-        icon: <AppraisalIcon />,
-        href: 'appraisal',
-        enabled: true,
-        active: false,
-      },
-      {
-        key: 'projects',
-        label: 'Projects',
-        icon: <ProjectsIcon />,
-        href: 'projects',
-        enabled: true,
-        active: false,
-      },
-    ],
-  },
-  {
-    label: 'Payroll and Compensation',
-    items: [],
-  },
-
   {
     label: 'Management',
     items: [
+      // {
+      //   key: 'leave',
+      //   label: 'Leave',
+      //   icon: <LeaveIcon />,
+      //   href: 'leave',
+      //   enabled: true,
+      //   active: true,
+      // },
+      // {
+      //   key: 'payroll',
+      //   label: 'Payroll',
+      //   icon: <PayrollIcon />,
+      //   href: 'payroll',
+      //   enabled: true,
+      //   active: true,
+      // },
+      // {
+      //   key: 'appraisal',
+      //   label: 'Performance',
+      //   icon: <AppraisalIcon />,
+      //   href: 'appraisal',
+      //   enabled: true,
+      //   active: true,
+      // },
       {
         key: 'management',
         label: 'HR Settings',
-        icon: <ManagementIcon />,
+        icon: <SettingsIcon />,
         href: 'hrmanagement',
         enabled: true,
-        active: false,
+        active: true,
+      },
+    ],
+  },
+  {
+    label: 'Modules',
+    items: [
+      {
+        key: 'hr',
+        label: 'Human Resource',
+        icon: <HrIcon />,
+        href: '/hr',
+        enabled: true,
+        active: true,
+      },
+      {
+        key: 'accounting',
+        label: 'Accounting',
+        icon: <AccountingIcon />,
+        href: '/accounting',
+        enabled: true,
+        active: true,
+      },
+      {
+        key: 'operations',
+        label: 'Reinsurance',
+        icon: <OperationsIcon />,
+        href: '/operations',
+        enabled: true,
+        active: true,
       },
     ],
   },

@@ -145,31 +145,36 @@ export function SchedulingContent({ tenantSlug }: Props) {
 
   return (
     <>
-      <SchedulingToolbar
-        search={search}
-        onSearchChange={setSearch}
-        departmentId={departmentId}
-        onDepartmentChange={setDepartmentId}
-        departments={departments}
-        weekStart={weekStart}
-        onPrevWeek={prevWeek}
-        onNextWeek={nextWeek}
-      />
+      {/* Self-contained gap between toolbar and grid, same as DataTable's own
+          flex-col gap-3 — not the outer page's gap-6, which is meant for
+          spacing between unrelated sections, not a toolbar and its content. */}
+      <div className="flex flex-col gap-3 flex-1 min-h-0">
+        <SchedulingToolbar
+          search={search}
+          onSearchChange={setSearch}
+          departmentId={departmentId}
+          onDepartmentChange={setDepartmentId}
+          departments={departments}
+          weekStart={weekStart}
+          onPrevWeek={prevWeek}
+          onNextWeek={nextWeek}
+        />
 
-      <div className="flex-1 overflow-auto">
-        {isLoading ? (
-          <SchedulingGridSkeleton />
-        ) : (
-          <SchedulingGrid
-            employees={employees}
-            weekStart={weekStart}
-            weekDates={weekDates}
-            shiftsByKey={shiftsByKey}
-            canManage={canManageSchedules}
-            onAddShift={openAdd}
-            onOpenDetail={openDetail}
-          />
-        )}
+        <div className="flex-1 overflow-auto">
+          {isLoading ? (
+            <SchedulingGridSkeleton />
+          ) : (
+            <SchedulingGrid
+              employees={employees}
+              weekStart={weekStart}
+              weekDates={weekDates}
+              shiftsByKey={shiftsByKey}
+              canManage={canManageSchedules}
+              onAddShift={openAdd}
+              onOpenDetail={openDetail}
+            />
+          )}
+        </div>
       </div>
 
       <ShiftDetailPanel

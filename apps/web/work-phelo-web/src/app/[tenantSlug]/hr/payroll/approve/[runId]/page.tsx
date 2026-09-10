@@ -109,7 +109,7 @@ export default function ApprovePayrollDetailPage({
   const [returnNote, setReturnNote] = useState('');
 
   const periodLabel = run ? payrollMonthLabel(run.month, run.year) : '—';
-  const backHref = `/${tenantSlug}/hr/payroll?tab=approve`;
+  const backHref = `/${tenantSlug}/hr/payroll/approve`;
   const payrollLabels = getPayrollLabels(run?.payrollCountry);
   const money = (value: string | number | null | undefined) =>
     formatPayrollMoney(value, run?.payrollCurrency, run?.payrollCountry);

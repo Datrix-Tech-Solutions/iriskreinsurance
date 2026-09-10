@@ -1,9 +1,9 @@
 'use client';
 
-import Image from 'next/image';
 import { Pencil, BadgeCheck } from 'lucide-react';
 import { Button } from '@/components/atoms/Button';
 import { Icons } from '@/components/atoms/icons';
+import { Avatar } from '@/components/atoms/Avatar';
 import type { Employee } from '@/types/hr';
 
 interface EmployeeDetailBannerProps {
@@ -26,26 +26,18 @@ export function EmployeeDetailBanner({
   isResending,
 }: EmployeeDetailBannerProps) {
   const name = `${employee.firstName} ${employee.lastName}`;
-  const initials = `${employee.firstName[0] ?? ''}${employee.lastName[0] ?? ''}`.toUpperCase();
   const isPendingInvite = employee.userStatus === 'PENDING_VERIFICATION';
   const isOffboarded = employee.employmentStatus === 'OFFBOARDED';
 
   return (
     <div className="w-full rounded-card overflow-hidden bg-brand">
       <div className="flex items-center gap-4 px-5 sm:px-6 py-3">
-        {employee.avatarUrl ? (
-          <Image
-            src={employee.avatarUrl}
-            alt={initials}
-            width={40}
-            height={40}
-            className="w-10 h-10 rounded-full object-cover ring-2 ring-white/20 shrink-0"
-          />
-        ) : (
-          <div className="w-10 h-10 rounded-full bg-white/10 ring-2 ring-white/20 flex items-center justify-center text-white text-sm font-bold shrink-0">
-            {initials}
-          </div>
-        )}
+        <Avatar
+          name={name}
+          avatarUrl={employee.avatarUrl}
+          size={40}
+          className="ring-2 ring-white/20"
+        />
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">

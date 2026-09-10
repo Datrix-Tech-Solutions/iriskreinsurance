@@ -23,7 +23,6 @@ import { EmployeeDetailBanner } from '@/components/molecules/hr/employees/Employ
 import { EmployeeDetailSidebar } from '@/components/molecules/hr/employees/EmployeeDetailSidebar';
 import { PersonalInformationSection } from '@/components/molecules/hr/employees/PersonalInformationSection';
 import { AssetsSection } from '@/components/molecules/hr/employees/assetSection';
-import { EmergencyContactSection } from '@/components/molecules/hr/employees/emergencyContactSection';
 import { EmployeeDetailSkeleton } from '@/components/molecules/hr/employees/employeeDetailSkeleton';
 import { TabBar } from '@/components/molecules/shared/TabBar';
 import {
@@ -168,16 +167,11 @@ export default function EmployeeDetailPage({
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className={pageContent}>
           {activeTab === 'personal' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-              <div className="lg:col-span-2 flex flex-col gap-4">
+            <div className="flex flex-col lg:flex-row gap-6 items-start">
+              <div className="shrink-0">
                 <PersonalInformationSection employee={employee} showNationalId />
-                <EmergencyContactSection employee={employee} />
-                <AssetsSection
-                  assets={employee.assets ?? []}
-                  onAssignAsset={canAssignAsset ? () => setActivePanel('assign-asset') : undefined}
-                />
               </div>
-              <div className="lg:col-span-1">
+              <div className="flex-1 min-w-0 flex flex-col gap-4">
                 <EmployeeDetailSidebar
                   employee={employee}
                   managerName={managerName}
@@ -187,6 +181,10 @@ export default function EmployeeDetailPage({
                   onEditRoles={() => setActivePanel('roles')}
                   onManagePermissions={() => setActivePanel('permissions')}
                   directPermissions={directPermissions}
+                />
+                <AssetsSection
+                  assets={employee.assets ?? []}
+                  onAssignAsset={canAssignAsset ? () => setActivePanel('assign-asset') : undefined}
                 />
               </div>
             </div>

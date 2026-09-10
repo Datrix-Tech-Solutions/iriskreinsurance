@@ -58,6 +58,7 @@ export interface EmployeeOption {
   employmentStatus: EmploymentStatus;
   department?: { id: string; name: string };
   branch?: { id: string; name: string };
+  avatarUrl?: string;
 }
 
 export interface Employee {

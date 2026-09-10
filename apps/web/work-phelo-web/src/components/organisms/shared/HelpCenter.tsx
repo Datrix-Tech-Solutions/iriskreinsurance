@@ -116,13 +116,13 @@ const WORKFLOWS: Workflow[] = [
         title: 'Create Leave Types',
         description: 'Define the types of leave available (e.g. Annual, Sick, Maternity).',
         buttonLabel: 'Go to Leave Types',
-        href: 'hrmanagement/leave-types',
+        href: 'leave/settings/types',
       },
       {
         title: 'Add Public Holidays',
         description: 'Set the public holidays that apply to your organisation.',
         buttonLabel: 'Go to Public Holidays',
-        href: 'hrmanagement/public-holidays',
+        href: 'leave/settings/holidays',
       },
       {
         title: 'Manage Leave Requests',
@@ -156,13 +156,13 @@ const WORKFLOWS: Workflow[] = [
         title: 'Create an Appraisal Template',
         description: 'Templates define the criteria and structure used to evaluate employees.',
         buttonLabel: 'Go to Templates',
-        href: 'hrmanagement/appraisal/templates',
+        href: 'appraisal/settings/templates',
       },
       {
         title: 'Launch an Appraisal Cycle',
         description: 'Create a cycle and assign the template to a group of employees.',
         buttonLabel: 'Go to Cycles',
-        href: 'hrmanagement/appraisal/cycles',
+        href: 'appraisal/settings/cycles',
       },
       {
         title: 'Track Appraisal Progress',

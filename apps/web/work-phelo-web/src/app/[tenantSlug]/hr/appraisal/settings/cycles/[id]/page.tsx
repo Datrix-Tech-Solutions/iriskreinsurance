@@ -35,7 +35,7 @@ export default function CycleDetailPage({
   return (
     <div className={`${pageContent} flex flex-col gap-6`}>
       <Link
-        href={`/${tenantSlug}/hr/hrmanagement/appraisal/cycles`}
+        href={`/${tenantSlug}/hr/appraisal/settings/cycles`}
         className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors w-fit"
       >
         <Icons.ChevronLeft />

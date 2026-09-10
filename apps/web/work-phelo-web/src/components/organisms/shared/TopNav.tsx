@@ -3,12 +3,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Bell, Home, LayoutGrid, LogOutIcon, Menu, Settings, UserIcon } from 'lucide-react';
-import { cardClass, cn, frostedAvatarStyle, popupClass } from '@/lib/utils';
-import { WorkPheloLogo } from '@/components/atoms/WorkPheloLogo';
+import { Bell, LogOutIcon, Menu, Settings, UserIcon } from 'lucide-react';
+import { cardClass, cn, popupClass } from '@/lib/utils';
+import { Avatar } from '@/components/atoms/Avatar';
+import { CompanyWordmark, WorkPheloWordmark } from '@/components/atoms/WorkPheloWordmark';
 import { Modal } from '@/components/organisms/shared/Modal';
 import { SidePanel } from '@/components/organisms/shared/SidePanel';
-import { HelpCenter } from '@/components/organisms/shared/HelpCenter';
 import { Button } from '@/components/atoms/Button';
 import { useAuthStore } from '@/store/auth.store';
 import { useLogout, useUnreadCount, useNotifications, useMarkRead, useMarkAllRead } from '@/hooks';
@@ -80,7 +80,7 @@ function formatRoleLabel(role: string): string {
 /* ── Profile dropdown ── */
 function ProfileDropdown({
   userInitials,
-  userColor,
+  avatarUrl,
   userName,
   userRole,
   onProfileClick,
@@ -89,7 +89,7 @@ function ProfileDropdown({
   isSuperAdmin,
 }: {
   userInitials: string;
-  userColor?: string;
+  avatarUrl?: string | null;
   userName?: string;
   userRole?: string;
   onProfileClick: () => void;
@@ -100,7 +100,7 @@ function ProfileDropdown({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, right: 0 });
   const anchorRef = useRef<HTMLDivElement>(null);
-  const avatarColor = userColor ?? 'var(--module-btn-bg, var(--color-brand))';
+  const avatarName = userName || userInitials || '?';
 
   useEffect(() => {
     if (!open) return;
@@ -156,10 +156,10 @@ function ProfileDropdown({
     <div className="relative" ref={anchorRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        style={frostedAvatarStyle(avatarColor)}
-        className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold backdrop-blur-sm border border-white/30 transition-opacity hover:opacity-80"
+        className="rounded-full transition-opacity hover:opacity-80"
+        aria-label="Account menu"
       >
-        {userInitials}
+        <Avatar name={avatarName} avatarUrl={avatarUrl} size={32} />
       </button>
 
       {open &&
@@ -174,12 +174,7 @@ function ProfileDropdown({
               {userName && (
                 <>
                   <div className="flex items-center gap-2.5 px-4 py-3">
-                    <span
-                      style={frostedAvatarStyle(avatarColor)}
-                      className="w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-white text-[10px] font-bold backdrop-blur-sm border border-white/30"
-                    >
-                      {userInitials}
-                    </span>
+                    <Avatar name={avatarName} avatarUrl={avatarUrl} size={28} />
                     <div className="flex flex-col min-w-0">
                       <span className="text-sm font-semibold text-gray-900 truncate">
                         {userName}
@@ -301,8 +296,6 @@ export function TopNav({
   onMenuClick,
   tabs,
   userInitials,
-  userColor,
-  logoVariant = 'text',
 }: TopNavProps) {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -366,7 +359,7 @@ export function TopNav({
         )}
 
         {/* Logo */}
-        <WorkPheloLogo className="p-2 text-base shrink" variant={logoVariant} />
+        <WorkPheloWordmark className="p-2 text-base shrink" />
 
         {/* Tabs — centered relative to the full header width */}
         {tabs && tabs.length > 1 && (
@@ -379,6 +372,12 @@ export function TopNav({
 
         {/* Right icons */}
         <div className="flex items-center gap-3">
+          {/* Powered-by credit */}
+          <span className="hidden sm:flex items-baseline gap-1 whitespace-nowrap text-xs text-gray-400 italic mr-1">
+            powered by
+            <CompanyWordmark className="text-sm" />
+          </span>
+
           {/* Bell */}
           <button
             onClick={() => setNotificationsOpen(true)}
@@ -394,10 +393,10 @@ export function TopNav({
           </button>
 
           {/* Help */}
-          {user?.role !== 'SUPER_ADMIN' && <HelpCenter />}
+          {/* {user?.role !== 'SUPER_ADMIN' && <HelpCenter />} */}
 
           {/* Apps grid — back to module launcher */}
-          <button
+          {/* <button
             className="text-(--topnav-icon-text,var(--module-btn-bg,var(--color-brand))) hover:text-(--topnav-icon-hover,var(--module-btn-bg-hover,var(--color-brand-hover))) transition-colors"
             aria-label="Apps"
             onClick={() => {
@@ -411,15 +410,15 @@ export function TopNav({
           >
             {user?.role === 'SUPER_ADMIN' ? (
               <Home className="w-5 h-5" />
-            ) : (
-              <LayoutGrid className="w-5 h-5" />
-            )}
-          </button>
+            ) : null
+            // <LayoutGrid className="w-5 h-5" />
+            }
+          </button> */}
 
           {/* Profile avatar */}
           <ProfileDropdown
             userInitials={userInitials}
-            userColor={userColor}
+            avatarUrl={user?.avatarUrl}
             userName={displayName}
             userRole={displayRole}
             onProfileClick={handleProfileClick}

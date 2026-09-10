@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/useToast';
 import { useHrManagementAccess } from '@/hooks/hr/useHrManagementAccess';
 import { useAuthStore } from '@/store/auth.store';
 import { extractError } from '@/lib/extractError';
+import { pageContent } from '@/lib/layout';
 import { DEFAULT_PERFORMANCE_BANDS } from '@/types/hr';
 import type { CompanyPolicyCycleRecipient } from '@/types/hr';
 
@@ -377,7 +378,7 @@ export default function AppraisalSettingsPage({
     );
 
   return (
-    <>
+    <div className={pageContent}>
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-8">
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           {/* Performance Bands */}
@@ -480,6 +481,6 @@ export default function AppraisalSettingsPage({
         onClose={() => setEditingBand(null)}
         onSave={handleBandSave}
       />
-    </>
+    </div>
   );
 }

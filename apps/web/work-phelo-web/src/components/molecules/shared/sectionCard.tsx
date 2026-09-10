@@ -17,8 +17,8 @@ export function SectionCard({
 }) {
   return (
     <div className={cardClass(cn('overflow-hidden', className))}>
-      <div className="px-6 py-4 border-b border-gray-100 shrink-0 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      <div className="px-6 py-2 border-b border-gray-100 shrink-0 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-(--module-btn-bg,var(--color-brand))">{title}</h3>
         {headerAction}
       </div>
       {scrollX ? (

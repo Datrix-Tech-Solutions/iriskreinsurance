@@ -1,9 +1,9 @@
-import Image from 'next/image';
 import { BadgeCheck } from 'lucide-react';
 import { DetailField } from '../../shared/DetailField';
 import { EmploymentStatusBadge } from './EmploymentStatusBadge';
 import type { Employee } from '@/types/hr';
 import { cardClass } from '@/lib/utils';
+import { Avatar } from '@/components/atoms/Avatar';
 
 interface EmployeeProfileCardProps {
   employee: Employee;
@@ -11,25 +11,13 @@ interface EmployeeProfileCardProps {
 
 export function EmployeeProfileCard({ employee }: EmployeeProfileCardProps) {
   const name = `${employee.firstName} ${employee.lastName}`;
-  const initials = `${employee.firstName[0] ?? ''}${employee.lastName[0] ?? ''}`.toUpperCase();
   const isPendingInvite = employee.userStatus === 'PENDING_VERIFICATION';
 
   return (
     <div className={cardClass('w-72 shrink-0 p-6 flex flex-col items-start gap-4')}>
       {/* Avatar */}
-      {employee.avatarUrl ? (
-        <Image
-          src={employee.avatarUrl}
-          alt={initials}
-          width={96}
-          height={96}
-          className="w-24 h-24 rounded-full object-cover"
-        />
-      ) : (
-        <div className="w-24 h-24 rounded-full bg-brand flex items-center justify-center text-white text-2xl font-bold">
-          {initials}
-        </div>
-      )}
+      <Avatar name={name} avatarUrl={employee.avatarUrl} size={96} />
+
 
       <div className="text-left">
         <div className="flex items-center gap-1.5">

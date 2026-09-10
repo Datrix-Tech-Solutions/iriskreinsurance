@@ -1,8 +1,8 @@
 'use client';
 
-import Image from 'next/image';
 import { ChevronLeft, ChevronRight, PartyPopper } from 'lucide-react';
-import { cardClass, frostedAvatarStyle } from '@/lib/utils';
+import { cardClass } from '@/lib/utils';
+import { Avatar } from '@/components/atoms/Avatar';
 
 interface Birthday {
   id: string;
@@ -30,7 +30,7 @@ export function BirthdaysCard({
     <div className={cardClass('p-5 flex flex-col shrink-0 border-gray-200')}>
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
-        <h2 className="text-base font-bold text-gray-900">Upcoming Birthdays</h2>
+        <h2 className="text-base font-bold text-(--module-btn-bg,var(--color-brand))">Upcoming Birthdays</h2>
         {birthdays.length > 0 && (
           <div className="flex items-center gap-0.5">
             <button
@@ -68,22 +68,8 @@ export function BirthdaysCard({
         >
           {birthdays.map((person) => (
             <div key={person.id} className="flex flex-col items-center gap-3 shrink-0 w-24">
-              {person.avatarUrl ? (
-                <Image
-                  src={person.avatarUrl}
-                  alt={person.initials}
-                  width={64}
-                  height={64}
-                  className="w-16 h-16 rounded-full object-cover shrink-0"
-                />
-              ) : (
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold shrink-0"
-                  style={frostedAvatarStyle(person.color)}
-                >
-                  {person.initials}
-                </div>
-              )}
+              <Avatar name={person.name} avatarUrl={person.avatarUrl} size={64} />
+
               <div className="text-center w-full">
                 <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 wrap-break-word">
                   {person.name}

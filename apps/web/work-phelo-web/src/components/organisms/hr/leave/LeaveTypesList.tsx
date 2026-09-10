@@ -129,22 +129,29 @@ export function LeaveTypesList({ tenantSlug }: Props) {
       key: 'actions',
       label: '',
       width: '150px',
-      render: (row) => (
-        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <TableButton
-            variant="blue"
-            onClick={() => {
-              setEditLeaveType(row);
-              setPanelOpen(true);
-            }}
-          >
-            View
-          </TableButton>
-          <TableButton variant="red" onClick={() => setDeleteTarget(row)}>
-            Delete
-          </TableButton>
-        </div>
-      ),
+      render: (row) => {
+        // Annual Leave is the baseline entitlement every employee relies on —
+        // it can be edited but not deleted from here.
+        const isAnnualLeave = /annual\s*leave/i.test(row.name);
+        return (
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <TableButton
+              variant="blue"
+              onClick={() => {
+                setEditLeaveType(row);
+                setPanelOpen(true);
+              }}
+            >
+              View
+            </TableButton>
+            {!isAnnualLeave && (
+              <TableButton variant="red" onClick={() => setDeleteTarget(row)}>
+                Delete
+              </TableButton>
+            )}
+          </div>
+        );
+      },
     },
   ];
 

@@ -1,12 +1,10 @@
-import { ShieldCheck } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
 import { SectionCard } from '@/components/molecules/shared/sectionCard';
-import { DetailField } from '@/components/molecules/shared/DetailField';
 import type { Employee } from '@/types/hr';
 
 interface ProfileSummaryCardProps {
   employee: Employee;
   managerName?: string;
-  roles: string[];
 }
 
 function formatDate(iso?: string | null) {
@@ -23,43 +21,73 @@ function formatEnum(val?: string | null) {
   return val.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function ProfileSummaryCard({ employee, managerName, roles }: ProfileSummaryCardProps) {
+function formatTenure(iso?: string | null) {
+  if (!iso) return undefined;
+  const start = new Date(iso);
+  const now = new Date();
+  let months =
+    (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  if (now.getDate() < start.getDate()) months -= 1;
+  if (months <= 0) return 'less than a month';
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  const parts: string[] = [];
+  if (years) parts.push(`${years} ${years === 1 ? 'year' : 'years'}`);
+  if (rem) parts.push(`${rem} ${rem === 1 ? 'month' : 'months'}`);
+  return parts.join(' ');
+}
+
+export function ProfileSummaryCard({ employee, managerName }: ProfileSummaryCardProps) {
   const probationActive =
     employee.employmentType !== 'CONTRACT' &&
     !!employee.probationEndsAt &&
     new Date(employee.probationEndsAt) >= new Date();
 
-  return (
-    <div className="flex flex-col gap-4">
-      <SectionCard title="Summary Information">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-5">
-          <DetailField label="Employee ID" value={employee.employeeNumber} />
-          <DetailField label="Date of Hire" value={formatDate(employee.hireDate)} />
-          <DetailField label="Manager" value={managerName} />
-          <DetailField label="Job Title" value={employee.jobTitle} />
-          <DetailField label="Department" value={employee.department?.name} />
-          <DetailField label="Employment Type" value={formatEnum(employee.employmentType)} />
-          <DetailField label="Employment Status" value={formatEnum(employee.employmentStatus)} />
-          {probationActive && (
-            <DetailField label="Probation End Date" value={formatDate(employee.probationEndsAt)} />
-          )}
-        </div>
-      </SectionCard>
+  const location =
+    employee.branch?.name ||
+    [employee.city, employee.region].filter(Boolean).join(', ') ||
+    undefined;
+  const joinedDate = formatDate(employee.hireDate);
+  const tenure = formatTenure(employee.hireDate);
+  const employmentType = formatEnum(employee.employmentType);
+  const strong = (text: string) => <span className="font-medium text-gray-900">{text}</span>;
 
-      {roles.length > 0 && (
-        <SectionCard title="Roles">
-          <div className="flex flex-col gap-2.5">
-            {roles.map((role) => (
-              <div key={role} className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-md bg-brand/10 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-3.5 h-3.5 text-brand" />
-                </div>
-                <span className="text-sm font-medium text-gray-700">{role}</span>
-              </div>
-            ))}
-          </div>
-        </SectionCard>
-      )}
-    </div>
+  const clauses: ReactNode[] = [];
+  if (employee.jobTitle) clauses.push(<>Works as a {strong(employee.jobTitle)}</>);
+  if (managerName) clauses.push(<>reports to {strong(managerName)}</>);
+  if (location) clauses.push(<>is based in {strong(location)}</>);
+  if (employee.department?.name || employmentType) {
+    clauses.push(
+      <>
+        {employee.department?.name && <>is part of {strong(employee.department.name)}</>}
+        {employee.department?.name && employmentType ? ' ' : ''}
+        {employmentType && <>as a {strong(employmentType.toLowerCase())} employee</>}
+      </>,
+    );
+  }
+  if (joinedDate) {
+    clauses.push(
+      <>
+        joined {strong(joinedDate)}
+        {tenure && <> ({strong(tenure)} of tenure)</>}
+      </>,
+    );
+  }
+  if (probationActive) {
+    clauses.push(<>is on probation until {strong(formatDate(employee.probationEndsAt) ?? '')}</>);
+  }
+
+  return (
+    <SectionCard title="About">
+      <p className="text-sm leading-relaxed text-gray-600">
+        {clauses.map((clause, i) => (
+          <Fragment key={i}>
+            {i === 0 ? '' : i === clauses.length - 1 ? ', and ' : ', '}
+            {clause}
+          </Fragment>
+        ))}
+        {clauses.length > 0 && '.'}
+      </p>
+    </SectionCard>
   );
 }

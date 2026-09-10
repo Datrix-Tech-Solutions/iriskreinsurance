@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* Scrollbars are invisible at rest and fade in only while actively scrolling —
    AutoHideScrollbars (mounted in layout.tsx) has no ":scrolling" CSS pseudo-
@@ -37,8 +37,12 @@
    the scrollbar track ends on hover/focus, for users who can't drive a
    scroll gesture directly. */
 @keyframes scroll-nudge-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Toast icon entrance (ToastContainer): the colored circle pops in, then the
@@ -47,14 +51,27 @@
    16px), so the same keyframe fully hides then reveals the stroke regardless
    of which icon (Check's single polyline vs X's two crossing lines) it's on. */
 @keyframes toast-icon-pop {
-  0% { transform: scale(0); opacity: 0; }
-  60% { transform: scale(1.08); opacity: 1; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes toast-icon-draw {
-  from { stroke-dashoffset: 30; }
-  to { stroke-dashoffset: 0; }
+  from {
+    stroke-dashoffset: 30;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .toast-icon-draw path,
@@ -68,41 +85,58 @@
   --background: #ffffff;
   --foreground: #171717;
 
-  --radius-card: .8rem;    /* rounded-card → cards, modals, panels  */
+  --radius-card: 0.8rem; /* rounded-card → cards, modals, panels  */
   --radius-input: 0.5rem; /* rounded-input → inputs, buttons, selects */
 
   /* Brand palette */
-  --brand:              #0D2244;   /* primary navy — use bg-brand / text-brand */
-  --brand-hover:        #162d56;   /* primary hover — use bg-brand-hover */
-  --brand-accent:       #85B7EB;   /* secondary light-blue — use bg-brand-accent */
-  --brand-tint:         #beccee;   /* active/selected bg, icon containers — use bg-brand-tint */
-  --brand-gradient-end: #1E3A8A;   /* gradient highlight — use to-brand-gradient-end or var() in inline styles */
+  --brand: #0d2244; /* primary navy — use bg-brand / text-brand */
+  --brand-hover: #162d56; /* primary hover — use bg-brand-hover */
+  --brand-accent: #85b7eb; /* secondary light-blue — use bg-brand-accent */
+  --brand-tint: #beccee; /* active/selected bg, icon containers — use bg-brand-tint */
+  --brand-gradient-end: #1e3a8a; /* gradient highlight — use to-brand-gradient-end or var() in inline styles */
 
   /* Scheduling shift colors */
-  --shift-night: #0d1b3e;   /* night-shift blocks — use bg-shift-night / border-shift-night */
- 
+  --shift-night: #0d1b3e; /* night-shift blocks — use bg-shift-night / border-shift-night */
+
   /* Module identity colors — used for icon backgrounds */
-  --module-hr:         #0047AB;  /* deep-blue  — HR */
-  --module-marketing:  #0466f8;  /* blue — Marketing */
-  --module-accounting: #2C5F34;  /* green — Accounting  064707*/
-  --module-operations: #0e1b81;  /* purple — Operations 0e1b81 163895*/
+  --module-hr: #0047ab; /* deep-blue  — HR */
+  --module-marketing: #0466f8; /* blue — Marketing */
+  --module-accounting: #2c5f34; /* green — Accounting  064707*/
+  --module-operations: #0e1b81; /* purple — Operations 0e1b81 163895*/
 
   /*UNUSED COLORS #9966CC Amethyst #2C5F34  Forest Green  #0466f8  Blue  #0047AB <- Cobalt Blue, 557C99 <- SLATE BLUE, 007FFF <- Azure, 636B2F <- Olive Green  */
 
   /* Module palette fallbacks — used outside any layout class (brand colors) */
-  --module-btn-bg:       var(--brand);
+  --module-btn-bg: var(--brand);
   --module-btn-bg-hover: var(--brand-hover);
-  --module-tint:         var(--brand-tint);
-  --module-accent:       var(--brand-accent);
+  --module-tint: var(--brand-tint);
+  --module-accent: var(--brand-accent);
   --module-gradient-end: var(--brand-gradient-end);
+
+  /* Sidebar (Sidebar.tsx) — light mode is INVERTED: a transparent panel (items
+     sit on the app background) with module-colored items and a module-fill
+     selected item (dark mode keeps the flat dark surface, re-declared under
+     [data-theme='dark'] below). The module-derived tokens (--sidebar-active-bg
+     / -item-text / -accent) are re-declared per .layout-* class — same reason
+     --module-btn-bg is; the values here are just the outside-any-module
+     fallback. --sidebar-bg is only consumed in dark mode now (light mode's
+     aside is bg-transparent). */
+  --sidebar-bg: transparent;
+  --sidebar-border: rgba(13, 34, 68, 0.08);
+  --sidebar-item-text: #374151;
+  --sidebar-active-bg: var(--module-btn-bg);
+  --sidebar-active-text: #ffffff;
+  --sidebar-accent: var(--module-btn-bg);
+  --sidebar-divider: rgba(13, 34, 68, 0.1);
+  --sidebar-label: #9ca3af;
 
   /* Neutral hover/focus tokens — dark-mode override lives in [data-theme="dark"] below.
      Light-mode values match the plain grays this replaced, so light mode is unchanged. */
   --surface-hover-subtle: var(--color-gray-50);
-  --surface-hover:        var(--color-gray-100);
-  --text-hover-strong:    var(--color-gray-900);
-  --text-hover-muted:     var(--color-gray-600);
-  --focus-ring:           var(--color-gray-400);
+  --surface-hover: var(--color-gray-100);
+  --text-hover-strong: var(--color-gray-900);
+  --text-hover-muted: var(--color-gray-600);
+  --focus-ring: var(--color-gray-400);
 
   /* Auto-hide scrollbar thumb (see the `.is-scrolling` rules above) — dark
      mode swaps to a light-on-navy wash for the same reason the other
@@ -163,15 +197,15 @@
      from the dark page/card behind it — reads as a flat black button instead of a raised
      neutral surface. These get their own dark override that's actually lighter than the
      page instead of inheriting the generic inversion. */
-  --btn-secondary-bg:     #f3f4f6;
+  --btn-secondary-bg: #f3f4f6;
   --btn-secondary-border: #d1d5db;
-  --btn-secondary-text:   #111827;
+  --btn-secondary-text: #111827;
 
   /* QuickActionsCard tiles (reinsurance + HR/dashboard) — solid white so they pop
      against the module-colored QuickActionsPanel shell. Dark-mode override below
      swaps this for a subtle light-on-navy wash instead of carrying solid white
      through unchanged, which read as an out-of-place bright tile. */
-  --qa-tile-bg:     rgba(255, 255, 255, 0.95);
+  --qa-tile-bg: rgba(255, 255, 255, 0.95);
   --qa-tile-border: rgba(255, 255, 255, 0.4);
 
   /* Deliberately-dark chip color (tooltips, selected-score buttons) — intentionally NOT
@@ -186,19 +220,19 @@
   --foreground: #ededed;
 
   --surface-hover-subtle: rgba(255, 255, 255, 0.05);
-  --surface-hover:        rgba(255, 255, 255, 0.08);
-  --text-hover-strong:    #f5f5f5;
-  --text-hover-muted:     #cbd5e1;
-  --focus-ring:           rgba(255, 255, 255, 0.35);
-  --input-border:         rgba(255, 255, 255, 0.18);
-  --scrollbar-thumb:      rgba(255, 255, 255, 0.35);
-  --glass-strong:         rgba(255, 255, 255, 0.08);
-  --glass-subtle:         rgba(255, 255, 255, 0.05);
-  --qa-tile-bg:           rgba(255, 255, 255, 0.08);
-  --qa-tile-border:       rgba(255, 255, 255, 0.14);
-  --btn-secondary-bg:     rgba(255, 255, 255, 0.1);
+  --surface-hover: rgba(255, 255, 255, 0.08);
+  --text-hover-strong: #f5f5f5;
+  --text-hover-muted: #cbd5e1;
+  --focus-ring: rgba(255, 255, 255, 0.35);
+  --input-border: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.35);
+  --glass-strong: rgba(255, 255, 255, 0.08);
+  --glass-subtle: rgba(255, 255, 255, 0.05);
+  --qa-tile-bg: rgba(255, 255, 255, 0.08);
+  --qa-tile-border: rgba(255, 255, 255, 0.14);
+  --btn-secondary-bg: rgba(255, 255, 255, 0.1);
   --btn-secondary-border: rgba(255, 255, 255, 0.22);
-  --btn-secondary-text:   #f5f5f6;
+  --btn-secondary-text: #f5f5f6;
   /* Hover-only override — undeclared in light mode, so Button.tsx's own fallback to
      --btn-secondary-text applies there (no change to light-mode hover text). */
   --btn-secondary-hover-text: #ffffff;
@@ -217,10 +251,10 @@
   /* Same solid navy as the Sidebar's dark-mode surface (--sidebar-bg: var(--background)),
      not a white tint or a translucent version of it — a light or see-through popup
      floating over a dark app would clash/look inconsistent with the sidebar. */
-  --glass-solid:          var(--background);
-  --glass-border:         rgba(255, 255, 255, 0.16);
-  --glass-highlight:      rgba(255, 255, 255, 0.14);
-  --popup-border:         rgba(255, 255, 255, 0.25);
+  --glass-solid: var(--background);
+  --glass-border: rgba(255, 255, 255, 0.16);
+  --glass-highlight: rgba(255, 255, 255, 0.14);
+  --popup-border: rgba(255, 255, 255, 0.25);
 
   /* Invert the neutral gray scale itself — every text-gray, bg-gray, and border-gray
      utility across the app reads this variable, so this is what actually makes body
@@ -240,14 +274,14 @@
      brightened. #979aa3 lands around 6.35:1, staying a clear step brighter than
      gray-400 and a clear step dimmer than gray-600 (~7.7:1) so the ramp still reads
      as an ordered progression. */
-  --color-gray-50:  #18191b;
+  --color-gray-50: #18191b;
   --color-gray-100: #202124;
   --color-gray-200: #2c2d31;
   --color-gray-300: #3f4046;
-  --color-gray-400: #A3A3A3;
-  --color-gray-500: #D4D4D4;
-  --color-gray-600: #F5F5F5;
-  --color-gray-700: #F5F5F5;
+  --color-gray-400: #a3a3a3;
+  --color-gray-500: #d4d4d4;
+  --color-gray-600: #f5f5f5;
+  --color-gray-700: #f5f5f5;
   --color-gray-800: #e2e3e7;
   --color-gray-900: #f5f5f6;
 
@@ -258,7 +292,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-app);
-  
+
   --radius-card: var(--radius-card);
   --radius-input: var(--radius-input);
 
@@ -267,18 +301,18 @@
   --text-sm--line-height: 20px;
 
   /* Brand tokens — use as bg-brand, text-brand, border-brand, etc. */
-  --color-brand:              var(--brand);
-  --color-brand-hover:        var(--brand-hover);
-  --color-brand-accent:       var(--brand-accent);
-  --color-brand-tint:         var(--brand-tint);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-tint: var(--brand-tint);
   --color-brand-gradient-end: var(--brand-gradient-end);
 
   /* Scheduling tokens */
   --color-shift-night: var(--shift-night);
 
   /* Module color tokens */
-  --color-module-hr:         var(--module-hr);
-  --color-module-marketing:  var(--module-marketing);
+  --color-module-hr: var(--module-hr);
+  --color-module-marketing: var(--module-marketing);
   --color-module-accounting: var(--module-accounting);
   --color-module-operations: var(--module-operations);
 }
@@ -295,45 +329,61 @@
    button falling back to the plain --brand color instead of the active module's color.
    :root is a genuine ancestor of portaled content, so the data-module attribute reaches
    it too. */
-.layout-hr, :root[data-module='hr'] {
-  --table-header-bg:     color-mix(in oklch, var(--module-hr) 10%, white);
+.layout-hr,
+:root[data-module='hr'] {
+  --table-header-bg: color-mix(in oklch, var(--module-hr) 10%, white);
   --table-header-shadow: color-mix(in oklch, var(--module-hr) 25%, transparent);
-  --module-btn-bg:       var(--module-hr);
+  --module-btn-bg: var(--module-hr);
   --module-btn-bg-hover: color-mix(in oklch, var(--module-hr) 82%, black);
-  --module-tint:         color-mix(in oklch, var(--module-hr) 12%, white);
-  --module-accent:       color-mix(in oklch, var(--module-hr) 40%, white);
+  --module-tint: color-mix(in oklch, var(--module-hr) 12%, white);
+  --module-accent: color-mix(in oklch, var(--module-hr) 40%, white);
   --module-gradient-end: color-mix(in oklch, var(--module-hr) 88%, black);
-  --module-border:       color-mix(in oklch, var(--module-hr) 28%, white);
+  --module-border: color-mix(in oklch, var(--module-hr) 28%, white);
+  --sidebar-active-bg: var(--module-hr);
+  --sidebar-item-text: color-mix(in oklch, var(--module-hr) 88%, black);
+  --sidebar-accent: var(--module-hr);
 }
-.layout-operations, :root[data-module='operations'] {
-  --table-header-bg:     color-mix(in oklch, var(--module-operations) 10%, white);
+.layout-operations,
+:root[data-module='operations'] {
+  --table-header-bg: color-mix(in oklch, var(--module-operations) 10%, white);
   --table-header-shadow: color-mix(in oklch, var(--module-operations) 25%, transparent);
-  --module-btn-bg:       var(--module-operations);
+  --module-btn-bg: var(--module-operations);
   --module-btn-bg-hover: color-mix(in oklch, var(--module-operations) 82%, black);
-  --module-tint:         color-mix(in oklch, var(--module-operations) 12%, white);
-  --module-accent:       color-mix(in oklch, var(--module-operations) 40%, white);
+  --module-tint: color-mix(in oklch, var(--module-operations) 12%, white);
+  --module-accent: color-mix(in oklch, var(--module-operations) 40%, white);
   --module-gradient-end: color-mix(in oklch, var(--module-operations) 88%, black);
-  --module-border:       color-mix(in oklch, var(--module-operations) 28%, white);
+  --module-border: color-mix(in oklch, var(--module-operations) 28%, white);
+  --sidebar-active-bg: var(--module-operations);
+  --sidebar-item-text: color-mix(in oklch, var(--module-operations) 88%, black);
+  --sidebar-accent: var(--module-operations);
 }
-.layout-accounting, :root[data-module='accounting'] {
-  --table-header-bg:     color-mix(in oklch, var(--module-accounting) 20%, white);
+.layout-accounting,
+:root[data-module='accounting'] {
+  --table-header-bg: color-mix(in oklch, var(--module-accounting) 20%, white);
   --table-header-shadow: color-mix(in oklch, var(--module-accounting) 45%, transparent);
-  --module-btn-bg:       var(--module-accounting);
+  --module-btn-bg: var(--module-accounting);
   --module-btn-bg-hover: color-mix(in oklch, var(--module-accounting) 82%, black);
-  --module-tint:         color-mix(in oklch, var(--module-accounting) 12%, white);
-  --module-accent:       color-mix(in oklch, var(--module-accounting) 40%, white);
+  --module-tint: color-mix(in oklch, var(--module-accounting) 12%, white);
+  --module-accent: color-mix(in oklch, var(--module-accounting) 40%, white);
   --module-gradient-end: color-mix(in oklch, var(--module-accounting) 88%, black);
-  --module-border:       color-mix(in oklch, var(--module-accounting) 28%, white);
+  --module-border: color-mix(in oklch, var(--module-accounting) 28%, white);
+  --sidebar-active-bg: var(--module-accounting);
+  --sidebar-item-text: color-mix(in oklch, var(--module-accounting) 88%, black);
+  --sidebar-accent: var(--module-accounting);
 }
-.layout-marketing, :root[data-module='marketing'] {
-  --table-header-bg:     color-mix(in oklch, var(--module-marketing) 20%, white);
+.layout-marketing,
+:root[data-module='marketing'] {
+  --table-header-bg: color-mix(in oklch, var(--module-marketing) 20%, white);
   --table-header-shadow: color-mix(in oklch, var(--module-marketing) 45%, transparent);
-  --module-btn-bg:       var(--module-marketing);
+  --module-btn-bg: var(--module-marketing);
   --module-btn-bg-hover: color-mix(in oklch, var(--module-marketing) 82%, black);
-  --module-tint:         color-mix(in oklch, var(--module-marketing) 12%, white);
-  --module-accent:       color-mix(in oklch, var(--module-marketing) 40%, white);
+  --module-tint: color-mix(in oklch, var(--module-marketing) 12%, white);
+  --module-accent: color-mix(in oklch, var(--module-marketing) 40%, white);
   --module-gradient-end: color-mix(in oklch, var(--module-marketing) 88%, black);
-  --module-border:       color-mix(in oklch, var(--module-marketing) 28%, white);
+  --module-border: color-mix(in oklch, var(--module-marketing) 28%, white);
+  --sidebar-active-bg: var(--module-marketing);
+  --sidebar-item-text: color-mix(in oklch, var(--module-marketing) 88%, black);
+  --sidebar-accent: var(--module-marketing);
 }
 
 /* Dark-mode module overrides — only the tokens previously mixed toward *white*
@@ -359,45 +409,49 @@
    green text on dark green background). --module-accent — already a lighter,
    toward-white tint of the same module color, used elsewhere for icons/blobs — gives
    enough contrast without introducing a new color. */
-:root[data-theme='dark'] .layout-hr, :root[data-theme='dark'][data-module='hr'] {
+:root[data-theme='dark'] .layout-hr,
+:root[data-theme='dark'][data-module='hr'] {
   --table-header-bg: color-mix(in oklch, var(--module-hr) 30%, #3f4046);
-  --module-tint:      color-mix(in oklch, var(--module-hr) 24%, black);
-  --module-border:    color-mix(in oklch, var(--module-hr) 32%, black);
-  --sidebar-border:    var(--module-hr);
+  --module-tint: color-mix(in oklch, var(--module-hr) 24%, black);
+  --module-border: color-mix(in oklch, var(--module-hr) 32%, black);
+  --sidebar-border: var(--module-hr);
   --sidebar-active-bg: var(--module-hr);
   --table-header-text: var(--module-accent);
-  --tab-active-text:   var(--module-accent);
-  --topnav-icon-text:  var(--module-accent);
+  --tab-active-text: var(--module-accent);
+  --topnav-icon-text: var(--module-accent);
 }
-:root[data-theme='dark'] .layout-operations, :root[data-theme='dark'][data-module='operations'] {
+:root[data-theme='dark'] .layout-operations,
+:root[data-theme='dark'][data-module='operations'] {
   --table-header-bg: color-mix(in oklch, var(--module-operations) 30%, #3f4046);
-  --module-tint:      color-mix(in oklch, var(--module-operations) 24%, black);
-  --module-border:    color-mix(in oklch, var(--module-operations) 32%, black);
-  --sidebar-border:    var(--module-operations);
+  --module-tint: color-mix(in oklch, var(--module-operations) 24%, black);
+  --module-border: color-mix(in oklch, var(--module-operations) 32%, black);
+  --sidebar-border: var(--module-operations);
   --sidebar-active-bg: var(--module-operations);
   --table-header-text: var(--module-accent);
-  --tab-active-text:   var(--module-accent);
-  --topnav-icon-text:  var(--module-accent);
+  --tab-active-text: var(--module-accent);
+  --topnav-icon-text: var(--module-accent);
 }
-:root[data-theme='dark'] .layout-accounting, :root[data-theme='dark'][data-module='accounting'] {
+:root[data-theme='dark'] .layout-accounting,
+:root[data-theme='dark'][data-module='accounting'] {
   --table-header-bg: color-mix(in oklch, var(--module-accounting) 30%, #3f4046);
-  --module-tint:      color-mix(in oklch, var(--module-accounting) 24%, black);
-  --module-border:    color-mix(in oklch, var(--module-accounting) 32%, black);
-  --sidebar-border:    var(--module-accounting);
+  --module-tint: color-mix(in oklch, var(--module-accounting) 24%, black);
+  --module-border: color-mix(in oklch, var(--module-accounting) 32%, black);
+  --sidebar-border: var(--module-accounting);
   --sidebar-active-bg: var(--module-accounting);
   --table-header-text: var(--module-accent);
-  --tab-active-text:   var(--module-accent);
-  --topnav-icon-text:  var(--module-accent);
+  --tab-active-text: var(--module-accent);
+  --topnav-icon-text: var(--module-accent);
 }
-:root[data-theme='dark'] .layout-marketing, :root[data-theme='dark'][data-module='marketing'] {
+:root[data-theme='dark'] .layout-marketing,
+:root[data-theme='dark'][data-module='marketing'] {
   --table-header-bg: color-mix(in oklch, var(--module-marketing) 30%, #3f4046);
-  --module-tint:      color-mix(in oklch, var(--module-marketing) 24%, black);
-  --module-border:    color-mix(in oklch, var(--module-marketing) 32%, black);
-  --sidebar-border:    var(--module-marketing);
+  --module-tint: color-mix(in oklch, var(--module-marketing) 24%, black);
+  --module-border: color-mix(in oklch, var(--module-marketing) 32%, black);
+  --sidebar-border: var(--module-marketing);
   --sidebar-active-bg: var(--module-marketing);
   --table-header-text: var(--module-accent);
-  --tab-active-text:   var(--module-accent);
-  --topnav-icon-text:  var(--module-accent);
+  --tab-active-text: var(--module-accent);
+  --topnav-icon-text: var(--module-accent);
 }
 
 /* Sidebar dark-mode tokens — undeclared in light mode (Sidebar.tsx's own
@@ -414,10 +468,16 @@
    class redefines it — so a single declaration resolves correctly
    everywhere, unlike the module-scoped tokens above. */
 :root[data-theme='dark'] {
-  --sidebar-bg:          var(--background);
-  --sidebar-border:      var(--brand);
-  --sidebar-active-bg:   var(--brand);
+  --sidebar-bg: var(--background);
+  --sidebar-border: var(--brand);
+  --sidebar-active-bg: var(--brand);
   --sidebar-active-text: #ffffff;
+  /* Dark mode keeps the original on-dark-surface treatment (white-ish items,
+     white accent) — undoes the light-mode inversion tokens above. */
+  --sidebar-item-text: rgba(255, 255, 255, 0.8);
+  --sidebar-accent: #ffffff;
+  --sidebar-divider: rgba(255, 255, 255, 0.2);
+  --sidebar-label: rgba(255, 255, 255, 0.5);
 }
 
 /* Slow-drifting shapes behind <AppBackground> content — same hue as the flat fill
