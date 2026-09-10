@@ -20,6 +20,42 @@ describe('LegacyOffersImporter', () => {
     );
   });
 
+  it('uses only the transaction client for business writes', async () => {
+    const { prisma, rootDelegates, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(applyInput([offer()]));
+
+    for (const delegate of rootDelegates) {
+      expect(delegate.create).not.toHaveBeenCalled();
+      expect(delegate.findFirst).not.toHaveBeenCalled();
+      expect(delegate.findUnique).not.toHaveBeenCalled();
+      expect(delegate.findMany).not.toHaveBeenCalled();
+    }
+    expect(tx.placement.create).toHaveBeenCalledTimes(1);
+    expect(tx.placementParticipant.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not use the transaction client after the callback closes', async () => {
+    const { prisma, txState } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(applyInput([offer()]));
+
+    expect(txState.usedAfterClose).toBe(false);
+  });
+
+  it('propagates transaction failure so a failed apply remains atomic', async () => {
+    const { prisma, transactionState, tx } = prismaMock({
+      failModel: 'placement',
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply(applyInput([offer()])),
+    ).rejects.toThrow('placement create failed');
+
+    expect(transactionState.rolledBack).toBe(true);
+    expect(tx.legacyImportRun.update).not.toHaveBeenCalled();
+  });
+
   it('does not apply NEEDS_FINANCIAL_REVIEW or DATA_MISMATCH offers even if plan actions are malformed', async () => {
     const sources = [
       offer({ offer_id: 'review-1', payment_status: 'PAID' }),
@@ -49,41 +85,6 @@ describe('LegacyOffersImporter', () => {
     expect(tx.placementParticipant.create).not.toHaveBeenCalled();
   });
 
-  it('uses only the transaction client for business writes', async () => {
-    const { prisma, rootDelegates, tx } = prismaMock();
-
-    await new LegacyOffersImporter(prisma).apply(applyInput([offer()]));
-
-    for (const delegate of rootDelegates) {
-      expect(delegate.create).not.toHaveBeenCalled();
-      expect(delegate.findFirst).not.toHaveBeenCalled();
-      expect(delegate.findUnique).not.toHaveBeenCalled();
-    }
-    expect(tx.placement.create).toHaveBeenCalledTimes(1);
-    expect(tx.placementParticipant.create).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not use the transaction client after the callback closes', async () => {
-    const { prisma, txState } = prismaMock();
-
-    await new LegacyOffersImporter(prisma).apply(applyInput([offer()]));
-
-    expect(txState.usedAfterClose).toBe(false);
-  });
-
-  it('propagates transaction failure so a failed apply remains atomic', async () => {
-    const { prisma, transactionState, tx } = prismaMock({
-      failModel: 'placement',
-    });
-
-    await expect(
-      new LegacyOffersImporter(prisma).apply(applyInput([offer()])),
-    ).rejects.toThrow('placement create failed');
-
-    expect(transactionState.rolledBack).toBe(true);
-    expect(tx.legacyImportRun.update).not.toHaveBeenCalled();
-  });
-
   it('preserves idempotency when exact import maps already exist', async () => {
     const source = offer();
     const input = applyInput([source]);
@@ -91,7 +92,7 @@ describe('LegacyOffersImporter', () => {
     const { prisma, tx } = prismaMock({
       existingMaps: {
         currency: { GHS: 'currency-existing' },
-        classofbusiness: { '1': 'risk-class-existing' },
+        risk_type: { '1': 'risk-type-existing' },
         insurer: { '15': 'cedant-existing' },
         reinsurer: { r1: 'reinsurer-existing' },
         offer: { [normalized.offerId]: 'placement-existing' },
@@ -99,7 +100,6 @@ describe('LegacyOffersImporter', () => {
           [normalized.participants[0].participantId]: 'participant-existing',
         },
       },
-      existingRiskTypeId: 'risk-type-existing',
     });
 
     const result = await new LegacyOffersImporter(prisma).apply(input);
@@ -166,31 +166,331 @@ describe('LegacyOffersImporter', () => {
     expect(riskFieldMapCreate).toBeDefined();
     expect(legacyImportMapData(riskFieldMapCreate![0]).rawHash).toBe(
       riskFieldDefinitionHash({
-        classId: '1',
+        riskTypeLegacyId: '1',
         key: 'Vehicle Make',
         normalizedKey: 'vehicle_make',
       }),
     );
   });
+
+  it('maps Motor Comprehensive to RiskClass Motor and RiskType Motor Comprehensive', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        offer({
+          classofbusiness: {
+            class_of_business_id: '1',
+            business_name: 'Motor Comprehensive',
+            business_details: '[{"keydetail":"Vehicle Make"}]',
+          },
+        }),
+      ]),
+    );
+
+    expect(createData(tx.riskClass).name).toBe('Motor');
+    expect(createData(tx.riskType)).toEqual(
+      expect.objectContaining({
+        riskClassId: 'riskClass-created-1',
+        name: 'Motor Comprehensive',
+      }),
+    );
+  });
+
+  it('maps Performance Bond to RiskClass Bond', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        offer({
+          classofbusiness: {
+            class_of_business_id: '40',
+            business_name: 'Performance Bond',
+            business_details: '[{"keydetail":"Bond Description"}]',
+          },
+        }),
+      ]),
+    );
+
+    expect(createData(tx.riskClass).name).toBe('Bond');
+    expect(createData(tx.riskType).name).toBe('Performance Bond');
+  });
+
+  it('creates or reuses one parent RiskClass for multiple mapped RiskTypes', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        offer({
+          offer_id: '1',
+          classofbusiness: {
+            class_of_business_id: '40',
+            business_name: 'Performance Bond',
+            business_details: '[{"keydetail":"Bond Description"}]',
+          },
+        }),
+        offer({
+          offer_id: '2',
+          classofbusiness: {
+            class_of_business_id: '41',
+            business_name: 'Advance Payment Bond',
+            business_details: '[{"keydetail":"Bond Description"}]',
+          },
+          offer_detail: {
+            policy_number: 'POL-2',
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details:
+              '[{"keydetail":"Bond Description","value":"Advance"}]',
+          },
+        }),
+      ]),
+    );
+
+    expect(tx.riskClass.create).toHaveBeenCalledTimes(1);
+    expect(tx.riskType.create).toHaveBeenCalledTimes(2);
+    expect(mapCreates(tx, 'risk_class', 'bond')).toBe(1);
+  });
+
+  it('keeps RiskType fields attached to the matching RiskType', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        offer({
+          offer_id: '1',
+          classofbusiness: {
+            class_of_business_id: '1',
+            business_name: 'Motor Comprehensive',
+            business_details: '[{"keydetail":"Description"}]',
+          },
+          offer_detail: {
+            policy_number: 'POL-1',
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details: '[{"keydetail":"Description","value":"Motor"}]',
+          },
+        }),
+        offer({
+          offer_id: '2',
+          classofbusiness: {
+            class_of_business_id: '40',
+            business_name: 'Performance Bond',
+            business_details: '[{"keydetail":"Description"}]',
+          },
+          offer_detail: {
+            policy_number: 'POL-2',
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details: '[{"keydetail":"Description","value":"Bond"}]',
+          },
+        }),
+      ]),
+    );
+
+    expect(createData(tx.riskTypeField, 0)).toEqual(
+      expect.objectContaining({
+        riskTypeId: 'riskType-created-1',
+        fieldKey: 'description',
+      }),
+    );
+    expect(createData(tx.riskTypeField, 1)).toEqual(
+      expect.objectContaining({
+        riskTypeId: 'riskType-created-2',
+        fieldKey: 'description',
+      }),
+    );
+  });
+
+  it('does not create risk taxonomy rows when exact maps already exist', async () => {
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        risk_class: { motor: 'risk-class-existing' },
+        risk_type: { '1': 'risk-type-existing' },
+        offer: { '1': 'placement-existing' },
+      },
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        offer({
+          classofbusiness: {
+            class_of_business_id: '1',
+            business_name: 'Motor Comprehensive',
+            business_details: '[{"keydetail":"Vehicle Make"}]',
+          },
+        }),
+      ]),
+    );
+
+    expect(result.created.riskClasses).toBe(0);
+    expect(result.created.riskTypes).toBe(0);
+    expect(tx.riskClass.create).not.toHaveBeenCalled();
+    expect(tx.riskType.create).not.toHaveBeenCalled();
+  });
+
+  it('creates one current RiskType and separate same-run alias maps', async () => {
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([retentionBondOffer('5', '1'), retentionBondOffer('30', '2')]),
+    );
+
+    expect(result.created.riskTypes).toBe(1);
+    expect(tx.riskType.create).toHaveBeenCalledTimes(1);
+    expect(mapCreates(tx, 'risk_type', '5')).toBe(1);
+    expect(mapCreates(tx, 'risk_type', '30')).toBe(1);
+    expect(mapCurrentIds(tx, 'risk_type')).toEqual([
+      'riskType-created-1',
+      'riskType-created-1',
+    ]);
+  });
+
+  it('reuses an alias RiskType created by a separate import run', async () => {
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        risk_class: { bond: 'risk-class-bond' },
+        risk_type: { '5': 'risk-type-retention-bond' },
+      },
+      existingRecords: {
+        riskClass: [{ id: 'risk-class-bond', name: 'Bond' }],
+        riskType: [
+          {
+            id: 'risk-type-retention-bond',
+            tenantId: 'tenant-1',
+            riskClassId: 'risk-class-bond',
+            name: 'Retention Bond',
+            archivedAt: null,
+          },
+        ],
+      },
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([retentionBondOffer('30', '2')]),
+    );
+
+    expect(result.created.riskTypes).toBe(0);
+    expect(tx.riskType.create).not.toHaveBeenCalled();
+    expect(mapCreates(tx, 'risk_type', '30')).toBe(1);
+    expect(mapCurrentIds(tx, 'risk_type')).toEqual([
+      'risk-type-retention-bond',
+    ]);
+  });
+
+  it('unions fields across aliased legacy RiskTypes', async () => {
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        customsTransitBondOffer('44', '1'),
+        customsTransitBondOffer('65', '2'),
+      ]),
+    );
+
+    expect(result.created.riskTypes).toBe(1);
+    expect(result.created.riskTypeFields).toBe(5);
+    expect(riskTypeFieldCreateKeys(tx)).toEqual([
+      'transit',
+      'obligee_authority',
+      'nature_of_goods',
+      'description_of_bond',
+      'obligee_employer',
+    ]);
+    expect(mapCreates(tx, 'risk_type', '44')).toBe(1);
+    expect(mapCreates(tx, 'risk_type', '65')).toBe(1);
+  });
+
+  it('creates separate shared-field alias maps without double-creating fields', async () => {
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([retentionBondOffer('5', '1'), retentionBondOffer('30', '2')]),
+    );
+
+    expect(result.created.riskTypeFields).toBe(2);
+    expect(mapCreates(tx, 'risk_type_field', '5:project_description')).toBe(1);
+    expect(mapCreates(tx, 'risk_type_field', '30:project_description')).toBe(1);
+    expect(mapCurrentIds(tx, 'risk_type_field')).toEqual([
+      'riskTypeField-created-1',
+      'riskTypeField-created-2',
+      'riskTypeField-created-1',
+      'riskTypeField-created-2',
+    ]);
+  });
+
+  it('does not recreate exact alias maps on an idempotent rerun', async () => {
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        risk_class: { bond: 'risk-class-bond' },
+        risk_type: { '5': 'risk-type-retention-bond' },
+        risk_type_field: {
+          '5:project_description': 'field-project',
+          '5:obligee_interest': 'field-obligee',
+        },
+        offer: { '1': 'placement-existing' },
+      },
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([retentionBondOffer('5', '1')]),
+    );
+
+    expect(result.created.riskTypes).toBe(0);
+    expect(result.created.riskTypeFields).toBe(0);
+    expect(tx.riskType.create).not.toHaveBeenCalled();
+    expect(tx.riskTypeField.create).not.toHaveBeenCalled();
+    expect(mapCreates(tx, 'risk_type', '5')).toBe(0);
+    expect(mapCreates(tx, 'risk_type_field', '5:project_description')).toBe(0);
+  });
 });
 
 type ExistingMaps = Record<string, Record<string, string>>;
+type ExistingRecords = Record<string, Array<Record<string, unknown>>>;
+type TxState = { active: boolean; usedAfterClose: boolean };
+type MockState = {
+  maps: Map<string, { currentId: string; currentModel: string }>;
+  counters: Map<string, number>;
+  records: Map<string, Array<Record<string, unknown>>>;
+};
 type PrismaDelegate = {
   findFirst: jest.Mock<Promise<unknown>, [unknown]>;
+  findMany: jest.Mock<Promise<unknown[]>, [unknown]>;
   findUnique: jest.Mock<Promise<unknown>, [unknown]>;
-  create: jest.Mock<Promise<{ id: string }>, [unknown]>;
-  update: jest.Mock<Promise<{ id: string }>, [unknown]>;
+  create: jest.Mock<Promise<Record<string, unknown>>, [unknown]>;
+  update: jest.Mock<Promise<Record<string, unknown>>, [unknown]>;
 };
 
 function prismaMock(
   options: {
     existingMaps?: ExistingMaps;
-    existingRiskTypeId?: string;
+    existingRecords?: ExistingRecords;
     failModel?: string;
   } = {},
 ) {
-  const txState = { active: false, usedAfterClose: false };
-  const tx = transactionMock(txState, options);
+  const txState: TxState = { active: false, usedAfterClose: false };
+  const state: MockState = {
+    maps: new Map(),
+    counters: new Map(),
+    records: new Map(),
+  };
+  for (const [model, records] of Object.entries(
+    options.existingRecords ?? {},
+  )) {
+    state.records.set(model, records);
+  }
+  for (const [entityType, byLegacyId] of Object.entries(
+    options.existingMaps ?? {},
+  )) {
+    for (const [legacyId, currentId] of Object.entries(byLegacyId)) {
+      state.maps.set(`${entityType}:${legacyId}`, {
+        currentId,
+        currentModel: currentModelFor(entityType),
+      });
+    }
+  }
+
+  const tx = transactionMock(txState, state, options);
   const transactionState = { rolledBack: false };
   const transaction = jest.fn(
     async (
@@ -210,9 +510,9 @@ function prismaMock(
     },
   );
   const rootDelegates = [
-    delegate('rootCurrency', txState, { root: true }),
-    delegate('rootCounterparty', txState, { root: true }),
-    delegate('rootPlacement', txState, { root: true }),
+    delegate('rootCurrency', txState, state, { root: true }),
+    delegate('rootCounterparty', txState, state, { root: true }),
+    delegate('rootPlacement', txState, state, { root: true }),
   ];
   const prisma = {
     $transaction: transaction,
@@ -224,54 +524,39 @@ function prismaMock(
 }
 
 function transactionMock(
-  txState: { active: boolean; usedAfterClose: boolean },
-  options: {
-    existingMaps?: ExistingMaps;
-    existingRiskTypeId?: string;
-    failModel?: string;
-  },
+  txState: TxState,
+  state: MockState,
+  options: { failModel?: string },
 ) {
-  const maps = new Map<string, { currentId: string; currentModel: string }>();
-  for (const [entityType, byLegacyId] of Object.entries(
-    options.existingMaps ?? {},
-  )) {
-    for (const [legacyId, currentId] of Object.entries(byLegacyId)) {
-      maps.set(`${entityType}:${legacyId}`, {
-        currentId,
-        currentModel: currentModelFor(entityType),
-      });
-    }
-  }
   return {
-    legacyImportRun: delegate('legacyImportRun', txState),
-    legacyImportMap: legacyImportMapDelegate(txState, maps),
-    currency: delegate('currency', txState, { failModel: options.failModel }),
-    counterparty: delegate('counterparty', txState, {
-      failModel: options.failModel,
-    }),
-    counterpartyAddress: delegate('counterpartyAddress', txState, {
-      failModel: options.failModel,
-    }),
-    riskClass: delegate('riskClass', txState, { failModel: options.failModel }),
-    riskType: delegate('riskType', txState, {
-      existingRiskTypeId: options.existingRiskTypeId,
-      failModel: options.failModel,
-    }),
-    riskTypeField: delegate('riskTypeField', txState, {
-      failModel: options.failModel,
-    }),
-    placement: delegate('placement', txState, { failModel: options.failModel }),
-    placementParticipant: delegate('placementParticipant', txState, {
-      failModel: options.failModel,
-    }),
+    legacyImportRun: delegate('legacyImportRun', txState, state, options),
+    legacyImportMap: legacyImportMapDelegate(txState, state),
+    currency: delegate('currency', txState, state, options),
+    counterparty: delegate('counterparty', txState, state, options),
+    counterpartyAddress: delegate(
+      'counterpartyAddress',
+      txState,
+      state,
+      options,
+    ),
+    riskClass: delegate('riskClass', txState, state, options),
+    riskType: delegate('riskType', txState, state, options),
+    riskTypeField: delegate('riskTypeField', txState, state, options),
+    placement: delegate('placement', txState, state, options),
+    placementParticipant: delegate(
+      'placementParticipant',
+      txState,
+      state,
+      options,
+    ),
   };
 }
 
 function delegate(
   model: string,
-  txState: { active: boolean; usedAfterClose: boolean },
+  txState: TxState,
+  state: MockState,
   options: {
-    existingRiskTypeId?: string;
     failModel?: string;
     root?: boolean;
   } = {},
@@ -280,57 +565,72 @@ function delegate(
     if (!options.root && !txState.active) txState.usedAfterClose = true;
   };
   return {
-    findFirst: jest.fn((_input: unknown) => {
-      void _input;
+    findFirst: jest.fn((input: unknown) => {
       assertActive();
-      if (model === 'riskType' && options.existingRiskTypeId) {
-        return Promise.resolve({ id: options.existingRiskTypeId });
+      const where = (input as { where?: Record<string, unknown> }).where;
+      if (where?.id) {
+        return Promise.resolve(
+          findRecord(state.records.get(model) ?? [], where) ?? { id: where.id },
+        );
       }
-      return Promise.resolve(null);
+      return Promise.resolve(findRecord(state.records.get(model) ?? [], where));
+    }),
+    findMany: jest.fn((input: unknown) => {
+      assertActive();
+      const where = (input as { where?: Record<string, unknown> }).where;
+      return Promise.resolve(
+        (state.records.get(model) ?? []).filter((record) =>
+          matchesWhere(record, where),
+        ),
+      );
     }),
     findUnique: jest.fn((_input: unknown) => {
       void _input;
       assertActive();
       return Promise.resolve(null);
     }),
-    create: jest.fn((_input: unknown) => {
-      void _input;
+    create: jest.fn((input: unknown) => {
       assertActive();
       if (model === options.failModel) {
         return Promise.reject(new Error(`${model} create failed`));
       }
-      return Promise.resolve({ id: `${model}-created` });
+      const next = (state.counters.get(model) ?? 0) + 1;
+      state.counters.set(model, next);
+      const id = `${model}-created-${next}`;
+      const record = {
+        id,
+        ...(input as { data?: Record<string, unknown> }).data,
+      };
+      state.records.set(model, [...(state.records.get(model) ?? []), record]);
+      return Promise.resolve(record);
     }),
-    update: jest.fn((_input: unknown) => {
-      void _input;
+    update: jest.fn((input: unknown) => {
       assertActive();
-      return Promise.resolve({ id: `${model}-updated` });
+      return Promise.resolve({
+        id: `${model}-updated`,
+        ...(input as { data?: Record<string, unknown> }).data,
+      });
     }),
   };
 }
 
 function legacyImportMapDelegate(
-  txState: { active: boolean; usedAfterClose: boolean },
-  maps: Map<string, { currentId: string; currentModel: string }>,
+  txState: TxState,
+  state: MockState,
 ): PrismaDelegate {
-  const base = delegate('legacyImportMap', txState);
+  const base = delegate('legacyImportMap', txState, state);
   base.findUnique.mockImplementation((input: unknown) => {
     if (!txState.active) txState.usedAfterClose = true;
     const where = legacyImportMapWhere(input);
-    const found = maps.get(`${where.entityType}:${where.legacyId}`);
+    const found = state.maps.get(`${where.entityType}:${where.legacyId}`);
     return Promise.resolve(
-      found
-        ? {
-            ...found,
-            rawHash: 'existing-hash',
-          }
-        : null,
+      found ? { ...found, rawHash: 'existing-hash' } : null,
     );
   });
   base.create.mockImplementation((input: unknown) => {
     if (!txState.active) txState.usedAfterClose = true;
     const data = legacyImportMapData(input);
-    maps.set(`${data.entityType}:${data.legacyId}`, {
+    state.maps.set(`${data.entityType}:${data.legacyId}`, {
       currentId: data.currentId,
       currentModel: data.currentModel,
     });
@@ -361,6 +661,51 @@ function mapCreates(
   }).length;
 }
 
+function mapCurrentIds(
+  tx: ReturnType<typeof transactionMock>,
+  entityType: string,
+) {
+  return tx.legacyImportMap.create.mock.calls
+    .filter(([input]) => legacyImportMapData(input).entityType === entityType)
+    .map(([input]) => legacyImportMapData(input).currentId);
+}
+
+function riskTypeFieldCreateKeys(tx: ReturnType<typeof transactionMock>) {
+  return tx.riskTypeField.create.mock.calls.map(
+    ([input]) =>
+      ((input as { data?: Record<string, unknown> }).data ?? {}).fieldKey,
+  );
+}
+
+function createData(model: PrismaDelegate, callIndex = 0) {
+  const input = model.create.mock.calls[callIndex]?.[0] as {
+    data?: Record<string, unknown>;
+  };
+  return input.data ?? {};
+}
+
+function findRecord(
+  records: Array<Record<string, unknown>>,
+  where?: Record<string, unknown>,
+) {
+  return records.find((record) => matchesWhere(record, where)) ?? null;
+}
+
+function matchesWhere(
+  record: Record<string, unknown>,
+  where?: Record<string, unknown>,
+) {
+  if (!where) return true;
+  return Object.entries(where).every(([key, value]) => {
+    if (value && typeof value === 'object' && 'in' in value) {
+      return (value as { in: unknown[] }).in.includes(record[key]);
+    }
+    if (value === null)
+      return record[key] === null || record[key] === undefined;
+    return record[key] === value;
+  });
+}
+
 function legacyImportMapWhere(input: unknown) {
   const record = input as {
     where: {
@@ -389,7 +734,7 @@ function legacyImportMapData(input: unknown) {
 function currentModelFor(entityType: string) {
   const currentModels: Record<string, string> = {
     currency: 'Currency',
-    classofbusiness: 'RiskClass',
+    risk_class: 'RiskClass',
     risk_type: 'RiskType',
     risk_type_field: 'RiskTypeField',
     insurer: 'Counterparty',
@@ -430,6 +775,61 @@ function financialMismatchOffer(): LegacyOffer {
   const source = offer({ offer_id: 'mismatch-1' });
   source.offer_participant![0].participant_fac_premium = 199.9;
   return source;
+}
+
+function retentionBondOffer(classId: string, offerId: string): LegacyOffer {
+  return offer({
+    offer_id: offerId,
+    classofbusiness: {
+      class_of_business_id: classId,
+      business_name: 'Retention Bond',
+      business_details:
+        '[{"keydetail":"Project Description"},{"keydetail":"Obligee/Interest"}]',
+    },
+    offer_detail: {
+      policy_number: `POL-${offerId}`,
+      insured_by: 'Insured',
+      currency: 'GHS',
+      offer_details:
+        '[{"keydetail":"Project Description","value":"Project"},{"keydetail":"Obligee/Interest","value":"Authority"}]',
+    },
+  });
+}
+
+function customsTransitBondOffer(classId: '44' | '65', offerId: string) {
+  return offer({
+    offer_id: offerId,
+    classofbusiness:
+      classId === '44'
+        ? {
+            class_of_business_id: classId,
+            business_name: 'Customs Transit Bond',
+            business_details:
+              '[{"keydetail":"Transit "},{"keydetail":"Obligee/Authority "},{"keydetail":"Nature of Goods"}]',
+          }
+        : {
+            class_of_business_id: classId,
+            business_name: 'Customs Transit Bond',
+            business_details:
+              '[{"keydetail":"Description of Bond"},{"keydetail":"Obligee/Employer "}]',
+          },
+    offer_detail:
+      classId === '44'
+        ? {
+            policy_number: `POL-${offerId}`,
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details:
+              '[{"keydetail":"Transit ","value":"Road"},{"keydetail":"Obligee/Authority ","value":"GRA"},{"keydetail":"Nature of Goods","value":"Cargo"}]',
+          }
+        : {
+            policy_number: `POL-${offerId}`,
+            insured_by: 'Insured',
+            currency: 'GHS',
+            offer_details:
+              '[{"keydetail":"Description of Bond","value":"Bond"},{"keydetail":"Obligee/Employer ","value":"GRA"}]',
+          },
+  });
 }
 
 function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {

@@ -130,10 +130,111 @@ describe('LegacyOffersRollback', () => {
 
     expect(transaction).toHaveBeenCalledTimes(1);
   });
+
+  it('does not delete shared RiskType when a second alias map survives', async () => {
+    const { prisma, tx } = prismaMock(
+      [
+        map('RiskClass', 'risk-class-bond'),
+        map('RiskType', 'risk-type-shared'),
+      ],
+      {
+        survivingMaps: [map('RiskType', 'risk-type-shared')],
+        survivingRiskTypes: [{ riskClassId: 'risk-class-bond' }],
+      },
+    );
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.riskType.deleteMany).not.toHaveBeenCalled();
+    expect(tx.riskClass.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('does not delete shared RiskTypeField when a second alias map survives', async () => {
+    const { prisma, tx } = prismaMock(
+      [map('RiskTypeField', 'risk-field-shared')],
+      {
+        survivingMaps: [map('RiskTypeField', 'risk-field-shared')],
+      },
+    );
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.riskTypeField.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('deletes final alias RiskType and field when no surviving map or placement remains', async () => {
+    const { prisma, tx } = prismaMock([
+      map('RiskClass', 'risk-class-final'),
+      map('RiskType', 'risk-type-final'),
+      map('RiskTypeField', 'risk-field-final'),
+    ]);
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.riskTypeField.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['risk-field-final'] },
+      },
+    });
+    expect(tx.riskType.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['risk-type-final'] },
+      },
+    });
+    expect(tx.riskClass.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['risk-class-final'] },
+      },
+    });
+  });
+
+  it('does not delete a RiskType still referenced by a surviving placement', async () => {
+    const { prisma, tx } = prismaMock([map('RiskType', 'risk-type-shared')], {
+      referencedPlacements: [{ riskTypeId: 'risk-type-shared' }],
+    });
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.riskType.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates shared delete targets within one rollback run', async () => {
+    const { prisma, tx } = prismaMock([
+      map('RiskType', 'risk-type-shared'),
+      map('RiskType', 'risk-type-shared'),
+      map('RiskTypeField', 'risk-field-shared'),
+      map('RiskTypeField', 'risk-field-shared'),
+    ]);
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.riskType.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['risk-type-shared'] },
+      },
+    });
+    expect(tx.riskTypeField.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['risk-field-shared'] },
+      },
+    });
+  });
 });
 
-function prismaMock(maps: Array<{ currentModel: string; currentId: string }>) {
-  const tx = transactionMock(maps);
+function prismaMock(
+  maps: Array<{ currentModel: string; currentId: string }>,
+  options: {
+    survivingMaps?: Array<{ currentModel: string; currentId: string }>;
+    referencedPlacements?: Array<{ riskTypeId: string | null }>;
+    survivingRiskTypes?: Array<{ riskClassId: string }>;
+  } = {},
+) {
+  const tx = transactionMock(maps, options);
   const transaction = jest.fn(
     (callback: (tx: ReturnType<typeof transactionMock>) => Promise<unknown>) =>
       callback(tx),
@@ -146,21 +247,41 @@ function prismaMock(maps: Array<{ currentModel: string; currentId: string }>) {
 
 function transactionMock(
   maps: Array<{ currentModel: string; currentId: string }>,
+  options: {
+    survivingMaps?: Array<{ currentModel: string; currentId: string }>;
+    referencedPlacements?: Array<{ riskTypeId: string | null }>;
+    survivingRiskTypes?: Array<{ riskClassId: string }>;
+  } = {},
 ) {
   return {
     legacyImportMap: {
-      findMany: jest.fn().mockResolvedValue(maps),
+      findMany: jest.fn((input: LegacyMapFindManyInput) => {
+        if ('createdByImport' in input.where) return Promise.resolve(maps);
+        return Promise.resolve(
+          (options.survivingMaps ?? []).filter(
+            (map) =>
+              map.currentModel === input.where.currentModel &&
+              input.where.currentId.in.includes(map.currentId),
+          ),
+        );
+      }),
       deleteMany: jest.fn().mockResolvedValue({ count: maps.length }),
     },
     legacyImportRun: {
       update: jest.fn().mockResolvedValue({ id: 'run-1' }),
     },
     placementParticipant: delegate(),
-    placement: delegate(),
+    placement: {
+      ...delegate(),
+      findMany: jest.fn().mockResolvedValue(options.referencedPlacements ?? []),
+    },
     counterpartyAddress: delegate(),
     counterparty: delegate(),
     riskTypeField: delegate(),
-    riskType: delegate(),
+    riskType: {
+      ...delegate(),
+      findMany: jest.fn().mockResolvedValue(options.survivingRiskTypes ?? []),
+    },
     riskClass: delegate(),
     currency: delegate(),
   };
@@ -179,11 +300,13 @@ type DeleteManyDelegate = {
 type LegacyMapFindManyInput = {
   where: {
     tenantId: string;
-    importRunId: string;
+    importRunId: string | { not: string };
     sourceSystem: string;
-    createdByImport: boolean;
+    createdByImport?: boolean;
+    currentModel?: string;
+    currentId: { in: string[] };
   };
-  select: { currentModel: boolean; currentId: boolean };
+  select: Partial<Record<'currentModel' | 'currentId' | 'riskTypeId', boolean>>;
 };
 type TransactionMock = ReturnType<typeof transactionMock>;
 

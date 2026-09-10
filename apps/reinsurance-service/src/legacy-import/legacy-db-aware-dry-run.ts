@@ -9,6 +9,15 @@ import {
 } from './legacy-import.types';
 import { counterpartyAddressLegacyId } from './legacy-offers.importer';
 import { ExistingImportMap } from './legacy-offers.plan';
+import {
+  legacyRiskClassLegacyId,
+  legacyRiskTypeCanonicalKey,
+  legacyRiskTypeFieldCanonicalKey,
+  normalizeLegacyRiskTypeName,
+  resolveLegacyRiskClass,
+  riskClassDefinitionHash,
+  riskTypeDefinitionHash,
+} from './legacy-risk-taxonomy';
 
 type ReadOnlyPrisma = Pick<
   PrismaClient,
@@ -41,6 +50,22 @@ type ExistingEntity = {
   legacyId?: string;
   key?: string;
   rawHash?: string;
+};
+
+type PlannedRiskType = {
+  legacyId: string;
+  name: string;
+  riskClassLegacyId: string;
+  canonicalKey: string;
+  rawHash: string;
+};
+
+type PlannedRiskTypeField = {
+  legacyId: string;
+  key: string;
+  riskTypeLegacyId: string;
+  canonicalKey: string;
+  rawHash: string;
 };
 
 export class LegacyDbAwareDryRun {
@@ -214,12 +239,35 @@ export class LegacyDbAwareDryRun {
       ]),
       (item) => `${item.entityType}:${item.legacyId}`,
     );
+    const riskTypes = uniqueBy(
+      eligibleOffers.map((offer): PlannedRiskType => {
+        const riskClass = requireLegacyRiskClass(offer.className);
+        return {
+          legacyId: offer.classId,
+          name: offer.className,
+          riskClassLegacyId: legacyRiskClassLegacyId(riskClass),
+          canonicalKey: legacyRiskTypeCanonicalKey({
+            riskClass,
+            riskTypeName: offer.className,
+          }),
+          rawHash: riskTypeDefinitionHash({
+            legacyClassId: offer.classId,
+            riskTypeName: offer.className,
+            riskClass,
+          }),
+        };
+      }),
+      (item) => item.legacyId,
+    );
     const riskClasses = uniqueBy(
-      eligibleOffers.map((offer) => ({
-        legacyId: offer.classId,
-        key: offer.className,
-        rawHash: sha256(offer.source.classofbusiness),
-      })),
+      riskTypes.map((riskType) => {
+        const riskClass = requireLegacyRiskClass(riskType.name);
+        return {
+          legacyId: legacyRiskClassLegacyId(riskClass),
+          key: riskClass.name,
+          rawHash: riskClassDefinitionHash(riskClass),
+        };
+      }),
       (item) => item.legacyId,
     );
     const placements = input.normalizedOffers.map((offer) => ({
@@ -243,16 +291,26 @@ export class LegacyDbAwareDryRun {
     );
     const riskTypeFields = uniqueBy(
       eligibleOffers.flatMap((offer) =>
-        [...offer.businessFields, ...offer.offerFields].map((field) => ({
-          legacyId: `${offer.classId}:${field.normalizedKey}`,
-          key: field.normalizedKey,
-          riskClassLegacyId: offer.classId,
-          rawHash: riskFieldDefinitionHash({
-            classId: offer.classId,
-            key: field.key,
-            normalizedKey: field.normalizedKey,
-          }),
-        })),
+        [...offer.businessFields, ...offer.offerFields].map(
+          (field): PlannedRiskTypeField => {
+            const riskClass = requireLegacyRiskClass(offer.className);
+            return {
+              legacyId: `${offer.classId}:${field.normalizedKey}`,
+              key: field.normalizedKey,
+              riskTypeLegacyId: offer.classId,
+              canonicalKey: legacyRiskTypeFieldCanonicalKey({
+                riskClass,
+                riskTypeName: offer.className,
+                normalizedFieldKey: field.normalizedKey,
+              }),
+              rawHash: riskFieldDefinitionHash({
+                riskTypeLegacyId: offer.classId,
+                key: field.key,
+                normalizedKey: field.normalizedKey,
+              }),
+            };
+          },
+        ),
       ),
       (item) => item.legacyId,
     );
@@ -300,7 +358,7 @@ export class LegacyDbAwareDryRun {
       this.prisma.riskType.findMany({
         where: {
           tenantId,
-          name: { in: riskClasses.map((riskClass) => riskClass.key) },
+          name: { in: riskTypes.map((riskType) => riskType.name) },
           archivedAt: null,
         },
         select: { id: true, name: true, riskClassId: true },
@@ -347,10 +405,16 @@ export class LegacyDbAwareDryRun {
       existingRiskClasses.map((row) => ({ id: row.id, key: row.name })),
     );
     const existingRiskTypeIndex = indexBy(
-      existingRiskTypes.map((row) => ({ id: row.id, key: row.name })),
+      existingRiskTypes.map((row) => ({
+        id: row.id,
+        key: `${row.riskClassId}:${normalizeLegacyRiskTypeName(row.name)}`,
+      })),
     );
     const existingRiskTypeFieldIndex = indexBy(
-      existingRiskTypeFields.map((row) => ({ id: row.id, key: row.fieldKey })),
+      existingRiskTypeFields.map((row) => ({
+        id: row.id,
+        key: `${row.riskTypeId}:${row.fieldKey}`,
+      })),
     );
     const existingPlacementIndex = indexBy(
       existingPlacements.map((row) => ({
@@ -373,26 +437,69 @@ export class LegacyDbAwareDryRun {
     );
     const plannedRiskClasses = riskClasses.map((riskClass) =>
       actionFor({
-        entityType: 'classofbusiness',
+        entityType: 'risk_class',
         legacyId: riskClass.legacyId,
         rawHash: riskClass.rawHash,
-        map: mapIndex.get(`classofbusiness:${riskClass.legacyId}`),
+        map: mapIndex.get(`risk_class:${riskClass.legacyId}`),
         existing: existingRiskClassIndex.get(riskClass.key),
         currentModel: 'RiskClass',
       }),
     );
-    const plannedRiskTypes = riskClasses.map((riskClass) =>
-      actionFor({
-        entityType: 'risk_type',
-        legacyId: riskClass.legacyId,
-        rawHash: sha256({
-          classId: riskClass.legacyId,
-          className: riskClass.key,
-        }),
-        map: mapIndex.get(`risk_type:${riskClass.legacyId}`),
-        existing: existingRiskTypeIndex.get(riskClass.key),
-        currentModel: 'RiskType',
-      }),
+    const plannedRiskClassIndex = new Map(
+      plannedRiskClasses.map((riskClass) => [riskClass.legacyId, riskClass]),
+    );
+    const plannedCurrentRiskTypeIndex = new Map<
+      string,
+      LegacyDbPlannedEntity
+    >();
+    const plannedRiskTypes: LegacyDbPlannedEntity[] = riskTypes.map(
+      (riskType) => {
+        const parent = plannedRiskClassIndex.get(riskType.riskClassLegacyId);
+        const map = mapIndex.get(`risk_type:${riskType.legacyId}`);
+        if (map) {
+          const mapped = actionFor({
+            entityType: 'risk_type',
+            legacyId: riskType.legacyId,
+            rawHash: riskType.rawHash,
+            map,
+            existing: undefined,
+            currentModel: 'RiskType',
+          });
+          plannedCurrentRiskTypeIndex.set(riskType.canonicalKey, mapped);
+          return mapped;
+        }
+        const existing = parent?.currentId
+          ? existingRiskTypeIndex.get(
+              `${parent.currentId}:${normalizeLegacyRiskTypeName(riskType.name)}`,
+            )
+          : undefined;
+        const plannedCurrent = plannedCurrentRiskTypeIndex.get(
+          riskType.canonicalKey,
+        );
+        if (plannedCurrent && plannedCurrent.action !== 'conflict') {
+          return {
+            entityType: 'risk_type',
+            legacyId: riskType.legacyId,
+            action: 'reuse' as const,
+            currentId: plannedCurrent.currentId,
+            currentModel: 'RiskType',
+            reason: 'same-run-risk-type-alias-would-reuse-current-risk-type',
+          };
+        }
+        const planned = actionFor({
+          entityType: 'risk_type',
+          legacyId: riskType.legacyId,
+          rawHash: riskType.rawHash,
+          map: undefined,
+          existing,
+          currentModel: 'RiskType',
+        });
+        plannedCurrentRiskTypeIndex.set(riskType.canonicalKey, planned);
+        return planned;
+      },
+    );
+    const plannedRiskTypeIndex = new Map(
+      plannedRiskTypes.map((riskType) => [riskType.legacyId, riskType]),
     );
     const plannedAddresses: LegacyDbPlannedEntity[] = counterparties.map(
       (counterparty) => {
@@ -485,16 +592,12 @@ export class LegacyDbAwareDryRun {
         addresses: plannedAddresses,
         riskClasses: plannedRiskClasses,
         riskTypes: plannedRiskTypes,
-        riskTypeFields: riskTypeFields.map((field) =>
-          actionFor({
-            entityType: 'risk_type_field',
-            legacyId: field.legacyId,
-            rawHash: field.rawHash,
-            map: mapIndex.get(`risk_type_field:${field.legacyId}`),
-            existing: existingRiskTypeFieldIndex.get(field.key),
-            currentModel: 'RiskTypeField',
-          }),
-        ),
+        riskTypeFields: planRiskTypeFields({
+          fields: riskTypeFields,
+          mapIndex,
+          plannedRiskTypeIndex,
+          existingRiskTypeFieldIndex,
+        }),
         placements: placements.map((placement) => {
           if (placement.eligible) {
             return actionFor({
@@ -562,6 +665,57 @@ function countDbConflicts(resolution: LegacyDbAwareDryRunResolution) {
   return Object.values(resolution.plannedEntities)
     .flat()
     .filter((entity) => entity.action === 'conflict').length;
+}
+
+function planRiskTypeFields(input: {
+  fields: PlannedRiskTypeField[];
+  mapIndex: Map<string, ExistingImportMap>;
+  plannedRiskTypeIndex: Map<string, LegacyDbPlannedEntity>;
+  existingRiskTypeFieldIndex: Map<string | undefined, ExistingEntity>;
+}): LegacyDbPlannedEntity[] {
+  const plannedCurrentFieldIndex = new Map<string, LegacyDbPlannedEntity>();
+  return input.fields.map((field) => {
+    const parent = input.plannedRiskTypeIndex.get(field.riskTypeLegacyId);
+    const map = input.mapIndex.get(`risk_type_field:${field.legacyId}`);
+    if (map) {
+      const mapped = actionFor({
+        entityType: 'risk_type_field',
+        legacyId: field.legacyId,
+        rawHash: field.rawHash,
+        map,
+        existing: undefined,
+        currentModel: 'RiskTypeField',
+      });
+      plannedCurrentFieldIndex.set(field.canonicalKey, mapped);
+      return mapped;
+    }
+    const plannedCurrent = plannedCurrentFieldIndex.get(field.canonicalKey);
+    if (plannedCurrent && plannedCurrent.action !== 'conflict') {
+      return {
+        entityType: 'risk_type_field',
+        legacyId: field.legacyId,
+        action: 'reuse' as const,
+        currentId: plannedCurrent.currentId,
+        currentModel: 'RiskTypeField',
+        reason:
+          'same-run-risk-type-field-alias-would-reuse-current-risk-type-field',
+      };
+    }
+    const planned = actionFor({
+      entityType: 'risk_type_field',
+      legacyId: field.legacyId,
+      rawHash: field.rawHash,
+      map: undefined,
+      existing: parent?.currentId
+        ? input.existingRiskTypeFieldIndex.get(
+            `${parent.currentId}:${field.key}`,
+          )
+        : undefined,
+      currentModel: 'RiskTypeField',
+    });
+    plannedCurrentFieldIndex.set(field.canonicalKey, planned);
+    return planned;
+  });
 }
 
 function actionFor(input: {
@@ -635,7 +789,12 @@ function identitiesFor(
             },
           ]
         : []),
-      { entityType: 'classofbusiness', legacyId: offer.classId },
+      {
+        entityType: 'risk_class',
+        legacyId: legacyRiskClassLegacyId(
+          requireLegacyRiskClass(offer.className),
+        ),
+      },
       { entityType: 'risk_type', legacyId: offer.classId },
       { entityType: 'offer', legacyId: offer.offerId },
       ...offer.participants.flatMap((participant) => [
@@ -682,6 +841,16 @@ function eligibilityByOfferId(plan: LegacyImportPlan) {
           },
     ]),
   );
+}
+
+function requireLegacyRiskClass(legacyRiskTypeName: string) {
+  const mapping = resolveLegacyRiskClass(legacyRiskTypeName);
+  if (!mapping) {
+    throw new Error(
+      `Legacy class of business '${legacyRiskTypeName}' has no approved RiskClass mapping`,
+    );
+  }
+  return mapping;
 }
 
 function uniqueBy<T>(items: T[], getKey: (item: T) => string) {

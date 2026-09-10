@@ -52,13 +52,46 @@ describe('LegacyOffersPlanGenerator', () => {
     expect(plan.records[0].action).toBe('conflict');
     expect(plan.counts.conflicts).toBe(1);
   });
+
+  it('fails closed for unmapped legacy classes', () => {
+    const plan = generator.build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offers: [
+        offer({
+          classofbusiness: {
+            class_of_business_id: '999',
+            business_name: 'Mystery Risk',
+            business_details: '[]',
+          },
+        }),
+      ],
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        classification: 'DATA_MISMATCH',
+        action: 'reject',
+        reasons: ['UNMAPPED_LEGACY_RISK_CLASS'],
+      }),
+    );
+    expect(plan.errors).toEqual([
+      expect.objectContaining({
+        code: 'UNMAPPED_LEGACY_RISK_CLASS',
+        severity: 'error',
+        rawValue: 'Mystery Risk',
+      }),
+    ]);
+  });
 });
 
 function planHashFor(source: LegacyOffer) {
   return sha256(source);
 }
 
-function offer(): LegacyOffer {
+function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
   return {
     offer_id: '1',
     offer_status: 'CLOSED',
@@ -93,5 +126,6 @@ function offer(): LegacyOffer {
         reinsurer: { reinsurer_id: 'r1', re_company_name: 'Reinsurer' },
       },
     ],
+    ...overrides,
   };
 }
