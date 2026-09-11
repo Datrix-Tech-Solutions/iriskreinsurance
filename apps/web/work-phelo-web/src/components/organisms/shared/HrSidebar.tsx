@@ -59,7 +59,7 @@ function HrSidebarItem({
       <span
         className={cn(
           'text-sm whitespace-nowrap overflow-hidden transition-[max-width,opacity] duration-200',
-          expanded ? 'max-w-44 opacity-100 delay-100' : 'max-w-0 opacity-0',
+          expanded ? 'max-w-44 opacity-100 delay-350' : 'max-w-0 opacity-0',
         )}
       >
         {item.label}

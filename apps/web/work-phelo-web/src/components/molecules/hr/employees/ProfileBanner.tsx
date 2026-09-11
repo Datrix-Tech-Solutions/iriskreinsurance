@@ -20,6 +20,10 @@ interface ProfileBannerProps {
   onEdit: () => void;
   /** When provided, shows a camera badge on the avatar + a "Change photo" menu item. */
   onEditAvatar?: () => void;
+  /** HR-management-only actions — omitted on the self-service profile page. */
+  onOffboard?: () => void;
+  onResendInvite?: () => void;
+  isResending?: boolean;
   color?: string | null;
   backgroundImage?: string | null;
   tabs?: ProfileBannerTab[];
@@ -34,6 +38,9 @@ export function ProfileBanner({
   onResign,
   onEdit,
   onEditAvatar,
+  onOffboard,
+  onResendInvite,
+  isResending,
   color,
   backgroundImage,
   tabs,
@@ -41,6 +48,8 @@ export function ProfileBanner({
   onTabChange,
 }: ProfileBannerProps) {
   const name = `${employee.firstName} ${employee.lastName}`;
+  const isOffboarded = employee.employmentStatus === 'OFFBOARDED';
+  const isPendingInvite = employee.userStatus === 'PENDING_VERIFICATION';
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -131,7 +140,20 @@ export function ProfileBanner({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap shrink-0">
-          {canEdit && (
+          {isPendingInvite && onResendInvite && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onResendInvite}
+              isLoading={isResending}
+              loadingText="Sending…"
+              className="text-white border-white/40 bg-transparent hover:bg-white/10"
+            >
+              Resend Invite
+            </Button>
+          )}
+
+          {canEdit && !isOffboarded && (
             <Button size="sm" onClick={onEdit} className="gap-2">
               Edit
               <Pencil className="w-4 h-4" />
@@ -173,20 +195,36 @@ export function ProfileBanner({
                     Change photo
                   </button>
                 )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onResign();
-                    setMenuOpen(false);
-                  }}
-                  className={cn(
-                    'flex w-full items-center px-4 py-2 text-left text-sm font-medium transition-colors hover:bg-gray-50',
-                    hasPendingResignation ? 'text-amber-600' : 'text-red-700',
-                  )}
-                >
-                  {hasPendingResignation ? 'Pending Resignation' : 'Resign'}
-                </button>
+                {!isOffboarded && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onResign();
+                      setMenuOpen(false);
+                    }}
+                    className={cn(
+                      'flex w-full items-center px-4 py-2 text-left text-sm font-medium transition-colors hover:bg-gray-50',
+                      hasPendingResignation ? 'text-amber-600' : 'text-red-700',
+                    )}
+                  >
+                    {hasPendingResignation ? 'Pending Resignation' : 'Resign'}
+                  </button>
+                )}
+
+                {onOffboard && !isOffboarded && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onOffboard();
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center px-4 py-2 text-left text-sm font-medium text-red-700 transition-colors hover:bg-gray-50"
+                  >
+                    Off-Board
+                  </button>
+                )}
               </div>
             )}
           </div>

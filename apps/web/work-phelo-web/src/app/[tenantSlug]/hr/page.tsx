@@ -95,7 +95,21 @@ export default function EmployeeDashboardPage({
   const myLeave = useMemo(() => (Array.isArray(myLeaveRaw) ? myLeaveRaw : []), [myLeaveRaw]);
   const myPayslips = Array.isArray(myPayslipsRaw) ? myPayslipsRaw : [];
 
+  // The leave request currently in progress (approved, today falls inside its range) — takes
+  // priority over "upcoming" since it's not upcoming anymore, it's happening.
+  const currentLeave = useMemo(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    return myLeave.find(
+      (r) =>
+        r.status === 'APPROVED' &&
+        r.startDate.slice(0, 10) <= todayIso &&
+        r.endDate.slice(0, 10) >= todayIso,
+    );
+  }, [myLeave]);
+  const onLeaveToday = Boolean(currentLeave);
+
   const upcomingLeave = useMemo(() => {
+    if (currentLeave) return undefined;
     const todayIso = new Date().toISOString().slice(0, 10);
     return [...myLeave]
       .filter(
@@ -104,7 +118,7 @@ export default function EmployeeDashboardPage({
           r.startDate.slice(0, 10) >= todayIso,
       )
       .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
-  }, [myLeave]);
+  }, [myLeave, currentLeave]);
 
   /* ── My Team — same department as me, plus my reporting manager ── */
   const teamMembers = useMemo(() => {
@@ -317,6 +331,7 @@ export default function EmployeeDashboardPage({
             clockInTime={clockInTime}
             clockedInAt={attendance?.clockedInAt}
             hoursWorked={hoursWorked}
+            onLeaveToday={onLeaveToday}
             onClockIn={handleClockIn}
             onClockOut={handleClockOut}
             isLoading={isClockingIn || isClockingOut}
@@ -331,7 +346,7 @@ export default function EmployeeDashboardPage({
               annualBalance={annualLeaveBalance}
               onRequestLeave={() => openApplyLeave(annualLeaveBalance?.leaveTypeId)}
             />
-            <UpcomingLeaveCard request={upcomingLeave} />
+            <UpcomingLeaveCard request={currentLeave ?? upcomingLeave} isCurrent={onLeaveToday} />
           </div>
           <BirthdaysCard
             birthdays={birthdays}

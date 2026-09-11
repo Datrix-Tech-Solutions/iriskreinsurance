@@ -63,7 +63,7 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
           'text-sm whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform] duration-500',
           collapsed
             ? 'max-w-0 opacity-0 -translate-x-3'
-            : 'max-w-44 opacity-100 translate-x-0 delay-100',
+            : 'max-w-44 opacity-100 translate-x-0 delay-350',
         )}
       >
         {item.label}
@@ -229,7 +229,7 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
             'text-sm whitespace-nowrap overflow-hidden flex-1 text-left transition-[max-width,opacity,transform] duration-500',
             collapsed
               ? 'max-w-0 opacity-0 -translate-x-3'
-              : 'max-w-44 opacity-100 translate-x-0 delay-100',
+              : 'max-w-44 opacity-100 translate-x-0 delay-350',
           )}
         >
           {item.label}
@@ -237,7 +237,7 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
         <span
           className={cn(
             'overflow-hidden transition-[max-width,opacity] duration-500',
-            collapsed ? 'max-w-0 opacity-0' : 'max-w-6 opacity-100 delay-100',
+            collapsed ? 'max-w-0 opacity-0' : 'max-w-6 opacity-100 delay-350',
           )}
         >
           <ChevronDown
