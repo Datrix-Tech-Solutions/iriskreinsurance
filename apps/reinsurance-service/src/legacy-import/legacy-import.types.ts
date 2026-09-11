@@ -174,6 +174,7 @@ export type NormalizedLegacyOffer = {
   className: string;
   insurerId: string;
   insurerName: string;
+  createdAt: Date;
   inceptionDate: Date | null;
   expiryDate: Date | null;
   numbers: {

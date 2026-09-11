@@ -57,6 +57,7 @@ function baseDetail() {
 function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
   return {
     offer_id: '1',
+    created_at: '2026-09-08 08:50:34',
     insurer: { insurer_id: '15', insurer_company_name: 'Cedant' },
     classofbusiness: {
       class_of_business_id: '1',

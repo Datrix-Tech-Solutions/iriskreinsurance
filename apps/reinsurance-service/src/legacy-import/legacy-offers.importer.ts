@@ -579,6 +579,7 @@ export class LegacyOffersImporter {
         classOfBusiness: offer.className,
         businessDetails: Prisma.JsonNull,
         offerDetails: canonicalLegacyOfferDetails(offer),
+        createdAt: offer.createdAt,
         inceptionDate: offer.inceptionDate,
         expiryDate: offer.expiryDate,
         currency: offer.currency,

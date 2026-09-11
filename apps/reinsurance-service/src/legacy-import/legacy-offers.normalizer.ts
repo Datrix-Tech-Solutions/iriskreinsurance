@@ -48,6 +48,7 @@ export class LegacyOffersNormalizer {
       className,
       insurerId,
       insurerName,
+      createdAt: parseRequiredDate(offer.created_at, 'offer.created_at'),
       inceptionDate: parseDate(detail.period_of_insurance_from),
       expiryDate: parseDate(detail.period_of_insurance_to),
       numbers: {
@@ -164,6 +165,42 @@ function parseDate(value: string | null | undefined): Date | null {
   if (!cleaned) return null;
   const parsed = new Date(cleaned);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function parseRequiredDate(
+  value: string | null | undefined,
+  path: string,
+): Date {
+  const cleaned = cleanRequired(value, path);
+  const parsed = parseLegacyDate(cleaned);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid legacy date: ${path}`);
+  }
+  return parsed;
+}
+
+function parseLegacyDate(value: string): Date {
+  const legacyDateTime = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/,
+  );
+  if (legacyDateTime) {
+    const [, year, month, day, hour, minute, second] = legacyDateTime;
+    const parsed = new Date(
+      Date.UTC(+year, +month - 1, +day, +hour, +minute, +second),
+    );
+    if (
+      parsed.getUTCFullYear() !== +year ||
+      parsed.getUTCMonth() !== +month - 1 ||
+      parsed.getUTCDate() !== +day ||
+      parsed.getUTCHours() !== +hour ||
+      parsed.getUTCMinutes() !== +minute ||
+      parsed.getUTCSeconds() !== +second
+    ) {
+      return new Date(Number.NaN);
+    }
+    return parsed;
+  }
+  return new Date(value);
 }
 
 function decimalString(value: unknown): string {
