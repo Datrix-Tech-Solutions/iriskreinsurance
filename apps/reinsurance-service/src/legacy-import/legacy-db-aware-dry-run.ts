@@ -7,7 +7,11 @@ import {
   LegacyImportPlan,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
-import { counterpartyAddressLegacyId } from './legacy-offers.importer';
+import {
+  counterpartyAddressLegacyId,
+  historicalPlacementClosingHash,
+  historicalPlacementClosingNumber,
+} from './legacy-offers.importer';
 import { ExistingImportMap } from './legacy-offers.plan';
 import {
   legacyRiskClassLegacyId,
@@ -30,6 +34,7 @@ type ReadOnlyPrisma = Pick<
   | 'riskTypeField'
   | 'placement'
   | 'placementParticipant'
+  | 'placementClosing'
   | 'legacyImportMap'
 >;
 
@@ -289,6 +294,20 @@ export class LegacyDbAwareDryRun {
           'parent-offer-not-phase-1-eligible',
       })),
     );
+    const placementClosings = input.normalizedOffers.flatMap((offer) =>
+      offer.participants.map((participant) => ({
+        legacyId: participant.participantId,
+        rawHash: historicalPlacementClosingHash(offer, participant),
+        closingNumber: historicalPlacementClosingNumber(
+          participant.participantId,
+        ),
+        parentOfferId: offer.offerId,
+        eligible: eligibility.get(offer.offerId)?.eligible ?? false,
+        ineligibleReason:
+          eligibility.get(offer.offerId)?.reason ??
+          'parent-offer-not-phase-1-eligible',
+      })),
+    );
     const riskTypeFields = uniqueBy(
       eligibleOffers.flatMap((offer) =>
         [...offer.businessFields, ...offer.offerFields].map(
@@ -324,6 +343,7 @@ export class LegacyDbAwareDryRun {
       existingRiskTypeFields,
       existingPlacements,
       existingParticipants,
+      existingClosings,
     ] = await Promise.all([
       this.prisma.currency.findMany({
         where: {
@@ -384,6 +404,15 @@ export class LegacyDbAwareDryRun {
         where: { tenantId },
         select: { id: true, placementId: true, counterpartyId: true },
       }),
+      this.prisma.placementClosing.findMany({
+        where: {
+          tenantId,
+          closingNumber: {
+            in: placementClosings.map((closing) => closing.closingNumber),
+          },
+        },
+        select: { id: true, placementId: true, closingNumber: true },
+      }),
     ]);
 
     const mapIndex = new Map(
@@ -420,6 +449,12 @@ export class LegacyDbAwareDryRun {
       existingPlacements.map((row) => ({
         id: row.id,
         key: row.normalizedReference,
+      })),
+    );
+    const existingClosingIndex = indexBy(
+      existingClosings.map((row) => ({
+        id: row.id,
+        key: `${row.placementId}:${row.closingNumber}`,
       })),
     );
 
@@ -635,6 +670,45 @@ export class LegacyDbAwareDryRun {
                 reason: participant.ineligibleReason,
               },
         ),
+        placementClosings: placementClosings.map((closing) => {
+          if (!closing.eligible) {
+            return {
+              entityType: 'offer_participant_closing',
+              legacyId: closing.legacyId,
+              action: 'skip',
+              currentModel: 'PlacementClosing',
+              reason: closing.ineligibleReason,
+            };
+          }
+          const map = mapIndex.get(
+            `offer_participant_closing:${closing.legacyId}`,
+          );
+          if (map) {
+            return actionFor({
+              entityType: 'offer_participant_closing',
+              legacyId: closing.legacyId,
+              rawHash: closing.rawHash,
+              map,
+              existing: undefined,
+              currentModel: 'PlacementClosing',
+            });
+          }
+          const parentPlacement = mapIndex.get(
+            `offer:${closing.parentOfferId}`,
+          );
+          return actionForHistoricalClosing({
+            entityType: 'offer_participant_closing',
+            legacyId: closing.legacyId,
+            rawHash: closing.rawHash,
+            map: undefined,
+            existing: parentPlacement?.currentId
+              ? existingClosingIndex.get(
+                  `${parentPlacement.currentId}:${closing.closingNumber}`,
+                )
+              : undefined,
+            currentModel: 'PlacementClosing',
+          });
+        }),
       },
       readCounts: {
         currencies: existingCurrencies.length,
@@ -645,10 +719,30 @@ export class LegacyDbAwareDryRun {
         riskTypeFields: existingRiskTypeFields.length,
         placements: existingPlacements.length,
         placementParticipants: existingParticipants.length,
+        placementClosings: existingClosings.length,
         legacyImportMaps: input.existingMaps.length,
       },
     };
   }
+}
+
+function actionForHistoricalClosing(input: {
+  entityType: string;
+  legacyId: string;
+  rawHash: string;
+  map?: ExistingImportMap;
+  existing?: ExistingEntity;
+  currentModel: string;
+}): LegacyDbPlannedEntity {
+  if (input.map || !input.existing) return actionFor(input);
+  return {
+    entityType: input.entityType,
+    legacyId: input.legacyId,
+    action: 'conflict',
+    currentId: input.existing.id,
+    currentModel: input.currentModel,
+    reason: 'matching-closing-number-found-without-import-map',
+  };
 }
 
 function countsWithDbResolutionConflicts(
@@ -812,6 +906,10 @@ function identitiesFor(
           : []),
         {
           entityType: 'offer_participant',
+          legacyId: participant.participantId,
+        },
+        {
+          entityType: 'offer_participant_closing',
           legacyId: participant.participantId,
         },
       ]),

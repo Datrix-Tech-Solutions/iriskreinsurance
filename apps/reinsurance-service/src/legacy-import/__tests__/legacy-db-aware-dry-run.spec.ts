@@ -1,7 +1,11 @@
 import { PrismaClient } from '../../../prisma/generated/client';
 import { LegacyDbAwareDryRun } from '../legacy-db-aware-dry-run';
 import { riskFieldDefinitionHash, sha256 } from '../legacy-hash';
-import { counterpartyAddressLegacyId } from '../legacy-offers.importer';
+import {
+  counterpartyAddressLegacyId,
+  historicalPlacementClosingHash,
+  historicalPlacementClosingNumber,
+} from '../legacy-offers.importer';
 import { LegacyOffersNormalizer } from '../legacy-offers.normalizer';
 import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffer } from '../legacy-import.types';
@@ -639,6 +643,116 @@ describe('LegacyDbAwareDryRun', () => {
     expect(result.plan.counts.conflicts).toBe(1);
     expectNoWrites(writeFns);
   });
+
+  it('plans historical placement closings for eligible participants', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+
+    const result = await resolveOffers(prisma, [offer()]);
+
+    expect(result.resolution.plannedEntities.placementClosings).toEqual([
+      expect.objectContaining({
+        entityType: 'offer_participant_closing',
+        legacyId: 'p1',
+        action: 'create',
+        currentModel: 'PlacementClosing',
+      }),
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('plans historical placement closings as idempotent skips on repeat dry-run', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const source = offer();
+    const normalized = new LegacyOffersNormalizer().normalize(source);
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'offer_participant_closing',
+        legacyId: 'p1',
+        currentModel: 'PlacementClosing',
+        currentId: 'closing-1',
+        rawHash: historicalPlacementClosingHash(
+          normalized,
+          normalized.participants[0],
+        ),
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [source]);
+
+    expect(result.resolution.plannedEntities.placementClosings).toEqual([
+      expect.objectContaining({
+        legacyId: 'p1',
+        action: 'skip',
+        currentId: 'closing-1',
+        reason: 'legacy-import-map-match',
+      }),
+    ]);
+    expectNoWrites(writeFns);
+  });
+
+  it('reports closing-number collisions as DB-aware conflicts', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany, placementClosingFindMany } =
+      prismaMock(
+        [
+          [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+          [
+            {
+              id: 'user-1',
+              email: 'admin@acmeghana.com',
+              role: 'TENANT_ADMIN',
+            },
+          ],
+          [{ count: 2 }],
+        ],
+        writeFns,
+      );
+    const source = offer();
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'offer',
+        legacyId: '1',
+        currentModel: 'Placement',
+        currentId: 'placement-existing',
+        rawHash: new LegacyOffersNormalizer().normalize(source).rawHash,
+      },
+    ]);
+    placementClosingFindMany.mockResolvedValue([
+      {
+        id: 'closing-unrelated',
+        placementId: 'placement-existing',
+        closingNumber: historicalPlacementClosingNumber('p1'),
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [source]);
+
+    expect(result.resolution.plannedEntities.placementClosings[0]).toEqual(
+      expect.objectContaining({
+        legacyId: 'p1',
+        action: 'conflict',
+        reason: 'matching-closing-number-found-without-import-map',
+      }),
+    );
+    expect(result.plan.counts.conflicts).toBe(1);
+    expectNoWrites(writeFns);
+  });
 });
 
 async function resolveOffers(prisma: PrismaClient, offers: LegacyOffer[]) {
@@ -670,6 +784,7 @@ function prismaMock(
     queryRaw.mockResolvedValueOnce(result);
   }
   const findMany = jest.fn().mockResolvedValue([]);
+  const placementClosingFindMany = jest.fn().mockResolvedValue([]);
   const legacyImportMapFindMany = jest.fn().mockResolvedValue([]);
   const prisma = {
     $queryRaw: queryRaw,
@@ -681,12 +796,13 @@ function prismaMock(
     riskTypeField: { findMany, ...writeFns },
     placement: { findMany, ...writeFns },
     placementParticipant: { findMany, ...writeFns },
+    placementClosing: { findMany: placementClosingFindMany, ...writeFns },
     legacyImportMap: { findMany: legacyImportMapFindMany, ...writeFns },
     legacyImportRun: writeFns,
     $executeRaw: writeFns.$executeRaw,
     $transaction: writeFns.$transaction,
   } as unknown as PrismaClient;
-  return { prisma, legacyImportMapFindMany };
+  return { prisma, legacyImportMapFindMany, placementClosingFindMany };
 }
 
 function writeFunctionMocks() {
@@ -744,9 +860,17 @@ function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
       {
         offer_participant_id: 'p1',
         offer_participant_percentage: 20,
+        offer_amount: 180,
         participant_fac_premium: 200,
         participant_fac_sum_insured: 200,
-        offer_extra_charges: { agreed_commission_amount: 20 },
+        offer_extra_charges: {
+          agreed_commission: 10,
+          agreed_commission_amount: 20,
+          agreed_brokerage_percentage: 0,
+          brokerage_amount: 0,
+          nic_levy_amount: 0,
+          withholding_tax_amount: 0,
+        },
         reinsurer: { reinsurer_id: 'r1', re_company_name: 'Reinsurer' },
       },
     ],

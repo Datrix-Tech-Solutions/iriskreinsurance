@@ -33,6 +33,10 @@ export class LegacyOffersRollback {
       );
       const deleted: Record<string, number> = {};
 
+      deleted.placementClosings = await deleteMany(tx, 'placementClosing', {
+        tenantId,
+        id: { in: ids.PlacementClosing ?? [] },
+      });
       deleted.placementParticipants = await deleteMany(
         tx,
         'placementParticipant',

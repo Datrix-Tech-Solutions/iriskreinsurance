@@ -1,6 +1,9 @@
 import { PrismaClient } from '../../../prisma/generated/client';
 import {
   LEGACY_IMPORT_TRANSACTION_OPTIONS,
+  canonicalLegacyOfferDetails,
+  historicalPlacementClosingHash,
+  historicalPlacementClosingNumber,
   LegacyOffersImporter,
 } from '../legacy-offers.importer';
 import { riskFieldDefinitionHash } from '../legacy-hash';
@@ -33,6 +36,7 @@ describe('LegacyOffersImporter', () => {
     }
     expect(tx.placement.create).toHaveBeenCalledTimes(1);
     expect(tx.placementParticipant.create).toHaveBeenCalledTimes(1);
+    expect(tx.placementClosing.create).toHaveBeenCalledTimes(1);
   });
 
   it('does not use the transaction client after the callback closes', async () => {
@@ -75,6 +79,7 @@ describe('LegacyOffersImporter', () => {
 
     expect(result.created.placements).toBe(0);
     expect(result.created.participants).toBe(0);
+    expect(result.created.placementClosings).toBe(0);
     expect(tx.currency.create).not.toHaveBeenCalled();
     expect(tx.counterparty.create).not.toHaveBeenCalled();
     expect(tx.counterpartyAddress.create).not.toHaveBeenCalled();
@@ -83,6 +88,7 @@ describe('LegacyOffersImporter', () => {
     expect(tx.riskTypeField.create).not.toHaveBeenCalled();
     expect(tx.placement.create).not.toHaveBeenCalled();
     expect(tx.placementParticipant.create).not.toHaveBeenCalled();
+    expect(tx.placementClosing.create).not.toHaveBeenCalled();
   });
 
   it('preserves idempotency when exact import maps already exist', async () => {
@@ -99,6 +105,15 @@ describe('LegacyOffersImporter', () => {
         offer_participant: {
           [normalized.participants[0].participantId]: 'participant-existing',
         },
+        offer_participant_closing: {
+          [normalized.participants[0].participantId]: {
+            currentId: 'closing-existing',
+            rawHash: historicalPlacementClosingHash(
+              normalized,
+              normalized.participants[0],
+            ),
+          },
+        },
       },
     });
 
@@ -107,12 +122,14 @@ describe('LegacyOffersImporter', () => {
     expect(result.created.legacyImportMaps).toBe(0);
     expect(result.created.placements).toBe(0);
     expect(result.created.participants).toBe(0);
+    expect(result.created.placementClosings).toBe(0);
     expect(tx.currency.create).not.toHaveBeenCalled();
     expect(tx.counterparty.create).not.toHaveBeenCalled();
     expect(tx.riskClass.create).not.toHaveBeenCalled();
     expect(tx.riskType.create).not.toHaveBeenCalled();
     expect(tx.placement.create).not.toHaveBeenCalled();
     expect(tx.placementParticipant.create).not.toHaveBeenCalled();
+    expect(tx.placementClosing.create).not.toHaveBeenCalled();
   });
 
   it('reports the exact number of import maps created for a fresh fixture', async () => {
@@ -122,8 +139,368 @@ describe('LegacyOffersImporter', () => {
       applyInput([offer()]),
     );
 
-    expect(result.created.legacyImportMaps).toBe(8);
-    expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(8);
+    expect(result.created.legacyImportMaps).toBe(9);
+    expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(9);
+  });
+
+  it('creates one confirmed closing per legacy participant with exact snapshots', async () => {
+    const source = offer({
+      facultative_offer: 12.5,
+      placed_share: 12.5,
+      fac_premium: 1500,
+      fac_sum_insured: 25000,
+      commission_amount: 300,
+      offer_participant: [
+        {
+          offer_participant_id: 'p-close-1',
+          offer_participant_percentage: 12.5,
+          offer_amount: 1000,
+          participant_fac_premium: 1500,
+          participant_fac_sum_insured: 25000,
+          offer_extra_charges: {
+            agreed_commission: 20,
+            agreed_commission_amount: 300,
+            agreed_brokerage_percentage: 10,
+            brokerage_amount: 150,
+            nic_levy_amount: 25,
+            withholding_tax_amount: 25,
+          },
+          reinsurer: { reinsurer_id: 'r1', re_company_name: 'Reinsurer' },
+        },
+      ],
+    });
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(
+      applyInput([source]),
+    );
+
+    expect(result.created.placementClosings).toBe(1);
+    expect(createData(tx.placementClosing)).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        placementId: 'placement-created-1',
+        participantId: 'placementParticipant-created-1',
+        closingNumber: historicalPlacementClosingNumber('p-close-1'),
+        status: 'CONFIRMED',
+        signedLinePercent: '12.5',
+        sharePercent: '12.5',
+        sumInsuredSnapshot: '25000',
+        grossPremium: '1500',
+        commissionPercent: '20',
+        commissionAmount: '300',
+        brokeragePercent: '10',
+        brokerageAmount: '150',
+        netPremium: '1000',
+        currency: 'GHS',
+        createdByUserId: 'user-1',
+      }),
+    );
+    expect(tx.placementParticipant.update).toHaveBeenCalledWith({
+      where: {
+        id_tenantId: {
+          id: 'placementParticipant-created-1',
+          tenantId: 'tenant-1',
+        },
+      },
+      data: { status: 'CLOSED' },
+    });
+  });
+
+  it('uses only the canonical participant sharePercent for historical closings', async () => {
+    const source = offer({
+      offer_id: '990001',
+      offer_participant: [
+        {
+          offer_participant_id: 'p-share-null',
+          offer_participant_percentage: 12.5,
+          offer_amount: 1050,
+          participant_fac_premium: 1500,
+          participant_fac_sum_insured: 25000,
+          offer_extra_charges: {
+            agreed_commission: 20,
+            agreed_commission_amount: 300,
+            agreed_brokerage_percentage: 10,
+            brokerage_amount: 150,
+          },
+          reinsurer: { reinsurer_id: 'r1', re_company_name: 'Reinsurer' },
+        },
+      ],
+    });
+    const normalized = new LegacyOffersNormalizer().normalize(source);
+    const input = applyInput([source]);
+    input.plan = {
+      ...input.plan,
+      records: input.plan.records.map((record) => ({
+        ...record,
+        action: 'create' as const,
+        classification: 'AUTO_SAFE' as const,
+      })),
+    };
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        offer: { [normalized.offerId]: 'placement-existing' },
+        offer_participant: {
+          [normalized.participants[0].participantId]: 'participant-existing',
+        },
+      },
+      existingRecords: {
+        placement: [{ id: 'placement-existing', tenantId: 'tenant-1' }],
+        placementParticipant: [
+          {
+            id: 'participant-existing',
+            tenantId: 'tenant-1',
+            placementId: 'placement-existing',
+            sharePercent: null,
+            status: 'ACCEPTED',
+          },
+        ],
+      },
+    });
+
+    await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(createData(tx.placementClosing)).toEqual(
+      expect.objectContaining({
+        signedLinePercent: '12.5',
+        sharePercent: null,
+      }),
+    );
+  });
+
+  it('stores canonical RiskType field values directly on offerDetails', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([motorFixture6740()]),
+    );
+
+    const placement = createData(tx.placement) as {
+      businessDetails: unknown;
+      offerDetails: unknown;
+    };
+    expect(placement.businessDetails).toBeDefined();
+    expect(placement.offerDetails).toEqual({
+      ncd: '25%',
+      fd: '15%',
+      tppdl: 'GHS 94,000',
+      excess: '15% bought',
+      vehicle_make: 'DAF ART HEAD/TANKER',
+      year_of_manufacture: '2011',
+      vehicle_reg_no: 'AC 1427-18',
+      cover_type: 'OWN GOODS',
+      chassis_number: 'XLRTE85MCOE911598',
+      seating_capacity: '3',
+      cubic_capacity: '-',
+    });
+  });
+
+  it('uses keys that correspond to imported RiskTypeField definitions', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([motorFixture6740()]),
+    );
+
+    const placement = createData(tx.placement) as {
+      offerDetails?: Record<string, unknown>;
+    };
+    const placementDetails = placement.offerDetails ?? {};
+    expect(Object.keys(placementDetails)).toEqual(riskTypeFieldCreateKeys(tx));
+  });
+
+  it('does not expose legacy wrapper pseudo-fields as placement risk details', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([motorFixture6740()]),
+    );
+
+    const placement = createData(tx.placement);
+    expect(placement.businessDetails).not.toHaveProperty('legacy');
+    expect(placement.offerDetails).not.toHaveProperty('legacyFields');
+    expect(renderedDetailLabels(placement.businessDetails)).not.toContain(
+      'LEGACY',
+    );
+    expect(renderedDetailLabels(placement.offerDetails)).not.toContain(
+      'LEGACYFIELDS',
+    );
+  });
+
+  it('keeps migrated and normal placement risk-detail shapes structurally compatible', () => {
+    const normalized = new LegacyOffersNormalizer().normalize(
+      motorFixture6740(),
+    );
+    const migrated = canonicalLegacyOfferDetails(normalized);
+    const normal = {
+      ncd: '25%',
+      fd: '15%',
+      tppdl: 'GHS 94,000',
+      excess: '15% bought',
+      vehicle_make: 'DAF ART HEAD/TANKER',
+      year_of_manufacture: '2011',
+      vehicle_reg_no: 'AC 1427-18',
+      cover_type: 'OWN GOODS',
+      chassis_number: 'XLRTE85MCOE911598',
+      seating_capacity: '3',
+      cubic_capacity: '-',
+    };
+
+    expect(migrated).toEqual(normal);
+  });
+
+  it('does not recompute closing snapshots from aggregate placement totals', async () => {
+    const source = offer({
+      offer_id: 'aggregate-mismatch-safe',
+      facultative_offer: 12.5,
+      placed_share: 12.5,
+      fac_premium: 1499.96,
+      fac_sum_insured: 24999.96,
+      commission_amount: 300,
+      offer_participant: [
+        {
+          offer_participant_id: 'p-aggregate-mismatch',
+          offer_participant_percentage: 12.5,
+          offer_amount: 1000,
+          participant_fac_premium: 1500,
+          participant_fac_sum_insured: 25000,
+          offer_extra_charges: {
+            agreed_commission: 20,
+            agreed_commission_amount: 300,
+            agreed_brokerage_percentage: 10,
+            brokerage_amount: 150,
+            nic_levy_amount: 25,
+            withholding_tax_amount: 25,
+          },
+          reinsurer: { reinsurer_id: 'r1', re_company_name: 'Reinsurer' },
+        },
+      ],
+    });
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(applyInput([source]));
+
+    expect(createData(tx.placementClosing)).toEqual(
+      expect.objectContaining({
+        sumInsuredSnapshot: '25000',
+        grossPremium: '1500',
+        netPremium: '1000',
+      }),
+    );
+  });
+
+  it('creates exact legacy import maps for placement closings', async () => {
+    const source = offer();
+    const input = applyInput([source]);
+    const normalized = input.normalizedOffers[0];
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(input);
+
+    const mapCreate = tx.legacyImportMap.create.mock.calls.find(
+      ([call]) =>
+        legacyImportMapData(call).entityType === 'offer_participant_closing',
+    );
+    expect(legacyImportMapData(mapCreate![0])).toEqual(
+      expect.objectContaining({
+        legacyId: 'p1',
+        currentModel: 'PlacementClosing',
+        currentId: 'placementClosing-created-1',
+        rawHash: historicalPlacementClosingHash(
+          normalized,
+          normalized.participants[0],
+        ),
+      }),
+    );
+  });
+
+  it('rejects a historical closing hash mismatch', async () => {
+    const input = applyInput([offer()]);
+    const normalized = input.normalizedOffers[0];
+    const { prisma } = prismaMock({
+      existingMaps: {
+        offer: { '1': 'placement-existing' },
+        offer_participant: { p1: 'participant-existing' },
+        offer_participant_closing: {
+          [normalized.participants[0].participantId]: {
+            currentId: 'closing-existing',
+            rawHash: 'old-closing-hash',
+          },
+        },
+      },
+      existingRecords: {
+        placement: [{ id: 'placement-existing', tenantId: 'tenant-1' }],
+        placementParticipant: [
+          {
+            id: 'participant-existing',
+            tenantId: 'tenant-1',
+            placementId: 'placement-existing',
+          },
+        ],
+      },
+    });
+
+    await expect(new LegacyOffersImporter(prisma).apply(input)).rejects.toThrow(
+      'Legacy placement closing map conflict',
+    );
+  });
+
+  it('rejects an unrelated deterministic closing-number collision', async () => {
+    const { prisma } = prismaMock({
+      existingRecords: {
+        placementClosing: [
+          {
+            id: 'closing-unrelated',
+            tenantId: 'tenant-1',
+            placementId: 'placement-created-1',
+            closingNumber: historicalPlacementClosingNumber('p1'),
+          },
+        ],
+      },
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply(applyInput([offer()])),
+    ).rejects.toThrow('already exists without an import map');
+  });
+
+  it('rejects a missing mapped participant during closing creation', async () => {
+    const { prisma } = prismaMock({
+      existingMaps: {
+        offer: { '1': 'placement-existing' },
+        offer_participant: { p1: 'participant-missing' },
+      },
+      existingRecords: {
+        placement: [{ id: 'placement-existing', tenantId: 'tenant-1' }],
+      },
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply(applyInput([offer()])),
+    ).rejects.toThrow('Mapped participant not found');
+  });
+
+  it('rejects a mapped participant from a different placement', async () => {
+    const { prisma } = prismaMock({
+      existingMaps: {
+        offer: { '1': 'placement-existing' },
+        offer_participant: { p1: 'participant-existing' },
+      },
+      existingRecords: {
+        placement: [{ id: 'placement-existing', tenantId: 'tenant-1' }],
+        placementParticipant: [
+          {
+            id: 'participant-existing',
+            tenantId: 'tenant-1',
+            placementId: 'other-placement',
+          },
+        ],
+      },
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply(applyInput([offer()])),
+    ).rejects.toThrow('Mapped participant not found');
   });
 
   it('caches import maps created earlier in the same transaction', async () => {
@@ -303,24 +680,34 @@ describe('LegacyOffersImporter', () => {
   });
 
   it('does not create risk taxonomy rows when exact maps already exist', async () => {
+    const source = offer({
+      classofbusiness: {
+        class_of_business_id: '1',
+        business_name: 'Motor Comprehensive',
+        business_details: '[{"keydetail":"Vehicle Make"}]',
+      },
+    });
+    const normalized = new LegacyOffersNormalizer().normalize(source);
     const { prisma, tx } = prismaMock({
       existingMaps: {
         risk_class: { motor: 'risk-class-existing' },
         risk_type: { '1': 'risk-type-existing' },
         offer: { '1': 'placement-existing' },
+        offer_participant: { p1: 'participant-existing' },
+        offer_participant_closing: {
+          p1: {
+            currentId: 'closing-existing',
+            rawHash: historicalPlacementClosingHash(
+              normalized,
+              normalized.participants[0],
+            ),
+          },
+        },
       },
     });
 
     const result = await new LegacyOffersImporter(prisma).apply(
-      applyInput([
-        offer({
-          classofbusiness: {
-            class_of_business_id: '1',
-            business_name: 'Motor Comprehensive',
-            business_details: '[{"keydetail":"Vehicle Make"}]',
-          },
-        }),
-      ]),
+      applyInput([source]),
     );
 
     expect(result.created.riskClasses).toBe(0);
@@ -353,7 +740,9 @@ describe('LegacyOffersImporter', () => {
         risk_type: { '5': 'risk-type-retention-bond' },
       },
       existingRecords: {
-        riskClass: [{ id: 'risk-class-bond', name: 'Bond' }],
+        riskClass: [
+          { id: 'risk-class-bond', tenantId: 'tenant-1', name: 'Bond' },
+        ],
         riskType: [
           {
             id: 'risk-type-retention-bond',
@@ -420,6 +809,8 @@ describe('LegacyOffersImporter', () => {
   });
 
   it('does not recreate exact alias maps on an idempotent rerun', async () => {
+    const source = retentionBondOffer('5', '1');
+    const normalized = new LegacyOffersNormalizer().normalize(source);
     const { prisma, tx } = prismaMock({
       existingMaps: {
         risk_class: { bond: 'risk-class-bond' },
@@ -429,11 +820,21 @@ describe('LegacyOffersImporter', () => {
           '5:obligee_interest': 'field-obligee',
         },
         offer: { '1': 'placement-existing' },
+        offer_participant: { p1: 'participant-existing' },
+        offer_participant_closing: {
+          p1: {
+            currentId: 'closing-existing',
+            rawHash: historicalPlacementClosingHash(
+              normalized,
+              normalized.participants[0],
+            ),
+          },
+        },
       },
     });
 
     const result = await new LegacyOffersImporter(prisma).apply(
-      applyInput([retentionBondOffer('5', '1')]),
+      applyInput([source]),
     );
 
     expect(result.created.riskTypes).toBe(0);
@@ -445,11 +846,15 @@ describe('LegacyOffersImporter', () => {
   });
 });
 
-type ExistingMaps = Record<string, Record<string, string>>;
+type ExistingMapValue = string | { currentId: string; rawHash?: string };
+type ExistingMaps = Record<string, Record<string, ExistingMapValue>>;
 type ExistingRecords = Record<string, Array<Record<string, unknown>>>;
 type TxState = { active: boolean; usedAfterClose: boolean };
 type MockState = {
-  maps: Map<string, { currentId: string; currentModel: string }>;
+  maps: Map<
+    string,
+    { currentId: string; currentModel: string; rawHash?: string }
+  >;
   counters: Map<string, number>;
   records: Map<string, Array<Record<string, unknown>>>;
 };
@@ -482,10 +887,13 @@ function prismaMock(
   for (const [entityType, byLegacyId] of Object.entries(
     options.existingMaps ?? {},
   )) {
-    for (const [legacyId, currentId] of Object.entries(byLegacyId)) {
+    for (const [legacyId, existing] of Object.entries(byLegacyId)) {
+      const mapValue =
+        typeof existing === 'string' ? { currentId: existing } : existing;
       state.maps.set(`${entityType}:${legacyId}`, {
-        currentId,
+        currentId: mapValue.currentId,
         currentModel: currentModelFor(entityType),
+        rawHash: mapValue.rawHash,
       });
     }
   }
@@ -513,12 +921,14 @@ function prismaMock(
     delegate('rootCurrency', txState, state, { root: true }),
     delegate('rootCounterparty', txState, state, { root: true }),
     delegate('rootPlacement', txState, state, { root: true }),
+    delegate('rootPlacementClosing', txState, state, { root: true }),
   ];
   const prisma = {
     $transaction: transaction,
     currency: rootDelegates[0],
     counterparty: rootDelegates[1],
     placement: rootDelegates[2],
+    placementClosing: rootDelegates[3],
   } as unknown as PrismaClient;
   return { prisma, transaction, transactionState, tx, txState, rootDelegates };
 }
@@ -549,6 +959,7 @@ function transactionMock(
       state,
       options,
     ),
+    placementClosing: delegate('placementClosing', txState, state, options),
   };
 }
 
@@ -568,7 +979,7 @@ function delegate(
     findFirst: jest.fn((input: unknown) => {
       assertActive();
       const where = (input as { where?: Record<string, unknown> }).where;
-      if (where?.id) {
+      if (where?.id && Object.keys(where).length === 1) {
         return Promise.resolve(
           findRecord(state.records.get(model) ?? [], where) ?? { id: where.id },
         );
@@ -624,7 +1035,7 @@ function legacyImportMapDelegate(
     const where = legacyImportMapWhere(input);
     const found = state.maps.get(`${where.entityType}:${where.legacyId}`);
     return Promise.resolve(
-      found ? { ...found, rawHash: 'existing-hash' } : null,
+      found ? { ...found, rawHash: found.rawHash ?? 'existing-hash' } : null,
     );
   });
   base.create.mockImplementation((input: unknown) => {
@@ -633,6 +1044,7 @@ function legacyImportMapDelegate(
     state.maps.set(`${data.entityType}:${data.legacyId}`, {
       currentId: data.currentId,
       currentModel: data.currentModel,
+      rawHash: data.rawHash,
     });
     return Promise.resolve({ id: `map-${data.entityType}-${data.legacyId}` });
   });
@@ -674,6 +1086,15 @@ function riskTypeFieldCreateKeys(tx: ReturnType<typeof transactionMock>) {
   return tx.riskTypeField.create.mock.calls.map(
     ([input]) =>
       ((input as { data?: Record<string, unknown> }).data ?? {}).fieldKey,
+  );
+}
+
+function renderedDetailLabels(value: unknown) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return [];
+  return Object.keys(value as Record<string, unknown>).map((key) =>
+    key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (character) => character.toUpperCase()),
   );
 }
 
@@ -742,6 +1163,7 @@ function currentModelFor(entityType: string) {
     counterparty_address: 'CounterpartyAddress',
     offer: 'Placement',
     offer_participant: 'PlacementParticipant',
+    offer_participant_closing: 'PlacementClosing',
   };
   return currentModels[entityType] ?? entityType;
 }
@@ -768,6 +1190,126 @@ function applyInput(sources: LegacyOffer[]) {
     sourceFileHash: 'file-hash',
     plan,
     normalizedOffers,
+  };
+}
+
+function motorFixture6740(): LegacyOffer {
+  return {
+    offer_id: '6740',
+    offer_status: 'CLOSED',
+    payment_status: 'UNPAID',
+    claim_status: 'UNCLAIMED',
+    sum_insured: 1000000,
+    premium: 16755.98,
+    rate: 1.6756,
+    commission: 21.5,
+    commission_amount: 1981.394635,
+    facultative_offer: 55,
+    placed_share: 55,
+    fac_premium: 9215.789,
+    fac_sum_insured: 550000,
+    insurer: {
+      insurer_id: '2',
+      insurer_company_name: 'Priority Insurance Company',
+    },
+    classofbusiness: {
+      class_of_business_id: '1',
+      business_name: 'Motor Comprehensive',
+      business_details:
+        '[{"keydetail":"NCD"},{"keydetail":"FD"},{"keydetail":"TPPDL"},{"keydetail":"Excess"},{"keydetail":"Vehicle Make"},{"keydetail":"Year of Manufacture"},{"keydetail":"Vehicle Reg No."},{"keydetail":"Cover type"},{"keydetail":"Chassis Number "},{"keydetail":"Seating Capacity "},{"keydetail":"Cubic Capacity "}]',
+    },
+    offer_detail: {
+      offer_detail_id: '6638',
+      policy_number: 'PIC/ASH/MOT/21-001201',
+      insured_by: 'RICHCO TRUST GHANA LIMITED',
+      period_of_insurance_from: '2026-09-08',
+      period_of_insurance_to: '2027-09-07',
+      currency: 'GHS',
+      offer_details:
+        '[{"keydetail":"NCD","value":"25%"},{"keydetail":"FD","value":"15%"},{"keydetail":"TPPDL","value":"GHS 94,000"},{"keydetail":"Excess","value":"15% bought"},{"keydetail":"Vehicle Make","value":"DAF ART HEAD/TANKER"},{"keydetail":"Year of Manufacture","value":"2011"},{"keydetail":"Vehicle Reg No.","value":"AC 1427-18"},{"keydetail":"Cover type","value":"OWN GOODS"},{"keydetail":"Chassis Number ","value":"XLRTE85MCOE911598"},{"keydetail":"Seating Capacity ","value":"3"},{"keydetail":"Cubic Capacity ","value":"-"}]',
+    },
+    offer_participant: [
+      motorFixture6740Participant(
+        '17763',
+        20,
+        200000,
+        3351.196,
+        2463.12906,
+        720.50714,
+        167.5598,
+        '1',
+        'Ghana Reinsurance Company Limited',
+      ),
+      motorFixture6740Participant(
+        '17764',
+        15,
+        150000,
+        2513.397,
+        1847.346795,
+        540.380355,
+        125.66985,
+        '3',
+        'Mainstream Reinsurance',
+      ),
+      motorFixture6740Participant(
+        '17765',
+        10,
+        100000,
+        1675.598,
+        1231.56453,
+        360.25357,
+        83.7799,
+        '39',
+        'Vanguard Assurance',
+      ),
+      motorFixture6740Participant(
+        '17766',
+        10,
+        100000,
+        1675.598,
+        1231.56453,
+        360.25357,
+        83.7799,
+        '34',
+        'Enterprise Insurance Company Limited',
+      ),
+    ],
+    offer_claims: [],
+    offer_endorsements: [],
+  };
+}
+
+function motorFixture6740Participant(
+  participantId: string,
+  percentage: number,
+  facSumInsured: number,
+  facPremium: number,
+  offerAmount: number,
+  commissionAmount: number,
+  brokerageAmount: number,
+  reinsurerId: string,
+  reinsurerName: string,
+): NonNullable<LegacyOffer['offer_participant']>[number] {
+  return {
+    offer_participant_id: participantId,
+    offer_participant_percentage: percentage,
+    participant_fac_sum_insured: facSumInsured,
+    participant_fac_premium: facPremium,
+    offer_amount: offerAmount,
+    offer_extra_charges: {
+      nic_levy: 0,
+      agreed_brokerage_percentage: 5,
+      withholding_tax: 0,
+      agreed_commission: 21.5,
+      agreed_commission_amount: commissionAmount,
+      brokerage_amount: brokerageAmount,
+      nic_levy_amount: 0,
+      withholding_tax_amount: 0,
+    },
+    reinsurer: {
+      reinsurer_id: reinsurerId,
+      re_company_name: reinsurerName,
+    },
   };
 }
 
@@ -863,9 +1405,17 @@ function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
       {
         offer_participant_id: `p${String(overrides.offer_id ?? '1')}`,
         offer_participant_percentage: 20,
+        offer_amount: 180,
         participant_fac_premium: 200,
         participant_fac_sum_insured: 200,
-        offer_extra_charges: { agreed_commission_amount: 20 },
+        offer_extra_charges: {
+          agreed_commission: 10,
+          agreed_commission_amount: 20,
+          agreed_brokerage_percentage: 0,
+          brokerage_amount: 0,
+          nic_levy_amount: 0,
+          withholding_tax_amount: 0,
+        },
         reinsurer: { reinsurer_id: 'r1', re_company_name: 'Reinsurer' },
       },
     ],

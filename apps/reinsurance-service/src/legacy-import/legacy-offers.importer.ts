@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import {
   CounterpartyOrigin,
   CounterpartyType,
+  PlacementClosingStatus,
   PlacementParticipantRole,
   PlacementParticipantStatus,
   PlacementStatus,
@@ -14,10 +15,12 @@ import {
 import { riskFieldDefinitionHash, sha256 } from './legacy-hash';
 import {
   LEGACY_SOURCE_SYSTEM,
+  LEGACY_TOLERANCES,
   LegacyImportPlan,
   NormalizedLegacyOffer,
   NormalizedLegacyParticipant,
 } from './legacy-import.types';
+import { LegacyDecimal } from './legacy-decimal';
 import {
   legacyRiskClassLegacyId,
   normalizeLegacyRiskTypeName,
@@ -135,7 +138,7 @@ export class LegacyOffersImporter {
           created,
         );
         for (const participant of offer.participants) {
-          await this.createParticipant(
+          const participantId = await this.createParticipant(
             tx,
             mapCache,
             input,
@@ -143,6 +146,17 @@ export class LegacyOffersImporter {
             placementId,
             participant,
             reinsurerIds.get(participant.participantId)!,
+            created,
+          );
+          await this.createHistoricalClosing(
+            tx,
+            mapCache,
+            input,
+            importRunId,
+            offer,
+            participant,
+            placementId,
+            participantId,
             created,
           );
         }
@@ -563,23 +577,8 @@ export class LegacyOffersImporter {
         policyNumber: offer.policyNumber,
         riskTypeId,
         classOfBusiness: offer.className,
-        businessDetails: {
-          legacy: {
-            offerId: offer.offerId,
-            policyNumber: offer.policyNumber,
-            insuredBy: offer.title,
-            classId: offer.classId,
-            sourceSystem: LEGACY_SOURCE_SYSTEM,
-          },
-        },
-        offerDetails: {
-          legacyFields: Object.fromEntries(
-            offer.offerFields.map((field) => [
-              field.normalizedKey,
-              field.value ?? null,
-            ]),
-          ),
-        },
+        businessDetails: Prisma.JsonNull,
+        offerDetails: canonicalLegacyOfferDetails(offer),
         inceptionDate: offer.inceptionDate,
         expiryDate: offer.expiryDate,
         currency: offer.currency,
@@ -645,6 +644,117 @@ export class LegacyOffersImporter {
       createdByImport: true,
     });
     return row.id;
+  }
+
+  private async createHistoricalClosing(
+    tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
+    input: ApplyLegacyOffersInput,
+    importRunId: string,
+    offer: NormalizedLegacyOffer,
+    participant: NormalizedLegacyParticipant,
+    placementId: string,
+    participantId: string,
+    created: Record<string, number>,
+  ) {
+    const legacyId = participant.participantId;
+    const rawHash = historicalPlacementClosingHash(offer, participant);
+    const existingMap = await this.findMap(
+      tx,
+      mapCache,
+      input.tenantId,
+      'offer_participant_closing',
+      legacyId,
+    );
+    if (existingMap) {
+      if (
+        existingMap.currentModel !== 'PlacementClosing' ||
+        existingMap.rawHash !== rawHash
+      ) {
+        throw new Error(
+          `Legacy placement closing map conflict for offer_participant_id ${legacyId}`,
+        );
+      }
+      return existingMap.currentId;
+    }
+
+    assertHistoricalClosingSnapshot(offer, participant);
+    const [placement, participantRow] = await Promise.all([
+      tx.placement.findFirst({
+        where: { id: placementId, tenantId: input.tenantId },
+        select: { id: true },
+      }),
+      tx.placementParticipant.findFirst({
+        where: {
+          id: participantId,
+          tenantId: input.tenantId,
+          placementId,
+        },
+        select: { id: true, sharePercent: true, status: true },
+      }),
+    ]);
+    if (!placement) {
+      throw new Error(
+        `Mapped placement not found for legacy offer ${offer.offerId}`,
+      );
+    }
+    if (!participantRow) {
+      throw new Error(
+        `Mapped participant not found on placement for offer_participant_id ${legacyId}`,
+      );
+    }
+
+    const closingNumber = historicalPlacementClosingNumber(legacyId);
+    const existingClosing = await tx.placementClosing.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        placementId,
+        closingNumber,
+      },
+      select: { id: true },
+    });
+    if (existingClosing) {
+      throw new Error(
+        `Historical closing number ${closingNumber} already exists without an import map`,
+      );
+    }
+
+    const closing = await tx.placementClosing.create({
+      data: {
+        tenantId: input.tenantId,
+        placementId,
+        participantId,
+        closingNumber,
+        status: PlacementClosingStatus.CONFIRMED,
+        signedLinePercent: participant.percentage,
+        sharePercent: participantRow.sharePercent,
+        sumInsuredSnapshot: participant.facSumInsured,
+        grossPremium: participant.facPremium,
+        commissionPercent: participant.commissionPercent,
+        commissionAmount: participant.commissionAmount,
+        brokeragePercent: participant.brokerageFee,
+        brokerageAmount: participant.brokerageAmount,
+        netPremium: participant.offerAmount,
+        currency: offer.currency,
+        createdByUserId: input.importUserId,
+      },
+    });
+    created.placementClosings += 1;
+    if (participantRow.status !== PlacementParticipantStatus.CLOSED) {
+      await tx.placementParticipant.update({
+        where: { id_tenantId: { id: participantId, tenantId: input.tenantId } },
+        data: { status: PlacementParticipantStatus.CLOSED },
+      });
+    }
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
+      entityType: 'offer_participant_closing',
+      legacyId,
+      currentModel: 'PlacementClosing',
+      currentId: closing.id,
+      rawHash,
+      createdByImport: true,
+    });
+    return closing.id;
   }
 
   private async findMap(
@@ -722,6 +832,17 @@ function uniqueFields(fields: Array<{ key: string; normalizedKey: string }>) {
   ];
 }
 
+export function canonicalLegacyOfferDetails(
+  offer: NormalizedLegacyOffer,
+): Prisma.InputJsonObject | typeof Prisma.JsonNull {
+  const values = Object.fromEntries(
+    offer.offerFields
+      .filter((field) => field.value !== undefined && field.value !== null)
+      .map((field) => [field.normalizedKey, String(field.value)]),
+  );
+  return Object.keys(values).length > 0 ? values : Prisma.JsonNull;
+}
+
 function normalizeCounterpartyName(name: string) {
   return name.trim().replace(/\s+/g, ' ').toLowerCase();
 }
@@ -778,7 +899,86 @@ function emptyCreatedCounts() {
     riskTypeFields: 0,
     placements: 0,
     participants: 0,
+    placementClosings: 0,
     legacyImportRuns: 1,
     legacyImportMaps: 0,
   };
+}
+
+export function historicalPlacementClosingNumber(offerParticipantId: string) {
+  return `LEGACY-${offerParticipantId}`;
+}
+
+export function historicalPlacementClosingHash(
+  offer: NormalizedLegacyOffer,
+  participant: NormalizedLegacyParticipant,
+) {
+  return sha256({
+    offerParticipantId: participant.participantId,
+    signedLinePercent: participant.percentage,
+    sumInsuredSnapshot: participant.facSumInsured,
+    grossPremium: participant.facPremium,
+    commissionPercent: participant.commissionPercent,
+    commissionAmount: participant.commissionAmount,
+    brokeragePercent: participant.brokerageFee,
+    brokerageAmount: participant.brokerageAmount,
+    netPremium: participant.offerAmount,
+    currency: offer.currency,
+  });
+}
+
+function assertHistoricalClosingSnapshot(
+  offer: NormalizedLegacyOffer,
+  participant: NormalizedLegacyParticipant,
+) {
+  assertPositivePercent(participant.percentage, participant.participantId);
+  assertDecimalFits(participant.percentage, 7, 4, 'signedLinePercent');
+  assertDecimalFits(participant.facSumInsured, 18, 2, 'sumInsuredSnapshot');
+  assertDecimalFits(participant.facPremium, 18, 2, 'grossPremium');
+  assertDecimalFits(participant.commissionPercent, 7, 4, 'commissionPercent');
+  assertDecimalFits(participant.commissionAmount, 18, 2, 'commissionAmount');
+  if (participant.brokerageFee !== null) {
+    assertDecimalFits(participant.brokerageFee, 5, 2, 'brokeragePercent');
+  }
+  assertDecimalFits(participant.brokerageAmount, 18, 2, 'brokerageAmount');
+  assertDecimalFits(participant.offerAmount, 18, 2, 'netPremium');
+  if (!/^[A-Z]{3}$/.test(offer.currency)) {
+    throw new Error(`Invalid legacy closing currency '${offer.currency}'`);
+  }
+  const expectedNet = LegacyDecimal.from(participant.facPremium)
+    .subtract(LegacyDecimal.from(participant.commissionAmount))
+    .subtract(LegacyDecimal.from(participant.brokerageAmount))
+    .subtract(LegacyDecimal.from(participant.nicLevyAmount))
+    .subtract(LegacyDecimal.from(participant.withholdingTaxAmount));
+  const delta = expectedNet
+    .subtract(LegacyDecimal.from(participant.offerAmount))
+    .abs();
+  if (delta.gt(LegacyDecimal.from(LEGACY_TOLERANCES.money))) {
+    throw new Error(
+      `Legacy participant net premium mismatch for offer_participant_id ${participant.participantId}`,
+    );
+  }
+}
+
+function assertPositivePercent(value: string, legacyId: string) {
+  if (!LegacyDecimal.from(value).gt(LegacyDecimal.zero())) {
+    throw new Error(
+      `Legacy participant ${legacyId} must have a signed line percentage greater than zero`,
+    );
+  }
+}
+
+function assertDecimalFits(
+  value: string,
+  precision: number,
+  scale: number,
+  fieldName: string,
+) {
+  const [integerRaw] = value.replace(/^-/, '').split('.');
+  const integer = integerRaw.replace(/^0+/, '');
+  if (integer.length > precision - scale) {
+    throw new Error(
+      `Legacy closing ${fieldName} value '${value}' exceeds Decimal(${precision}, ${scale})`,
+    );
+  }
 }

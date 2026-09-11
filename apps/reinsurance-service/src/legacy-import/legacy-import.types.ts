@@ -144,7 +144,12 @@ export type NormalizedLegacyParticipant = {
   facPremium: string;
   facSumInsured: string;
   hasDeduction: boolean;
+  commissionPercent: string;
+  commissionAmount: string;
   brokerageFee: string | null;
+  brokerageAmount: string;
+  nicLevyAmount: string;
+  withholdingTaxAmount: string;
 };
 
 export type LegacyRiskField = {
@@ -216,6 +221,7 @@ export type LegacyImportPlanRecord = {
   reasons: string[];
   rawHash: string;
   currentPlacementId?: string;
+  participantCount?: number;
   errors: LegacyValidationIssue[];
 };
 
@@ -275,6 +281,7 @@ export type LegacyDbAwareDryRunResolution = {
     riskTypeFields: LegacyDbPlannedEntity[];
     placements: LegacyDbPlannedEntity[];
     participants: LegacyDbPlannedEntity[];
+    placementClosings: LegacyDbPlannedEntity[];
   };
   readCounts: Record<string, number>;
 };
