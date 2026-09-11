@@ -81,6 +81,7 @@ export class LegacyOffersPlanGenerator {
           action: 'reject',
           reasons: offerErrors.map((issue) => issue.code),
           rawHash: '',
+          participantCount: 0,
           errors: offerErrors,
         });
         classification.DATA_MISMATCH += 1;
@@ -130,6 +131,7 @@ export class LegacyOffersPlanGenerator {
         action: 'reject',
         reasons,
         rawHash: offer.rawHash,
+        participantCount: offer.participants.length,
         errors: [],
       };
     }
@@ -140,6 +142,7 @@ export class LegacyOffersPlanGenerator {
         action: 'review',
         reasons,
         rawHash: offer.rawHash,
+        participantCount: offer.participants.length,
         errors: [],
       };
     }
@@ -151,6 +154,7 @@ export class LegacyOffersPlanGenerator {
         action: 'create',
         reasons,
         rawHash: offer.rawHash,
+        participantCount: offer.participants.length,
         errors: [],
       };
     }
@@ -162,6 +166,7 @@ export class LegacyOffersPlanGenerator {
         reasons: ['legacy-import-map-match'],
         rawHash: offer.rawHash,
         currentPlacementId: existingPlacement.currentId,
+        participantCount: offer.participants.length,
         errors: [],
       };
     }
@@ -172,6 +177,7 @@ export class LegacyOffersPlanGenerator {
       reasons: ['legacy-import-map-raw-hash-mismatch'],
       rawHash: offer.rawHash,
       currentPlacementId: existingPlacement.currentId,
+      participantCount: offer.participants.length,
       errors: [],
     };
   }
@@ -195,6 +201,7 @@ function summarize(records: LegacyImportPlan['records']) {
     riskTypeFields: 0,
     placements: 0,
     participants: 0,
+    placementClosings: 0,
     legacyImportRuns: 1,
     legacyImportMaps: 0,
   };
@@ -209,7 +216,8 @@ function summarize(records: LegacyImportPlan['records']) {
   for (const record of records) {
     if (record.action === 'create') {
       creates.placements += 1;
-      creates.legacyImportMaps += 1;
+      creates.placementClosings += record.participantCount ?? 0;
+      creates.legacyImportMaps += 1 + (record.participantCount ?? 0);
     }
     if (record.action === 'skip') summary.skips += 1;
     if (record.action === 'conflict') summary.conflicts += 1;

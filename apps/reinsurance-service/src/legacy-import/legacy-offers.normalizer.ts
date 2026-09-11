@@ -97,6 +97,12 @@ export class LegacyOffersNormalizer {
       facPremium: decimalString(participant.participant_fac_premium),
       facSumInsured: decimalString(participant.participant_fac_sum_insured),
       hasDeduction: participant.offer_deduction_charge != null,
+      commissionPercent: decimalString(
+        participant.offer_extra_charges?.agreed_commission,
+      ),
+      commissionAmount: decimalString(
+        participant.offer_extra_charges?.agreed_commission_amount,
+      ),
       brokerageFee: cleanOptional(
         participant.offer_extra_charges?.agreed_brokerage_percentage,
       )
@@ -104,6 +110,15 @@ export class LegacyOffersNormalizer {
             participant.offer_extra_charges?.agreed_brokerage_percentage,
           )
         : null,
+      brokerageAmount: decimalString(
+        participant.offer_extra_charges?.brokerage_amount,
+      ),
+      nicLevyAmount: decimalString(
+        participant.offer_extra_charges?.nic_levy_amount,
+      ),
+      withholdingTaxAmount: decimalString(
+        participant.offer_extra_charges?.withholding_tax_amount,
+      ),
     };
   }
 }

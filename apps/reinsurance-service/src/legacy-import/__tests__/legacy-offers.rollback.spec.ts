@@ -3,6 +3,27 @@ import { LEGACY_SOURCE_SYSTEM } from '../legacy-import.types';
 import { LegacyOffersRollback } from '../legacy-offers.rollback';
 
 describe('LegacyOffersRollback', () => {
+  it('deletes exact mapped placement closings before imported participants', async () => {
+    const { prisma, tx } = prismaMock([
+      map('PlacementClosing', 'closing-1'),
+      map('PlacementParticipant', 'participant-1'),
+    ]);
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.placementClosing.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['closing-1'] },
+      },
+    });
+    const closingOrder =
+      tx.placementClosing.deleteMany.mock.invocationCallOrder[0];
+    const participantOrder =
+      tx.placementParticipant.deleteMany.mock.invocationCallOrder[0];
+    expect(closingOrder).toBeLessThan(participantOrder);
+  });
+
   it('deletes exact mapped addresses and leaves unrelated addresses on imported counterparties alone', async () => {
     const { prisma, tx } = prismaMock([
       map('Counterparty', 'counterparty-1'),
@@ -271,6 +292,7 @@ function transactionMock(
       update: jest.fn().mockResolvedValue({ id: 'run-1' }),
     },
     placementParticipant: delegate(),
+    placementClosing: delegate(),
     placement: {
       ...delegate(),
       findMany: jest.fn().mockResolvedValue(options.referencedPlacements ?? []),
