@@ -4,6 +4,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 resolver="$repo_root/.github/scripts/resolve-dev-deploy-base.sh"
+all_services_output="$repo_root/.github/scripts/emit-dev-all-service-outputs.sh"
 helper="$repo_root/.github/scripts/deploy-common.sh"
 current_sha="$(git -C "$repo_root" rev-parse HEAD)"
 
@@ -56,12 +57,15 @@ assert_service_set() {
 
 run_resolver() {
   local runs_json="$1"
+  local changed_paths_file="${2:-}"
+  local force_all="${3:-false}"
   local output_file
   output_file="$(mktemp)"
   GITHUB_SHA="$current_sha" \
     GITHUB_REPOSITORY=datrix-tech-solutions/iriskreinsurance \
     GITHUB_OUTPUT="$output_file" \
-    bash "$resolver" "$runs_json" >/dev/null
+    FORCE_ALL_SERVICES="$force_all" \
+    bash "$resolver" "$runs_json" "$changed_paths_file" >/dev/null
   cat "$output_file"
   rm -f "$output_file"
 }
@@ -79,6 +83,24 @@ EOF
 resolver_output="$(run_resolver "$tmp_dir/runs.json")"
 assert_eq 'found=true' "$(printf '%s\n' "$resolver_output" | grep '^found=')" 'normal run uses the previous successful deployment'
 assert_eq "base=$successful_base" "$(printf '%s\n' "$resolver_output" | grep '^base=')" 'normal baseline SHA'
+assert_eq 'force_all=true' "$(printf '%s\n' "$resolver_output" | grep '^force_all=')" 'deployment machinery commit requires bootstrap reconciliation'
+
+printf '%s\n' 'apps/auth-service/src/auth/auth.service.ts' > "$tmp_dir/app-paths"
+ordinary_output="$(run_resolver "$tmp_dir/runs.json" "$tmp_dir/app-paths")"
+assert_eq 'force_all=false' "$(printf '%s\n' "$ordinary_output" | grep '^force_all=')" 'ordinary application change keeps cumulative detection'
+
+for machinery_path in \
+  .github/workflows/deploy-dev.yml \
+  .github/scripts/resolve-dev-deploy-base.sh \
+  .github/scripts/deploy-dev.sh \
+  .github/scripts/deploy-common.sh; do
+  printf '%s\n' "$machinery_path" > "$tmp_dir/machinery-paths"
+  machinery_output="$(run_resolver "$tmp_dir/runs.json" "$tmp_dir/machinery-paths")"
+  assert_eq 'force_all=true' "$(printf '%s\n' "$machinery_output" | grep '^force_all=')" "deployment machinery path $machinery_path forces all services"
+done
+
+force_output="$(run_resolver "$tmp_dir/runs.json" "$tmp_dir/app-paths" true)"
+assert_eq 'force_all=true' "$(printf '%s\n' "$force_output" | grep '^force_all=')" 'manual force-all requests all services'
 
 cat > "$tmp_dir/failed-retry.json" <<EOF
 {"workflow_runs":[{"head_sha":"$successful_base","conclusion":"success","created_at":"2026-09-10T10:00:00Z"}]}
@@ -91,6 +113,15 @@ cat > "$tmp_dir/no-success.json" <<'EOF'
 EOF
 fallback_output="$(run_resolver "$tmp_dir/no-success.json")"
 assert_eq 'found=false' "$(printf '%s\n' "$fallback_output" | grep '^found=')" 'no prior deployment uses conservative fallback'
+assert_eq 'force_all=true' "$(printf '%s\n' "$fallback_output" | grep '^force_all=')" 'no prior deployment forces all services'
+
+all_services_file="$tmp_dir/all-services-output"
+bash "$all_services_output" "$all_services_file"
+for service in \
+  api-gateway auth-service hr-service notification-service subscription-service \
+  marketing-service reinsurance-service accounting-service nextjs-web; do
+  assert_eq "${service}=true" "$(grep "^${service}=" "$all_services_file")" "force-all output for ${service}"
+done
 
 assert_service_set 'auth-service' 'apps/auth-service/src/auth/auth.service.ts'
 assert_service_set 'api-gateway,auth-service,hr-service,notification-service,subscription-service,marketing-service,reinsurance-service,accounting-service' 'packages/types/src/events.ts'

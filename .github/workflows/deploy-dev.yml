@@ -3,6 +3,13 @@ name: Deploy to Dev
 on:
   push:
     branches: [dev]
+  workflow_dispatch:
+    inputs:
+      force_all_services:
+        description: Rebuild and deploy every DEV service
+        required: false
+        default: false
+        type: boolean
 
 # ── 1. Concurrency control ─────────────────────────────────────────────────────
 # Allow a newer dev push to replace an older in-flight deployment.
@@ -73,6 +80,7 @@ jobs:
       reinsurance-service: ${{ steps.filter.outputs.reinsurance-service || steps.fallback.outputs.reinsurance-service }}
       accounting-service: ${{ steps.filter.outputs.accounting-service || steps.fallback.outputs.accounting-service }}
       nextjs-web: ${{ steps.filter.outputs.nextjs-web || steps.fallback.outputs.nextjs-web }}
+      force-all: ${{ steps.baseline.outputs.force_all || steps.fallback.outputs.force_all }}
 
     steps:
       - name: Checkout code
@@ -85,11 +93,12 @@ jobs:
         id: baseline
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          FORCE_ALL_SERVICES: ${{ inputs.force_all_services || 'false' }}
         run: bash .github/scripts/resolve-dev-deploy-base.sh
 
       - name: Detect changed services
         id: filter
-        if: steps.baseline.outputs.found == 'true'
+        if: steps.baseline.outputs.found == 'true' && steps.baseline.outputs.force_all != 'true'
         uses: dorny/paths-filter@v4
         with:
           base: ${{ steps.baseline.outputs.base }}
@@ -140,23 +149,9 @@ jobs:
 
       - name: Rebuild all services without a successful DEV baseline
         id: fallback
-        if: steps.baseline.outputs.found != 'true'
+        if: steps.baseline.outputs.found != 'true' || steps.baseline.outputs.force_all == 'true'
         run: |
-          services=(
-            api-gateway
-            auth-service
-            hr-service
-            notification-service
-            subscription-service
-            marketing-service
-            reinsurance-service
-            accounting-service
-            nextjs-web
-          )
-          printf 'changes=["%s"]\n' "$(IFS='","'; echo "${services[*]}")" >> "$GITHUB_OUTPUT"
-          for service in "${services[@]}"; do
-            echo "${service}=true" >> "$GITHUB_OUTPUT"
-          done
+          bash .github/scripts/emit-dev-all-service-outputs.sh "$GITHUB_OUTPUT"
 
   build-and-push:
     name: Build & Push — ${{ matrix.service }}
