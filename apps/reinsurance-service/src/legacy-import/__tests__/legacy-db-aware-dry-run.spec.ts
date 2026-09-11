@@ -837,6 +837,7 @@ function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
     offer_status: 'CLOSED',
     payment_status: 'UNPAID',
     claim_status: 'UNCLAIMED',
+    created_at: '2026-09-08 08:50:34',
     sum_insured: 1000,
     premium: 100,
     commission_amount: 20,

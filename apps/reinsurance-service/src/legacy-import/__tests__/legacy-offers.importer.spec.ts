@@ -143,6 +143,53 @@ describe('LegacyOffersImporter', () => {
     expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(9);
   });
 
+  it('uses legacy offer.created_at as Placement.createdAt for fixture 6740', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([motorFixture6740()]),
+    );
+
+    expect(createData(tx.placement)).toEqual(
+      expect.objectContaining({
+        createdAt: new Date('2026-09-08T08:50:34.000Z'),
+      }),
+    );
+  });
+
+  it('uses legacy offer.created_at as Placement.createdAt for fixture 6739', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(
+      applyInput([
+        offer({
+          offer_id: '6739',
+          created_at: '2026-09-08 08:47:39',
+        }),
+      ]),
+    );
+
+    expect(createData(tx.placement)).toEqual(
+      expect.objectContaining({
+        createdAt: new Date('2026-09-08T08:47:39.000Z'),
+      }),
+    );
+  });
+
+  it('fails closed when legacy offer.created_at is missing', () => {
+    expect(() =>
+      new LegacyOffersNormalizer().normalize(offer({ created_at: null })),
+    ).toThrow('Missing required legacy field: offer.created_at');
+  });
+
+  it('fails closed when legacy offer.created_at is malformed', () => {
+    expect(() =>
+      new LegacyOffersNormalizer().normalize(
+        offer({ created_at: 'not-a-date' }),
+      ),
+    ).toThrow('Invalid legacy date: offer.created_at');
+  });
+
   it('creates one confirmed closing per legacy participant with exact snapshots', async () => {
     const source = offer({
       facultative_offer: 12.5,
@@ -1199,6 +1246,7 @@ function motorFixture6740(): LegacyOffer {
     offer_status: 'CLOSED',
     payment_status: 'UNPAID',
     claim_status: 'UNCLAIMED',
+    created_at: '2026-09-08 08:50:34',
     sum_insured: 1000000,
     premium: 16755.98,
     rate: 1.6756,
@@ -1380,6 +1428,7 @@ function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
     offer_status: 'CLOSED',
     payment_status: 'UNPAID',
     claim_status: 'UNCLAIMED',
+    created_at: '2026-09-08 08:50:34',
     sum_insured: 1000,
     premium: 100,
     rate: 10,
