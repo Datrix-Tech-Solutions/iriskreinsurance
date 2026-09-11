@@ -1,6 +1,7 @@
 'use client';
 
 import { use, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import {
   useEmployee,
@@ -19,18 +20,17 @@ import {
 } from '@/hooks/hr/useRoles';
 import { useToast } from '@/hooks/useToast';
 import { Breadcrumb } from '@/components/molecules/hr/employees/employeebreadcrumps';
-import { EmployeeDetailBanner } from '@/components/molecules/hr/employees/EmployeeDetailBanner';
+import { ProfileBanner } from '@/components/molecules/hr/employees/ProfileBanner';
 import { EmployeeDetailSidebar } from '@/components/molecules/hr/employees/EmployeeDetailSidebar';
 import { PersonalInformationSection } from '@/components/molecules/hr/employees/PersonalInformationSection';
 import { AssetsSection } from '@/components/molecules/hr/employees/assetSection';
 import { EmployeeDetailSkeleton } from '@/components/molecules/hr/employees/employeeDetailSkeleton';
-import { TabBar } from '@/components/molecules/shared/TabBar';
 import {
   EmployeeDetailPanels,
   type EmployeeDetailPanel,
 } from '@/components/organisms/hr/employee/EmployeeDetailPanels';
 import { EmployeePayslipTab } from '@/components/molecules/hr/employees/EmployeePayslipTab';
-import { pageBreadcrumb, pageBanner, pagePx, pageContent } from '@/lib/layout';
+import { pageBreadcrumb, pagePx, pageContent } from '@/lib/layout';
 
 type EmployeeTab = 'personal' | 'payroll';
 
@@ -47,6 +47,7 @@ export default function EmployeeDetailPage({
   params: Promise<{ tenantSlug: string; id: string }>;
 }) {
   const { tenantSlug, id } = use(params);
+  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<EmployeeTab>('personal');
   const [activePanel, setActivePanel] = useState<EmployeeDetailPanel | null>(null);
@@ -142,21 +143,17 @@ export default function EmployeeDetailPage({
       </div>
 
       {/* Banner */}
-      <div className={`${pageBanner} shrink-0`}>
-        <EmployeeDetailBanner
+      <div className={`${pagePx} pb-4 sm:pb-6 shrink-0 relative z-20`}>
+        <ProfileBanner
+          color="#0047AB"
           employee={employee}
           hasPendingResignation={hrIsNotified}
-          onEdit={canEditEmployee ? () => setActivePanel('edit') : undefined}
+          canEdit={canEditEmployee}
+          onEdit={() => setActivePanel('edit')}
           onOffboard={canOffboardEmployee ? () => setActivePanel('offboard') : undefined}
           onResign={() => setActivePanel('resign')}
           onResendInvite={handleResendInvite}
           isResending={isResending}
-        />
-      </div>
-
-      {/* Tab bar */}
-      <div className={`${pagePx} shrink-0`}>
-        <TabBar
           tabs={TABS}
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab as EmployeeTab)}
@@ -179,6 +176,11 @@ export default function EmployeeDetailPage({
                   canEditRoles={canGrantPermission}
                   canManagePermissions={canGrantPermission}
                   onEditRoles={() => setActivePanel('roles')}
+                  onManageRoles={
+                    canGrantPermission
+                      ? () => router.push(`/${tenantSlug}/hr/hrmanagement/roles`)
+                      : undefined
+                  }
                   onManagePermissions={() => setActivePanel('permissions')}
                   directPermissions={directPermissions}
                 />

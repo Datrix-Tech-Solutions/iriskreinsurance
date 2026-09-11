@@ -6,8 +6,9 @@ import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { useMyAppraisals, useAppraisalCycles } from '@/hooks/hr/useAppraisals';
 import { Column, DataTable } from '../../shared/DataTable';
 import { TableButton } from '@/components/atoms/TableButton';
-import { cn } from '@/lib/utils';
-import { Icons } from '@/components/atoms/icons';
+import { Button } from '@/components/atoms/Button';
+import { SearchSelect } from '@/components/atoms/SearchSelect';
+import { cardClass, cn } from '@/lib/utils';
 
 type MyAppraisalStatus =
   | 'In Progress'
@@ -56,9 +57,10 @@ interface Props {
   onSearch: (q: string) => void;
   page: number;
   onPageChange: (page: number) => void;
+  onManage?: () => void;
 }
 
-export function MyAppraisalsTable({ search, page, onPageChange }: Props) {
+export function MyAppraisalsTable({ search, page, onPageChange, onManage }: Props) {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
   const [statusFilter, setStatusFilter] = useState('');
@@ -201,30 +203,36 @@ export function MyAppraisalsTable({ search, page, onPageChange }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Custom toolbar */}
-      <div className="flex items-center gap-3 flex-wrap shrink-0">
-        {/* Status filter */}
-        <div className="relative">
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              onPageChange(1);
-            }}
-            className="appearance-none pl-4 pr-8 py-2 border border-gray-200 rounded-input text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white font-medium"
-          >
-            <option value="">All</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Pending Manager">Pending Manager</option>
-            <option value="Pending Approval">Pending Approval</option>
-            <option value="Completed">Completed</option>
-            <option value="Overdue">Overdue</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
-          <Icons.ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none h-4 w-4" />
-        </div>
+      {/* Custom toolbar — mirrors DataTable's own toolbar card, since it's rendered outside DataTable here */}
+      <div className={cardClass('px-4 py-2 shrink-0')}>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Status filter */}
+          <div className="w-48">
+            <SearchSelect
+              size="sm"
+              placeholder="Status"
+              showAllOption
+              allLabel="All"
+              options={Object.keys(STATUS_CONFIG).map((status) => ({
+                value: status,
+                label: status,
+              }))}
+              value={statusFilter}
+              onChange={(value) => {
+                setStatusFilter(value);
+                onPageChange(1);
+              }}
+            />
+          </div>
 
-        <div className="flex-1" />
+          <div className="flex-1" />
+
+          {onManage && (
+            <Button variant="outline" onClick={onManage}>
+              Manage
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Table — pass data without triggering DataTable's own toolbar */}

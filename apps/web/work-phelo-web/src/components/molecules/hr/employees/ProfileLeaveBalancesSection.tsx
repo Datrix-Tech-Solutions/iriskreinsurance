@@ -3,8 +3,9 @@
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { CalendarClock } from 'lucide-react';
-import { cn, cardClass } from '@/lib/utils';
+import { cardClass } from '@/lib/utils';
 import { TableButton } from '@/components/atoms/TableButton';
+import { HeaderTab } from '@/components/molecules/shared/HeaderTab';
 import { LeaveRequestDetailPanel } from '@/components/organisms/hr/leave/LeaveRequestDetailPanel';
 import { useLeaveBalances, useMyLeaveRequests, useLeaveRequests } from '@/hooks/hr/useLeave';
 import { usePermission } from '@/hooks/hr/usePermission';
@@ -21,15 +22,11 @@ function formatRange(start: string, end: string) {
   return `${startStr} – ${endStr}`;
 }
 
-function daysUntil(iso: string) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const start = new Date(iso);
-  start.setHours(0, 0, 0, 0);
-  const diff = Math.round((start.getTime() - today.getTime()) / 86_400_000);
-  if (diff <= 0) return 'starts today';
-  if (diff === 1) return 'in 1 day';
-  return `in ${diff} days`;
+
+function backOn(endIso: string) {
+  const back = new Date(endIso);
+  back.setDate(back.getDate() + 1);
+  return back.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
 interface Props {
@@ -55,31 +52,6 @@ function accentFor(key: string) {
   return ACCENTS[hash % ACCENTS.length];
 }
 
-function HeaderTab({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'relative px-1 pb-2 pt-1 text-sm font-semibold transition-colors whitespace-nowrap',
-        active
-          ? 'text-(--module-btn-bg,var(--color-brand)) after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-(--module-btn-bg,var(--color-brand))'
-          : 'text-gray-400 hover:text-gray-600',
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 export function ProfileLeaveBalancesSection({ onSelect }: Props) {
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
   const router = useRouter();
@@ -96,9 +68,20 @@ export function ProfileLeaveBalancesSection({ onSelect }: Props) {
 
   const { data: myRequests = [] } = useMyLeaveRequests();
   const todayIso = new Date().toISOString().slice(0, 10);
-  const nextLeave: LeaveRequest | undefined = [...myRequests]
-    .filter((r) => r.status === 'APPROVED' && r.startDate.slice(0, 10) >= todayIso)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  // A leave already in progress takes priority over "upcoming" — it isn't upcoming anymore.
+  const currentLeave: LeaveRequest | undefined = myRequests.find(
+    (r) =>
+      r.status === 'APPROVED' &&
+      r.startDate.slice(0, 10) <= todayIso &&
+      r.endDate.slice(0, 10) >= todayIso,
+  );
+  const nextLeave: LeaveRequest | undefined = currentLeave
+    ? undefined
+    : [...myRequests]
+        .filter((r) => r.status === 'APPROVED' && r.startDate.slice(0, 10) >= todayIso)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  const leave = currentLeave ?? nextLeave;
+  const isCurrent = Boolean(currentLeave);
 
   const eligible = balances.filter((b) => b.entitled > 0);
 
@@ -140,33 +123,45 @@ export function ProfileLeaveBalancesSection({ onSelect }: Props) {
 
       {activeTab === 'balances' ? (
         <div className="overflow-x-auto">
-          <div className="flex gap-4 px-6 py-5" style={{ width: 'max-content', minWidth: '100%' }}>
-            {/* Reserved slot — the closest upcoming approved leave */}
-            <div
-              className={`w-60 shrink-0 flex flex-col gap-2 p-4 rounded-2xl border ${
-                nextLeave ? 'border-brand/30 bg-brand/5' : 'border-dashed border-gray-200 bg-gray-50/60'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <CalendarClock className="w-3.5 h-3.5" />
-                Upcoming Leave
+          <div
+            className="flex items-start gap-4 px-6 py-5"
+            style={{ width: 'max-content', minWidth: '100%' }}
+          >
+            
+            <div className="w-60 h-24 shrink-0 overflow-hidden flex flex-col gap-2 p-4 rounded-2xl border border-gray-200 bg-white">
+              <div className="flex items-start justify-between gap-2">
+                <p
+                  className={`text-sm font-semibold truncate ${
+                    leave ? 'text-gray-900' : 'text-gray-400'
+                  }`}
+                >
+                  {leave ? leave.leaveTypeName : 'No leave scheduled'}
+                </p>
+                <span
+                  className={`flex items-center gap-1 text-xs shrink-0 font-semibold ${
+                    isCurrent
+                      ? 'text-purple-600'
+                      : leave
+                        ? 'text-(--module-btn-bg,var(--color-brand))'
+                        : 'text-gray-400'
+                  }`}
+                >
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  {isCurrent ? 'On Leave' : 'Upcoming Leave'}
+                </span>
               </div>
-              {nextLeave ? (
-                <>
-                  <p className="text-sm font-semibold text-gray-900">{nextLeave.leaveTypeName}</p>
-                  <p className="text-xs text-gray-500">
-                    {formatRange(nextLeave.startDate, nextLeave.endDate)}
-                  </p>
-                  <div className="mt-auto flex items-center justify-between text-xs">
-                    <span className="font-medium text-brand">{daysUntil(nextLeave.startDate)}</span>
-                    <span className="text-gray-400">
-                      {nextLeave.totalDays} day{nextLeave.totalDays !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs text-gray-400 my-auto">No upcoming leave scheduled.</p>
-              )}
+
+              <p className="text-xs text-gray-500 truncate">
+                {leave ? formatRange(leave.startDate, leave.endDate) : '—'}
+              </p>
+
+              <p
+                className={`text-xs font-semibold truncate ${
+                  leave ? (isCurrent ? 'text-purple-600' : 'text-brand') : 'text-gray-300'
+                }`}
+              >
+                {leave ? `back ${backOn(leave.endDate)}` : '—'}
+              </p>
             </div>
 
             {eligible.length === 0 ? (
@@ -182,12 +177,14 @@ export function ProfileLeaveBalancesSection({ onSelect }: Props) {
                     key={balance.leaveTypeId}
                     type="button"
                     onClick={() => onSelect?.(balance.leaveTypeId)}
-                    className={`w-60 shrink-0 text-left flex flex-col gap-3 p-4 rounded-2xl border border-gray-200 bg-white transition-all hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${accentFor(
+                    className={`w-60 h-24 shrink-0 overflow-hidden text-left flex flex-col gap-2 p-4 rounded-2xl border border-gray-200 bg-white transition-all hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand ${accentFor(
                       balance.leaveTypeId,
                     )}`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-semibold text-gray-900">{balance.leaveTypeName}</p>
+                      <p className="text-sm font-semibold text-gray-900 truncate">
+                        {balance.leaveTypeName}
+                      </p>
                       <span className="text-xs text-gray-400 shrink-0">
                         {balance.entitled} days/yr
                       </span>
@@ -205,13 +202,20 @@ export function ProfileLeaveBalancesSection({ onSelect }: Props) {
                       </span>
                       <span className="text-gray-400">{balance.used} used</span>
                     </div>
-                    {balance.pending > 0 && (
-                      <p className="text-xs text-orange-500">
-                        {balance.pending} day{balance.pending !== 1 ? 's' : ''} pending approval
+                    {(balance.pending > 0 || balance.carriedOver > 0) && (
+                      <p className="text-xs truncate">
+                        {balance.pending > 0 && (
+                          <span className="text-orange-500">
+                            {balance.pending} day{balance.pending !== 1 ? 's' : ''} pending
+                          </span>
+                        )}
+                        {balance.pending > 0 && balance.carriedOver > 0 && (
+                          <span className="text-gray-300"> · </span>
+                        )}
+                        {balance.carriedOver > 0 && (
+                          <span className="text-blue-500">{balance.carriedOver} carried over</span>
+                        )}
                       </p>
-                    )}
-                    {balance.carriedOver > 0 && (
-                      <p className="text-xs text-blue-500">{balance.carriedOver} carried over</p>
                     )}
                   </button>
                 );

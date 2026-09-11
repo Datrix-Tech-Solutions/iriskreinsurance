@@ -8,7 +8,12 @@ import {
   useResignationRecord,
   useEmployeeOptions,
 } from '@/hooks/hr/useEmployees';
-import { useUserPermissions } from '@/hooks/hr/useRoles';
+import {
+  useUserPermissions,
+  usePermissionSets,
+  useAssignPermissionSet,
+  useRemovePermissionSet,
+} from '@/hooks/hr/useRoles';
 import { usePermission, usePermissionRule } from '@/hooks/hr/usePermission';
 import { Permission } from '@/lib/permissionMap';
 import { useAuthStore } from '@/store/auth.store';
@@ -16,16 +21,13 @@ import { useToast } from '@/hooks/useToast';
 import { useUploadMyAvatar } from '@/hooks/useMyAvatar';
 import { extractError } from '@/lib/extractError';
 import { pagePx, pageContent } from '@/lib/layout';
-import { TableButton } from '@/components/atoms/TableButton';
 import { ProfileBanner } from '@/components/molecules/hr/employees/ProfileBanner';
 import { ProfileSummaryCard } from '@/components/molecules/hr/employees/ProfileSummaryCard';
 import { ProfilePerformanceSummaryCard } from '@/components/molecules/hr/employees/ProfilePerformanceSummaryCard';
 import { PersonalInformationSection } from '@/components/molecules/hr/employees/PersonalInformationSection';
-import { RolesCard } from '@/components/molecules/hr/employees/RolesCard';
+import { RolesAndPermissionsCard } from '@/components/molecules/hr/employees/RolesAndPermissionsCard';
 import { ProfileLeaveBalancesSection } from '@/components/molecules/hr/employees/ProfileLeaveBalancesSection';
 import { ProfileProjectsSection } from '@/components/molecules/hr/employees/ProfileProjectsSection';
-import { EmployeePermissionsCard } from '@/components/molecules/hr/employees/EmployeePermissionsCard';
-import { SectionCard } from '@/components/molecules/shared/sectionCard';
 import { AssetsSection } from '@/components/molecules/hr/employees/assetSection';
 import { ProfilePayslipTab } from '@/components/molecules/hr/employees/ProfilePayslipTab';
 import { MyAppraisalsTable } from '@/components/organisms/hr/appraisal/MyAppraisalTable';
@@ -35,6 +37,8 @@ import { EditMyProfilePanel } from '@/components/organisms/hr/employee/EditMyPro
 import { ProfilePhotoDialog } from '@/components/organisms/hr/employee/ProfilePhotoDialog';
 import { ResignationPanel } from '@/components/organisms/hr/employee/resignationPanel';
 import { ApplyLeavePanel } from '@/components/organisms/hr/leave/ApplyLeavePanel';
+import { EmployeePermissionsPanel } from '@/components/organisms/roles/EmployeePermissionsPanel';
+import { AssignPermissionPanel } from '@/components/organisms/roles/assignPermissionPanel';
 import { useLeaveBalances } from '@/hooks/hr/useLeave';
 import { EmployeeDetailSkeleton } from '@/components/molecules/hr/employees/employeeDetailSkeleton';
 import type { LeaveBalance, UpdateEmployeePayload } from '@/types/hr';
@@ -55,6 +59,8 @@ export function ProfileContent() {
   const [resignOpen, setResignOpen] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
   const [applyLeaveTypeId, setApplyLeaveTypeId] = useState<string | null>(null);
+  const [rolesPanelOpen, setRolesPanelOpen] = useState(false);
+  const [permissionsPanelOpen, setPermissionsPanelOpen] = useState(false);
   const toast = useToast();
 
   const { data: leaveBalancesRaw } = useLeaveBalances();
@@ -68,7 +74,13 @@ export function ProfileContent() {
   const { data: resignationRecord } = useResignationRecord(employee?.id ?? '');
   const { data: allEmployees = [] } = useEmployeeOptions();
   const canEditProfile = usePermission(Permission.UPDATE_OWN_PROFILE);
+  const canGrantPermission = usePermission(Permission.GRANT_PERMISSION);
   const { data: userPermsRaw } = useUserPermissions(employee?.userId ?? '');
+  const { data: permissionSets = [] } = usePermissionSets({ enabled: canGrantPermission });
+  const { mutate: assignPermissionSet, isPending: isAssigningPermissionSet } =
+    useAssignPermissionSet();
+  const { mutate: removePermissionSet, isPending: isRemovingPermissionSet } =
+    useRemovePermissionSet();
 
   // These 4 used to be their own persistent sidebar entries — same access
   // rules as their standalone pages, now surfaced as profile tabs instead.
@@ -106,6 +118,7 @@ export function ProfileContent() {
     | undefined;
   const assignedSets = userPermsTyped?.permissionSets ?? [];
   const directPermissions = userPermsTyped?.directPermissions ?? [];
+  const customPermissionSets = permissionSets.filter((s) => !s.isSystem);
 
   const managerName = (() => {
     if (!employee?.managerId) return undefined;
@@ -125,6 +138,28 @@ export function ProfileContent() {
       },
       onError: (err) => toast.error(extractError(err, 'Failed to update profile')),
     });
+  };
+
+  const handleAssignPermissionSet = (permissionSetId: string) => {
+    if (!employee?.userId) return;
+    assignPermissionSet(
+      { userId: employee.userId, permissionSetId },
+      {
+        onSuccess: () => toast.success('Permission set assigned successfully'),
+        onError: () => toast.error('Failed to assign permission set'),
+      },
+    );
+  };
+
+  const handleRemovePermissionSet = (permissionSetId: string) => {
+    if (!employee?.userId) return;
+    removePermissionSet(
+      { userId: employee.userId, permissionSetId },
+      {
+        onSuccess: () => toast.success('Permission set removed successfully'),
+        onError: () => toast.error('Failed to remove permission set'),
+      },
+    );
   };
 
   if (isLoading) return <EmployeeDetailSkeleton />;
@@ -183,18 +218,24 @@ export function ProfileContent() {
               </div>
               <div className="flex-1 min-w-0 flex flex-col gap-4">
                 <ProfileSummaryCard employee={employee} managerName={managerName} />
-                <RolesCard roles={roles} />
                 <ProfileLeaveBalancesSection onSelect={setApplyLeaveTypeId} />
                 {canAccessProjects && <ProfileProjectsSection />}
-                <EmployeePermissionsCard
-                  canManage={false}
-                  onManage={() => {}}
-                  directPermissions={directPermissions}
-                  hideWhenEmpty
-                />
                 <AssetsSection
                   assets={employee.assets ?? []}
                   onManage={() => router.push(`/${tenantSlug}/hr/assets`)}
+                />
+                <RolesAndPermissionsCard
+                  roles={roles}
+                  directPermissions={directPermissions}
+                  canEditRoles={canGrantPermission}
+                  onEditRoles={() => setRolesPanelOpen(true)}
+                  onManageRoles={
+                    canGrantPermission
+                      ? () => router.push(`/${tenantSlug}/hr/hrmanagement/roles`)
+                      : undefined
+                  }
+                  canManagePermissions={canGrantPermission}
+                  onManagePermissions={() => setPermissionsPanelOpen(true)}
                 />
               </div>
             </div>
@@ -203,26 +244,17 @@ export function ProfileContent() {
           {activeTab === 'performance' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               <div className="lg:col-span-2">
-                <SectionCard
-                  title="My Appraisals"
-                  headerAction={
-                    canManageAppraisals ? (
-                      <TableButton
-                        variant="blue"
-                        onClick={() => router.push(`/${tenantSlug}/hr/appraisal`)}
-                      >
-                        Manage
-                      </TableButton>
-                    ) : undefined
+                <MyAppraisalsTable
+                  search={appraisalSearch}
+                  onSearch={setAppraisalSearch}
+                  page={appraisalPage}
+                  onPageChange={setAppraisalPage}
+                  onManage={
+                    canManageAppraisals
+                      ? () => router.push(`/${tenantSlug}/hr/appraisal`)
+                      : undefined
                   }
-                >
-                  <MyAppraisalsTable
-                    search={appraisalSearch}
-                    onSearch={setAppraisalSearch}
-                    page={appraisalPage}
-                    onPageChange={setAppraisalPage}
-                  />
-                </SectionCard>
+                />
               </div>
               <div className="lg:col-span-1">
                 <ProfilePerformanceSummaryCard />
@@ -276,6 +308,29 @@ export function ProfileContent() {
         balances={leaveBalances}
         initialLeaveTypeId={applyLeaveTypeId ?? undefined}
       />
+      {employee.userId && (
+        <EmployeePermissionsPanel
+          isOpen={rolesPanelOpen}
+          onClose={() => setRolesPanelOpen(false)}
+          employeeName={employeeName}
+          userId={employee.userId}
+          availableSets={customPermissionSets}
+          assignedSets={assignedSets}
+          baseSetName={null}
+          onAssign={handleAssignPermissionSet}
+          onRemove={handleRemovePermissionSet}
+          isAssigning={isAssigningPermissionSet}
+          isRemoving={isRemovingPermissionSet}
+        />
+      )}
+      {employee.userId && (
+        <AssignPermissionPanel
+          isOpen={permissionsPanelOpen}
+          onClose={() => setPermissionsPanelOpen(false)}
+          employeeName={employeeName}
+          userId={employee.userId}
+        />
+      )}
     </div>
   );
 }

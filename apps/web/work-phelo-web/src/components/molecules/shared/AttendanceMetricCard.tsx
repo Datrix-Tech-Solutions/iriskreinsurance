@@ -14,6 +14,8 @@ interface AttendanceMetricCardProps {
   /** Raw ISO timestamp of the clock-in, used to tick the live "worked" duration. */
   clockedInAt?: string;
   hoursWorked?: string;
+  /** Has an approved leave request covering today — blocks clocking in, front-end side. */
+  onLeaveToday?: boolean;
   onClockIn: (location?: string) => void;
   onClockOut: () => void;
   isLoading?: boolean;
@@ -47,6 +49,7 @@ export function AttendanceMetricCard({
   clockInTime,
   clockedInAt,
   hoursWorked,
+  onLeaveToday = false,
   onClockIn,
   onClockOut,
   isLoading = false,
@@ -69,6 +72,8 @@ export function AttendanceMetricCard({
 
   // Green pulsing state only while a shift is genuinely running.
   const active = clockedIn && !isDone;
+  // Blocks clocking in — but someone already clocked in (or done) keeps their normal state.
+  const blockedByLeave = onLeaveToday && !clockedIn && !isDone;
 
   // Prefer the server total; otherwise tick it up locally from the clock-in time.
   const parsedClockInMs = clockedInAt ? Date.parse(clockedInAt) : NaN;
@@ -98,19 +103,21 @@ export function AttendanceMetricCard({
         </span>
         <span
           className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wider',
+            'inline-flex items-center gap-1.5 rounded-full border px-2 text-[10px] font-semibold tracking-wider',
             active
               ? 'border-green-200 bg-green-50 text-green-700'
-              : 'border-gray-200 bg-gray-100 text-gray-500',
+              : blockedByLeave
+                ? 'border-purple-200 bg-purple-50 text-purple-600'
+                : 'border-gray-200 bg-gray-100 text-gray-500',
           )}
         >
           <span
             className={cn(
               'w-1.5 h-1.5 rounded-full',
-              active ? 'bg-green-500 animate-pulse' : 'bg-gray-400',
+              active ? 'bg-green-500 animate-pulse' : blockedByLeave ? 'bg-purple-400' : 'bg-gray-400',
             )}
           />
-          {active ? 'CLOCKED IN' : 'CLOCKED OUT'}
+          {active ? 'CLOCKED IN' : blockedByLeave ? 'ON LEAVE' : 'CLOCKED OUT'}
         </span>
       </div>
 
@@ -141,6 +148,14 @@ export function AttendanceMetricCard({
           className="w-full"
         >
           Clock out
+        </Button>
+      ) : blockedByLeave ? (
+        <Button
+          variant="outline"
+          disabled
+          className="w-full text-purple-600 border-purple-200 hover:bg-purple-50"
+        >
+          Clock-in unavailable — on leave
         </Button>
       ) : (
         <Button

@@ -1,6 +1,5 @@
 import { ProfileSummaryCard } from './ProfileSummaryCard';
-import { EmployeeRolesCard } from './EmployeeRolesCard';
-import { EmployeePermissionsCard } from './EmployeePermissionsCard';
+import { RolesAndPermissionsCard } from './RolesAndPermissionsCard';
 import type { Employee } from '@/types/hr';
 
 interface EmployeeDetailSidebarProps {
@@ -10,6 +9,7 @@ interface EmployeeDetailSidebarProps {
   canEditRoles: boolean;
   canManagePermissions: boolean;
   onEditRoles: () => void;
+  onManageRoles?: () => void;
   onManagePermissions: () => void;
   directPermissions?: Array<{ resourceName: string; action: string }>;
 }
@@ -21,6 +21,7 @@ export function EmployeeDetailSidebar({
   canEditRoles,
   canManagePermissions,
   onEditRoles,
+  onManageRoles,
   onManagePermissions,
   directPermissions,
 }: EmployeeDetailSidebarProps) {
@@ -31,17 +32,13 @@ export function EmployeeDetailSidebar({
       <ProfileSummaryCard employee={employee} managerName={managerName} />
 
       {employee.userId && (
-        <EmployeeRolesCard
+        <RolesAndPermissionsCard
           roles={roles}
-          canEdit={canEditRoles && !isOffboarded}
-          onEdit={onEditRoles}
-        />
-      )}
-
-      {employee.userId && canManagePermissions && (
-        <EmployeePermissionsCard
-          canManage={!isOffboarded}
-          onManage={onManagePermissions}
+          canEditRoles={canEditRoles && !isOffboarded}
+          onEditRoles={onEditRoles}
+          onManageRoles={onManageRoles}
+          canManagePermissions={canManagePermissions && !isOffboarded}
+          onManagePermissions={onManagePermissions}
           directPermissions={directPermissions}
         />
       )}
