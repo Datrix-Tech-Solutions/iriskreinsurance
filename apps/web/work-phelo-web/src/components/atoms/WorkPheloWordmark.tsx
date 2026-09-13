@@ -13,7 +13,6 @@ export function WorkPheloWordmark({ className }: WorkPheloWordmarkProps) {
   );
 }
 
-
 interface CompanyWordmarkProps {
   className?: string;
 }
@@ -21,8 +20,7 @@ interface CompanyWordmarkProps {
 export function CompanyWordmark({ className }: CompanyWordmarkProps) {
   return (
     <span className={cn('text-xl font-bold tracking-tight', className)}>
-      <span className="text-gray-600">Datrix</span>
-      <span className="text-xs text-brand">tech</span>
+      <span>Datrixtech</span>
     </span>
   );
 }

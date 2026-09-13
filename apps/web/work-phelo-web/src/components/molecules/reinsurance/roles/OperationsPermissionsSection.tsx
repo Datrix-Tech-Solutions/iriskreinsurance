@@ -49,8 +49,8 @@ export const OPERATIONS_PERMISSION_TAG_GROUPS: PermissionTagGroup[] = [
     tags: [{ key: 'manage_clients', label: 'Manage clients' }],
   },
   {
-    group: 'Risk Settings',
-    tags: [{ key: 'manage_risk_settings', label: 'Manage risk settings' }],
+    group: 'Settings',
+    tags: [{ key: 'manage_risk_settings', label: 'Manage settings' }],
   },
 ];
 
@@ -63,6 +63,7 @@ const SETTINGS = 'operations.reinsurance.settings';
 // so granting the granular RUN permission is enough on its own.
 const FAC = 'operations.reinsurance.facultative-offers';
 const PREMIUMS = 'operations.reinsurance.premiums';
+const PLACEMENTS = 'operations.reinsurance.placements';
 
 export const OPERATIONS_BASE_RESOURCES: Array<{ resource: string; action: string }> = [
   { resource: 'operations.reinsurance.dashboard', action: 'VIEW' },
@@ -81,16 +82,43 @@ export const OPERATIONS_PERMISSION_TAG_MAPPING: Record<
   Array<{ resource: string; action: string }> | null
 > = {
   // Offer Management — each pill grants its granular facultative-offers workflow
-  // resource (RUN action). create/renew share the create-offer resource because
+  // resource (RUN action), plus placements:EDIT so any offer action also covers
+  // the placement status-change endpoint (PATCH :id/status), which accepts
+  // either the granular reopen-offer RUN permission or the coarse placements
+  // EDIT permission. create/renew share the create-offer resource because
   // a renewal is a new offer on the backend.
-  create_offer: [{ resource: `${FAC}.create-offer`, action: 'RUN' }],
-  edit_offer: [{ resource: `${FAC}.edit-offer`, action: 'RUN' }],
-  partial_edit: [{ resource: `${FAC}.partial-edit`, action: 'RUN' }],
-  reopen_offer: [{ resource: `${FAC}.reopen-offer`, action: 'RUN' }],
-  force_close: [{ resource: `${FAC}.force-close`, action: 'RUN' }],
-  endorse_offer: [{ resource: `${FAC}.endorse-offer`, action: 'RUN' }],
-  archive_offer: [{ resource: `${FAC}.archive-offer`, action: 'RUN' }],
-  renew_offer: [{ resource: `${FAC}.create-offer`, action: 'RUN' }],
+  create_offer: [
+    { resource: `${FAC}.create-offer`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  edit_offer: [
+    { resource: `${FAC}.edit-offer`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  partial_edit: [
+    { resource: `${FAC}.partial-edit`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  reopen_offer: [
+    { resource: `${FAC}.reopen-offer`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  force_close: [
+    { resource: `${FAC}.force-close`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  endorse_offer: [
+    { resource: `${FAC}.endorse-offer`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  archive_offer: [
+    { resource: `${FAC}.archive-offer`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
+  renew_offer: [
+    { resource: `${FAC}.create-offer`, action: 'RUN' },
+    { resource: PLACEMENTS, action: 'EDIT' },
+  ],
 
   // Premiums and Payment Management
   add_payments: [{ resource: `${PREMIUMS}.receive-from-cedant`, action: 'RUN' }],
@@ -124,10 +152,15 @@ export const OPERATIONS_PERMISSION_TAG_MAPPING: Record<
     { resource: COUNTERPARTIES, action: 'DELETE' },
   ],
 
-  // Settings
+  // Settings — covers risk classes/types and currencies alike, all gated by
+  // the same coarse SETTINGS resource (reinsurance-service
+  // currency-settings.permissions.ts and risk-classes/risk-types tables all
+  // key off operations.reinsurance.settings:VIEW/CREATE/EDIT/DELETE).
   manage_risk_settings: [
     { resource: SETTINGS, action: 'VIEW' },
+    { resource: SETTINGS, action: 'CREATE' },
     { resource: SETTINGS, action: 'EDIT' },
+    { resource: SETTINGS, action: 'DELETE' },
   ],
 };
 

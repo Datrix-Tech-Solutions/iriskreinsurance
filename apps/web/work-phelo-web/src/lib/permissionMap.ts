@@ -265,7 +265,7 @@ export const RESOURCE_ACTIONS: Record<string, string[]> = {
   'operations.reinsurance.email': ['VIEW', 'CREATE', 'EDIT'],
   'operations.reinsurance.email-settings': ['VIEW', 'EDIT'],
   'operations.reinsurance.reports': ['VIEW', 'EXPORT'],
-  'operations.reinsurance.settings': ['VIEW', 'EDIT'],
+  'operations.reinsurance.settings': ['VIEW', 'CREATE', 'EDIT', 'DELETE'],
   'operations.reinsurance.taxes-levies': ['VIEW', 'CREATE', 'EDIT', 'DELETE'],
   // Granular reinsurance workflow resources — RUN-gated (auth-service seed-resources.ts).
   'operations.reinsurance.facultative-offers.create-offer': ['RUN'],

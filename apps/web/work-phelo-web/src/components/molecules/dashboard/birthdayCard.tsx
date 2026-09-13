@@ -27,7 +27,7 @@ export function BirthdaysCard({
   onScrollRight,
 }: BirthdaysCardProps) {
   return (
-    <div className={cardClass('p-5 flex flex-col shrink-0 border-gray-200')}>
+    <div className={cardClass('p-3 flex flex-col shrink-0 border-gray-200')}>
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <h2 className="text-base font-bold text-(--module-btn-bg,var(--color-brand))">Upcoming Birthdays</h2>

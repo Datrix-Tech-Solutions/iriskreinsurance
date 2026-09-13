@@ -38,7 +38,7 @@ export function MyTeamCard({ members, departmentName, viewAllHref }: MyTeamCardP
   const extra = members.length - shown.length;
 
   return (
-    <div className={cardClass('p-5 flex flex-col shrink-0 border-gray-200')}>
+    <div className={cardClass('p-3 flex flex-col shrink-0 border-gray-200')}>
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-baseline gap-2 min-w-0">
@@ -55,7 +55,7 @@ export function MyTeamCard({ members, departmentName, viewAllHref }: MyTeamCardP
       </div>
 
       {/* Divider */}
-      <div className="h-px bg-gray-100 -mx-5 mt-4 shrink-0" />
+      <div className="h-px bg-gray-100 -mx-5 shrink-0" />
 
       {/* Roster */}
       {shown.length === 0 ? (
@@ -106,8 +106,6 @@ export function MyTeamCard({ members, departmentName, viewAllHref }: MyTeamCardP
           )}
         </div>
       )}
-
-      {/* TODO: Option C — my monthly time-off-used graph goes here later. */}
     </div>
   );
 }
