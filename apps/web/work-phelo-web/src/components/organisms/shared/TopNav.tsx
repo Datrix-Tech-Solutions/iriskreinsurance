@@ -291,12 +291,7 @@ function NotificationsPanelContent({ slug, onNavigate }: { slug: string; onNavig
 }
 
 /* ── TopNav ── */
-export function TopNav({
-  showMenuButton = false,
-  onMenuClick,
-  tabs,
-  userInitials,
-}: TopNavProps) {
+export function TopNav({ showMenuButton = false, onMenuClick, tabs, userInitials }: TopNavProps) {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const { user } = useAuthStore();
@@ -373,9 +368,9 @@ export function TopNav({
         {/* Right icons */}
         <div className="flex items-center gap-3">
           {/* Powered-by credit */}
-          <span className="hidden sm:flex items-baseline gap-1 whitespace-nowrap text-xs text-gray-400 italic mr-1">
+          <span className="hidden sm:flex items-baseline gap-1 whitespace-nowrap text-xs text-gray-300 italic mr-1">
             powered by
-            <CompanyWordmark className="text-sm" />
+            <CompanyWordmark className="text-sm text-gray-300" />
           </span>
 
           {/* Bell */}
@@ -404,7 +399,7 @@ export function TopNav({
                 router.push('/dashboard');
               } else {
                 const slug = user?.tenantSlug || pathname.split('/')[1];
-                router.push(`/${slug}/modules`);
+                router.push(`/${slug}/hr`);
               }
             }}
           >

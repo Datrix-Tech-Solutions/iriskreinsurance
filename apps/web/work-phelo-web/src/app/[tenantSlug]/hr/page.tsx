@@ -13,7 +13,14 @@ import {
   useUpcomingBirthdays,
   useModuleTransition,
 } from '@/hooks';
-import { useLeaveBalances, useMyLeaveRequests } from '@/hooks/hr/useLeave';
+import {
+  useLeaveBalances,
+  useMyLeaveRequests,
+  useLeaveRequests,
+  useEmployeesOnLeaveToday,
+} from '@/hooks/hr/useLeave';
+import { usePermission } from '@/hooks/hr/usePermission';
+import { Permission } from '@/lib/permissionMap';
 import { useMyPayslips } from '@/hooks/hr/usePayroll';
 import { usePublicHolidays } from '@/hooks/hr/usePublicHolidays';
 import { useHrSidebarGroups } from '@/hooks/hr/useHrSidebarGroups';
@@ -23,6 +30,7 @@ import { QuickActionsCard } from '@/components/molecules/dashboard/QuickActionsC
 import { RequestLeaveCard } from '@/components/molecules/dashboard/RequestLeaveCard';
 import { UpcomingLeaveCard } from '@/components/molecules/dashboard/UpcomingLeaveCard';
 import { MyTeamCard } from '@/components/molecules/dashboard/MyTeamCard';
+import { OnLeaveCard } from '@/components/molecules/dashboard/OnLeaveCard';
 import { AttendanceMetricCard } from '@/components/molecules/shared/AttendanceMetricCard';
 import { AnnouncementCard } from '@/components/molecules/dashboard/announcmentCard';
 import { BirthdaysCard } from '@/components/molecules/dashboard/birthdayCard';
@@ -148,6 +156,7 @@ export default function EmployeeDashboardPage({
               .slice(0, 2)
               .toUpperCase() || '?',
           color: avatarColor(name),
+          avatarUrl: e.avatarUrl,
           status: e.employmentStatus,
           isManager: e.id === managerId,
         };
@@ -158,6 +167,50 @@ export default function EmployeeDashboardPage({
         return byStatus !== 0 ? byStatus : a.name.localeCompare(b.name);
       });
   }, [employeeOptions, myProfile?.id, myProfile?.department?.id, myProfile?.managerId]);
+
+  /* ── Company-wide "on leave today" list ──
+     Someone with leave:APPROVE gets every tenant request back from this endpoint
+     by default (no extra param) — so we get the real leave type per person there.
+     Everyone else only gets the bare "on leave today" fact (no type), by backend
+     design — GET /hr/leave/requests/on-leave-today deliberately exposes nothing more. */
+  const canApproveLeave = usePermission(Permission.APPROVE_LEAVE);
+  const { data: allOnLeaveRequests = [] } = useLeaveRequests('APPROVED', {
+    enabled: canApproveLeave,
+  });
+  const { data: onLeaveIds = [] } = useEmployeesOnLeaveToday();
+
+  const companyOnLeave = useMemo(() => {
+    if (canApproveLeave) {
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const seen = new Set<string>();
+      return allOnLeaveRequests
+        .filter(
+          (r) =>
+            r.startDate.slice(0, 10) <= todayIso &&
+            r.endDate.slice(0, 10) >= todayIso &&
+            r.employeeId !== myProfile?.id &&
+            !seen.has(r.employeeId) &&
+            seen.add(r.employeeId),
+        )
+        .map((r) => ({
+          id: r.employeeId,
+          name: r.employeeName,
+          avatarUrl: r.employeeAvatarUrl,
+          leaveType: r.leaveTypeName,
+        }));
+    }
+
+    const byId = new Map(employeeOptions.map((e) => [e.id, e]));
+    return onLeaveIds
+      .filter((id) => id !== myProfile?.id)
+      .map((id) => byId.get(id))
+      .filter((e): e is (typeof employeeOptions)[number] => Boolean(e))
+      .map((e) => ({
+        id: e.id,
+        name: `${e.firstName} ${e.lastName}`.trim(),
+        avatarUrl: e.avatarUrl,
+      }));
+  }, [canApproveLeave, allOnLeaveRequests, onLeaveIds, employeeOptions, myProfile?.id]);
 
   /* ── Panel states ── */
   const [applyLeaveOpen, setApplyLeaveOpen] = useState(false);
@@ -354,11 +407,14 @@ export default function EmployeeDashboardPage({
             onScrollLeft={() => scrollBirthdays('left')}
             onScrollRight={() => scrollBirthdays('right')}
           />
-          <MyTeamCard
-            members={teamMembers}
-            departmentName={myProfile?.department?.name}
-            viewAllHref={`/${tenantSlug}/hr/employees`}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-[0.5fr_1fr] gap-6 items-start">
+            <OnLeaveCard people={companyOnLeave} />
+            <MyTeamCard
+              members={teamMembers}
+              departmentName={myProfile?.department?.name}
+              viewAllHref={`/${tenantSlug}/hr/employees`}
+            />
+          </div>
         </div>
 
         <div className="flex flex-col gap-6">

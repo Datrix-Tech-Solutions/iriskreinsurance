@@ -104,7 +104,7 @@ export function ProfileContent() {
   const TABS = [
     { key: 'personal', label: 'My Data' },
     { key: 'performance', label: 'Performance' },
-    { key: 'banking', label: 'Payroll' },
+    { key: 'banking', label: 'My Payslip' },
     { key: 'documents', label: 'My Documents' },
     canAccessAnnouncements && { key: 'announcements', label: 'Announcements' },
     canAccessScheduling && { key: 'scheduling', label: 'Smart Scheduling' },
@@ -195,7 +195,6 @@ export function ProfileContent() {
       <div className={`${pagePx} pb-4 sm:pb-6 shrink-0 relative z-20`}>
         <ProfileBanner
           color="#0047AB"
-          // color= "orange"
           // backgroundImage="/images/profile-banner.webp"  // drop asset in public/images/, then uncomment
           employee={employee}
           hasPendingResignation={hasPendingResignation}

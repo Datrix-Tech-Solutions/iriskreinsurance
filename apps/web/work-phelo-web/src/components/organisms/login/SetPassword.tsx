@@ -46,7 +46,7 @@ export default function SetPassword() {
       { inviteToken: token, password: data.password },
       {
         onSuccess: () => {
-          router.push(`/${tenantSlug}/modules`);
+          router.push(`/${tenantSlug}/hr`);
         },
         onError: (err) => {
           setError('root', { message: extractError(err) });
