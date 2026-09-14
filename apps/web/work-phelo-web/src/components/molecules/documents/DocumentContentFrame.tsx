@@ -103,8 +103,12 @@ export function DocumentField({
     // carry no <tr>, so the PDF slicer needs this marker to allow a page break
     // between rows instead of shunting the whole section to the next page.
     <div className="grid grid-cols-2 items-baseline" style={fieldRowStyle} data-doc-field>
-      <span className="text-gray-500">{label}</span>
-      <span className={strong ? 'font-semibold text-gray-900' : 'text-gray-800'}>{value}</span>
+      <span className="min-w-0 break-words text-gray-500">{label}</span>
+      <span
+        className={`min-w-0 break-words ${strong ? 'font-semibold text-gray-900' : 'text-gray-800'}`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
