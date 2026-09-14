@@ -37,6 +37,11 @@ export const LEGACY_IMPORT_TRANSACTION_OPTIONS = {
   timeout: 120_000,
 } as const;
 
+export const LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS = {
+  maxWait: 60_000,
+  timeout: 900_000,
+} as const;
+
 export type ApplyLegacyOffersInput = {
   tenantId: string;
   tenantSlug: string;
@@ -193,7 +198,7 @@ export class LegacyOffersImporter {
         conflicts: input.plan.counts.conflicts,
         rejected: input.plan.counts.rejected,
       };
-    }, LEGACY_IMPORT_TRANSACTION_OPTIONS);
+    }, transactionOptionsForScope(scope));
   }
 
   private async ensureCurrency(
@@ -975,6 +980,12 @@ export class LegacyOffersImporter {
       }
     }
   }
+}
+
+function transactionOptionsForScope(scope: ApplyLegacyOffersInput['scope']) {
+  return scope === 'reference-only'
+    ? LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS
+    : LEGACY_IMPORT_TRANSACTION_OPTIONS;
 }
 
 export type LegacyImportMapRecord = {

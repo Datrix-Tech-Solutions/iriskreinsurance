@@ -1,5 +1,6 @@
 import { PrismaClient } from '../../../prisma/generated/client';
 import {
+  LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS,
   LEGACY_IMPORT_TRANSACTION_OPTIONS,
   canonicalLegacyOfferDetails,
   historicalPlacementClosingHash,
@@ -20,6 +21,20 @@ describe('LegacyOffersImporter', () => {
     expect(transaction).toHaveBeenCalledWith(
       expect.any(Function),
       LEGACY_IMPORT_TRANSACTION_OPTIONS,
+    );
+  });
+
+  it('uses a longer importer-only transaction timeout for reference-only apply', async () => {
+    const { prisma, transaction } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([offer()]),
+      scope: 'reference-only',
+    });
+
+    expect(transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS,
     );
   });
 
@@ -1066,7 +1081,9 @@ function prismaMock(
   const transaction = jest.fn(
     async (
       callback: (tx: ReturnType<typeof transactionMock>) => Promise<unknown>,
-      options?: typeof LEGACY_IMPORT_TRANSACTION_OPTIONS,
+      options?:
+        | typeof LEGACY_IMPORT_TRANSACTION_OPTIONS
+        | typeof LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS,
     ) => {
       void options;
       txState.active = true;
