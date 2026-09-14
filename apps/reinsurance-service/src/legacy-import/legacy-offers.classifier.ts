@@ -74,5 +74,23 @@ function reviewReasonsFor(
   if (reconciliation.mismatches.materialOfferedVsPlaced) {
     reasons.push('material-facultative-offer-vs-placed-share-delta');
   }
+  reasons.push(...suspiciousDateReasonsFor(offer));
   return reasons;
+}
+
+function suspiciousDateReasonsFor(offer: NormalizedLegacyOffer) {
+  const reasons: string[] = [];
+  if (isSuspiciousLegacyPolicyDate(offer.inceptionDate)) {
+    reasons.push('suspicious-inception-date');
+  }
+  if (isSuspiciousLegacyPolicyDate(offer.expiryDate)) {
+    reasons.push('suspicious-expiry-date');
+  }
+  return reasons;
+}
+
+function isSuspiciousLegacyPolicyDate(value: Date | null) {
+  if (!value) return false;
+  const year = value.getUTCFullYear();
+  return year < 2000 || year > 2030;
 }

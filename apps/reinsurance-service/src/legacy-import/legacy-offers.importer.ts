@@ -45,6 +45,7 @@ export type ApplyLegacyOffersInput = {
   sourceFileHash: string;
   plan: LegacyImportPlan;
   normalizedOffers: NormalizedLegacyOffer[];
+  scope?: 'fixture' | 'reference-only' | 'placement-batch';
 };
 
 export type ApplyLegacyOffersResult = {
@@ -59,11 +60,13 @@ export class LegacyOffersImporter {
   constructor(private readonly prisma: PrismaClient) {}
 
   async apply(input: ApplyLegacyOffersInput): Promise<ApplyLegacyOffersResult> {
+    const scope = input.scope ?? 'fixture';
     const creatableOfferIds = new Set(
       input.plan.records
         .filter(
           (record) =>
-            record.action === 'create' && record.classification === 'AUTO_SAFE',
+            record.classification === 'AUTO_SAFE' &&
+            (scope === 'reference-only' || record.action === 'create'),
         )
         .map((record) => record.offerId),
     );
@@ -73,6 +76,14 @@ export class LegacyOffersImporter {
 
     return this.prisma.$transaction(async (tx) => {
       const mapCache: LegacyImportMapCache = new Map();
+      if (scope === 'placement-batch') {
+        await this.assertPlacementBatchReferenceMaps(
+          tx,
+          mapCache,
+          input.tenantId,
+          offers,
+        );
+      }
       const importRunId = randomUUID();
       await tx.legacyImportRun.create({
         data: {
@@ -127,6 +138,7 @@ export class LegacyOffersImporter {
             ),
           );
         }
+        if (scope === 'reference-only') continue;
         const placementId = await this.createPlacement(
           tx,
           mapCache,
@@ -201,6 +213,11 @@ export class LegacyOffersImporter {
       legacyId,
     );
     if (mapped) return mapped.currentId;
+    if (input.scope === 'placement-batch') {
+      throw new Error(
+        `Placement batch requires preloaded currency map for ${legacyId}`,
+      );
+    }
     const existing = await tx.currency.findFirst({
       where: {
         tenantId: input.tenantId,
@@ -259,6 +276,11 @@ export class LegacyOffersImporter {
       offer.classId,
     );
     if (mappedRiskType) return mappedRiskType.currentId;
+    if (input.scope === 'placement-batch') {
+      throw new Error(
+        `Placement batch requires preloaded risk_type map for ${offer.classId}`,
+      );
+    }
 
     let createdRiskClass = false;
     const mappedRiskClass = await this.findMap(
@@ -460,6 +482,11 @@ export class LegacyOffersImporter {
       args.legacyId,
     );
     if (mapped) return mapped.currentId;
+    if (input.scope === 'placement-batch') {
+      throw new Error(
+        `Placement batch requires preloaded ${args.entityType} map for ${args.legacyId}`,
+      );
+    }
     let createdCounterparty = false;
     let counterparty = await tx.counterparty.findFirst({
       where: {
@@ -527,6 +554,45 @@ export class LegacyOffersImporter {
             createdByImport: true,
           },
         );
+      }
+    } else if (args.address?.country) {
+      const addressLegacyId = counterpartyAddressLegacyId(
+        args.entityType,
+        args.legacyId,
+      );
+      const mappedAddress = await this.findMap(
+        tx,
+        mapCache,
+        input.tenantId,
+        'counterparty_address',
+        addressLegacyId,
+      );
+      if (!mappedAddress) {
+        const address = await tx.counterpartyAddress.findFirst({
+          where: {
+            tenantId: input.tenantId,
+            counterpartyId: counterparty.id,
+            isPrimary: true,
+          },
+          select: { id: true },
+        });
+        if (address) {
+          await this.createMap(
+            tx,
+            mapCache,
+            input.tenantId,
+            importRunId,
+            args.created,
+            {
+              entityType: 'counterparty_address',
+              legacyId: addressLegacyId,
+              currentModel: 'CounterpartyAddress',
+              currentId: address.id,
+              rawHash: sha256(args.address),
+              createdByImport: false,
+            },
+          );
+        }
       }
     }
     await this.createMap(
@@ -811,6 +877,104 @@ export class LegacyOffersImporter {
       rawHash: data.rawHash,
     });
   }
+
+  private async assertPlacementBatchReferenceMaps(
+    tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
+    tenantId: string,
+    offers: NormalizedLegacyOffer[],
+  ) {
+    const required = uniqueMapRequirements(
+      offers.flatMap((offer) => {
+        const riskClassMapping = resolveLegacyRiskClass(offer.className);
+        if (!riskClassMapping) {
+          throw new Error(
+            `Legacy class of business '${offer.className}' has no approved RiskClass mapping`,
+          );
+        }
+        return [
+          {
+            entityType: 'currency',
+            legacyId: offer.currency,
+            currentModel: 'Currency',
+          },
+          {
+            entityType: 'risk_class',
+            legacyId: legacyRiskClassLegacyId(riskClassMapping),
+            currentModel: 'RiskClass',
+          },
+          {
+            entityType: 'risk_type',
+            legacyId: offer.classId,
+            currentModel: 'RiskType',
+          },
+          ...uniqueFields([...offer.businessFields, ...offer.offerFields]).map(
+            (field) => ({
+              entityType: 'risk_type_field',
+              legacyId: `${offer.classId}:${field.normalizedKey}`,
+              currentModel: 'RiskTypeField',
+            }),
+          ),
+          {
+            entityType: 'insurer',
+            legacyId: offer.insurerId,
+            currentModel: 'Counterparty',
+          },
+          ...(offer.source.insurer?.insurer_address?.country
+            ? [
+                {
+                  entityType: 'counterparty_address',
+                  legacyId: counterpartyAddressLegacyId(
+                    'insurer',
+                    offer.insurerId,
+                  ),
+                  currentModel: 'CounterpartyAddress',
+                },
+              ]
+            : []),
+          ...offer.participants.flatMap((participant) => [
+            {
+              entityType: 'reinsurer',
+              legacyId: participant.reinsurerId,
+              currentModel: 'Counterparty',
+            },
+            ...(participant.source.reinsurer?.reinsurer_address?.country
+              ? [
+                  {
+                    entityType: 'counterparty_address',
+                    legacyId: counterpartyAddressLegacyId(
+                      'reinsurer',
+                      participant.reinsurerId,
+                    ),
+                    currentModel: 'CounterpartyAddress',
+                  },
+                ]
+              : []),
+          ]),
+        ];
+      }),
+    );
+
+    for (const requirement of required) {
+      const map = await this.findMap(
+        tx,
+        mapCache,
+        tenantId,
+        requirement.entityType,
+        requirement.legacyId,
+      );
+      if (!map) {
+        throw new Error(
+          `Placement batch requires preloaded ${requirement.entityType} map for ${requirement.legacyId}`,
+        );
+      }
+      if (map.currentModel !== requirement.currentModel) {
+        throw new Error(
+          `Placement batch ${requirement.entityType} map for ${requirement.legacyId} points to ${map.currentModel}, expected ${requirement.currentModel}`,
+        );
+      }
+    }
+  }
 }
 
 export type LegacyImportMapRecord = {
@@ -830,6 +994,16 @@ function importMapCacheKey(
 function uniqueFields(fields: Array<{ key: string; normalizedKey: string }>) {
   return [
     ...new Map(fields.map((field) => [field.normalizedKey, field])).values(),
+  ];
+}
+
+function uniqueMapRequirements<
+  T extends { entityType: string; legacyId: string; currentModel: string },
+>(items: T[]) {
+  return [
+    ...new Map(
+      items.map((item) => [`${item.entityType}:${item.legacyId}`, item]),
+    ).values(),
   ];
 }
 

@@ -234,6 +234,13 @@ export type LegacyImportPlan = {
   sourceFileHash: string;
   mode: LegacyImportMode;
   fixtureOfferIds: string[];
+  batchSelection?: {
+    mode: 'fixture' | 'classification-batch' | 'reference-only' | 'all';
+    selectedOfferIds: string[];
+    classification?: LegacyOfferClassification;
+    batchSize?: number;
+    afterOfferId?: string;
+  };
   counts: {
     creates: Record<string, number>;
     skips: number;
@@ -250,6 +257,32 @@ export type LegacyImportPlan = {
 };
 
 export type LegacyDbPlanAction = 'create' | 'reuse' | 'skip' | 'conflict';
+
+export type LegacyDbProjectedActionCounts = {
+  create: number;
+  reuse: number;
+  skip: number;
+  update: number;
+  conflict: number;
+  other: number;
+};
+
+export type LegacyDbProjectedMapCounts = LegacyDbProjectedActionCounts & {
+  byEntityType: Record<string, LegacyDbProjectedActionCounts>;
+};
+
+export type LegacyDbProjectedCounts = {
+  currencies: LegacyDbProjectedActionCounts;
+  counterparties: LegacyDbProjectedActionCounts;
+  addresses: LegacyDbProjectedActionCounts;
+  riskClasses: LegacyDbProjectedActionCounts;
+  riskTypes: LegacyDbProjectedActionCounts;
+  riskTypeFields: LegacyDbProjectedActionCounts;
+  placements: LegacyDbProjectedActionCounts;
+  participants: LegacyDbProjectedActionCounts;
+  placementClosings: LegacyDbProjectedActionCounts;
+  legacyImportMaps: LegacyDbProjectedMapCounts;
+};
 
 export type LegacyDbPlannedEntity = {
   entityType: string;
@@ -284,5 +317,6 @@ export type LegacyDbAwareDryRunResolution = {
     participants: LegacyDbPlannedEntity[];
     placementClosings: LegacyDbPlannedEntity[];
   };
+  projectedCounts: LegacyDbProjectedCounts;
   readCounts: Record<string, number>;
 };

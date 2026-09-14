@@ -4,6 +4,8 @@ import {
   LEGACY_SOURCE_SYSTEM,
   LegacyDbAwareDryRunResolution,
   LegacyDbPlannedEntity,
+  LegacyDbProjectedActionCounts,
+  LegacyDbProjectedCounts,
   LegacyImportPlan,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
@@ -597,6 +599,103 @@ export class LegacyDbAwareDryRun {
       },
     );
 
+    const plannedEntities: LegacyDbAwareDryRunResolution['plannedEntities'] = {
+      currencies: currencies.map((currency) =>
+        actionFor({
+          entityType: 'currency',
+          legacyId: currency.legacyId,
+          rawHash: sha256({ currency: currency.legacyId }),
+          map: mapIndex.get(`currency:${currency.legacyId}`),
+          existing: existingCurrencyIndex.get(currency.key),
+          currentModel: 'Currency',
+        }),
+      ),
+      counterparties: plannedCounterparties,
+      addresses: plannedAddresses,
+      riskClasses: plannedRiskClasses,
+      riskTypes: plannedRiskTypes,
+      riskTypeFields: planRiskTypeFields({
+        fields: riskTypeFields,
+        mapIndex,
+        plannedRiskTypeIndex,
+        existingRiskTypeFieldIndex,
+      }),
+      placements: placements.map((placement) => {
+        if (placement.eligible) {
+          return actionFor({
+            entityType: 'offer',
+            legacyId: placement.legacyId,
+            rawHash: placement.rawHash,
+            map: mapIndex.get(`offer:${placement.legacyId}`),
+            existing: existingPlacementIndex.get(placement.key),
+            currentModel: 'Placement',
+          });
+        }
+        return {
+          entityType: 'offer',
+          legacyId: placement.legacyId,
+          action: 'skip',
+          currentModel: 'Placement',
+          reason: placement.ineligibleReason,
+        };
+      }),
+      participants: participants.map((participant) =>
+        participant.eligible
+          ? actionFor({
+              entityType: 'offer_participant',
+              legacyId: participant.legacyId,
+              rawHash: participant.rawHash,
+              map: mapIndex.get(`offer_participant:${participant.legacyId}`),
+              existing: undefined,
+              currentModel: 'PlacementParticipant',
+            })
+          : {
+              entityType: 'offer_participant',
+              legacyId: participant.legacyId,
+              action: 'skip',
+              currentModel: 'PlacementParticipant',
+              reason: participant.ineligibleReason,
+            },
+      ),
+      placementClosings: placementClosings.map((closing) => {
+        if (!closing.eligible) {
+          return {
+            entityType: 'offer_participant_closing',
+            legacyId: closing.legacyId,
+            action: 'skip',
+            currentModel: 'PlacementClosing',
+            reason: closing.ineligibleReason,
+          };
+        }
+        const map = mapIndex.get(
+          `offer_participant_closing:${closing.legacyId}`,
+        );
+        if (map) {
+          return actionFor({
+            entityType: 'offer_participant_closing',
+            legacyId: closing.legacyId,
+            rawHash: closing.rawHash,
+            map,
+            existing: undefined,
+            currentModel: 'PlacementClosing',
+          });
+        }
+        const parentPlacement = mapIndex.get(`offer:${closing.parentOfferId}`);
+        return actionForHistoricalClosing({
+          entityType: 'offer_participant_closing',
+          legacyId: closing.legacyId,
+          rawHash: closing.rawHash,
+          map: undefined,
+          existing: parentPlacement?.currentId
+            ? existingClosingIndex.get(
+                `${parentPlacement.currentId}:${closing.closingNumber}`,
+              )
+            : undefined,
+          currentModel: 'PlacementClosing',
+        });
+      }),
+    };
+
     return {
       resolveDb: true,
       tenant: {
@@ -612,104 +711,8 @@ export class LegacyDbAwareDryRun {
           }
         : null,
       trackingTablesAvailable: input.trackingTablesAvailable,
-      plannedEntities: {
-        currencies: currencies.map((currency) =>
-          actionFor({
-            entityType: 'currency',
-            legacyId: currency.legacyId,
-            rawHash: sha256({ currency: currency.legacyId }),
-            map: mapIndex.get(`currency:${currency.legacyId}`),
-            existing: existingCurrencyIndex.get(currency.key),
-            currentModel: 'Currency',
-          }),
-        ),
-        counterparties: plannedCounterparties,
-        addresses: plannedAddresses,
-        riskClasses: plannedRiskClasses,
-        riskTypes: plannedRiskTypes,
-        riskTypeFields: planRiskTypeFields({
-          fields: riskTypeFields,
-          mapIndex,
-          plannedRiskTypeIndex,
-          existingRiskTypeFieldIndex,
-        }),
-        placements: placements.map((placement) => {
-          if (placement.eligible) {
-            return actionFor({
-              entityType: 'offer',
-              legacyId: placement.legacyId,
-              rawHash: placement.rawHash,
-              map: mapIndex.get(`offer:${placement.legacyId}`),
-              existing: existingPlacementIndex.get(placement.key),
-              currentModel: 'Placement',
-            });
-          }
-          return {
-            entityType: 'offer',
-            legacyId: placement.legacyId,
-            action: 'skip',
-            currentModel: 'Placement',
-            reason: placement.ineligibleReason,
-          };
-        }),
-        participants: participants.map((participant) =>
-          participant.eligible
-            ? actionFor({
-                entityType: 'offer_participant',
-                legacyId: participant.legacyId,
-                rawHash: participant.rawHash,
-                map: mapIndex.get(`offer_participant:${participant.legacyId}`),
-                existing: undefined,
-                currentModel: 'PlacementParticipant',
-              })
-            : {
-                entityType: 'offer_participant',
-                legacyId: participant.legacyId,
-                action: 'skip',
-                currentModel: 'PlacementParticipant',
-                reason: participant.ineligibleReason,
-              },
-        ),
-        placementClosings: placementClosings.map((closing) => {
-          if (!closing.eligible) {
-            return {
-              entityType: 'offer_participant_closing',
-              legacyId: closing.legacyId,
-              action: 'skip',
-              currentModel: 'PlacementClosing',
-              reason: closing.ineligibleReason,
-            };
-          }
-          const map = mapIndex.get(
-            `offer_participant_closing:${closing.legacyId}`,
-          );
-          if (map) {
-            return actionFor({
-              entityType: 'offer_participant_closing',
-              legacyId: closing.legacyId,
-              rawHash: closing.rawHash,
-              map,
-              existing: undefined,
-              currentModel: 'PlacementClosing',
-            });
-          }
-          const parentPlacement = mapIndex.get(
-            `offer:${closing.parentOfferId}`,
-          );
-          return actionForHistoricalClosing({
-            entityType: 'offer_participant_closing',
-            legacyId: closing.legacyId,
-            rawHash: closing.rawHash,
-            map: undefined,
-            existing: parentPlacement?.currentId
-              ? existingClosingIndex.get(
-                  `${parentPlacement.currentId}:${closing.closingNumber}`,
-                )
-              : undefined,
-            currentModel: 'PlacementClosing',
-          });
-        }),
-      },
+      plannedEntities,
+      projectedCounts: projectedCountsFor(plannedEntities),
       readCounts: {
         currencies: existingCurrencies.length,
         counterparties: existingCounterparties.length,
@@ -759,6 +762,84 @@ function countDbConflicts(resolution: LegacyDbAwareDryRunResolution) {
   return Object.values(resolution.plannedEntities)
     .flat()
     .filter((entity) => entity.action === 'conflict').length;
+}
+
+function projectedCountsFor(
+  plannedEntities: LegacyDbAwareDryRunResolution['plannedEntities'],
+): LegacyDbProjectedCounts {
+  const counts = {
+    currencies: actionCounts(plannedEntities.currencies),
+    counterparties: actionCounts(plannedEntities.counterparties),
+    addresses: actionCounts(plannedEntities.addresses),
+    riskClasses: actionCounts(plannedEntities.riskClasses),
+    riskTypes: actionCounts(plannedEntities.riskTypes),
+    riskTypeFields: actionCounts(plannedEntities.riskTypeFields),
+    placements: actionCounts(plannedEntities.placements),
+    participants: actionCounts(plannedEntities.participants),
+    placementClosings: actionCounts(plannedEntities.placementClosings),
+    legacyImportMaps: {
+      ...emptyActionCounts(),
+      byEntityType: {} as Record<string, LegacyDbProjectedActionCounts>,
+    },
+  };
+
+  for (const entity of Object.values(plannedEntities).flat()) {
+    const mapAction = legacyImportMapActionFor(entity);
+    const entityCounts =
+      counts.legacyImportMaps.byEntityType[entity.entityType] ??
+      emptyActionCounts();
+    incrementActionCount(counts.legacyImportMaps, mapAction);
+    incrementActionCount(entityCounts, mapAction);
+    counts.legacyImportMaps.byEntityType[entity.entityType] = entityCounts;
+  }
+
+  return counts;
+}
+
+function actionCounts(
+  entities: LegacyDbPlannedEntity[],
+): LegacyDbProjectedActionCounts {
+  const counts = emptyActionCounts();
+  for (const entity of entities) incrementActionCount(counts, entity.action);
+  return counts;
+}
+
+function emptyActionCounts(): LegacyDbProjectedActionCounts {
+  return {
+    create: 0,
+    reuse: 0,
+    skip: 0,
+    update: 0,
+    conflict: 0,
+    other: 0,
+  };
+}
+
+function incrementActionCount(
+  counts: LegacyDbProjectedActionCounts,
+  action: string,
+) {
+  if (
+    action === 'create' ||
+    action === 'reuse' ||
+    action === 'skip' ||
+    action === 'conflict'
+  ) {
+    counts[action] += 1;
+  } else if (action === 'update') {
+    counts.update += 1;
+  } else {
+    counts.other += 1;
+  }
+}
+
+function legacyImportMapActionFor(entity: LegacyDbPlannedEntity) {
+  if (entity.action === 'create' || entity.action === 'reuse') return 'create';
+  if (entity.action === 'skip' && entity.reason === 'legacy-import-map-match') {
+    return 'skip';
+  }
+  if (entity.action === 'conflict') return 'conflict';
+  return 'other';
 }
 
 function planRiskTypeFields(input: {
