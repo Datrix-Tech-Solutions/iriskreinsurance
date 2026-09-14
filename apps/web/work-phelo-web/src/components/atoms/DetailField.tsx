@@ -46,10 +46,20 @@ export function DetailField({
     );
   }
 
+  const valueText = typeof value === 'string' ? value : undefined;
+  const labelTitle = label.length > 40 ? label : undefined;
+
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</span>
-      <span className="text-sm font-medium text-gray-800">{value ?? '—'}</span>
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span
+        className="text-xs font-medium text-gray-400 uppercase tracking-wide truncate"
+        title={labelTitle}
+      >
+        {label}
+      </span>
+      <span className="text-sm font-medium text-gray-800 truncate" title={valueText}>
+        {value ?? '—'}
+      </span>
     </div>
   );
 }
