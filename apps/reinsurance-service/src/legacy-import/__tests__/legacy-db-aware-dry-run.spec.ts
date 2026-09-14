@@ -674,6 +674,102 @@ describe('LegacyDbAwareDryRun', () => {
     expectNoWrites(writeFns);
   });
 
+  it('treats reference-only preload as complete when only offer-only RiskTypeFields are absent', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const source = offerWithOfferOnlyField();
+    const normalized = new LegacyOffersNormalizer().normalize(source);
+    const riskClass = resolveLegacyRiskClass(normalized.className)!;
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'currency',
+        legacyId: 'GHS',
+        currentModel: 'Currency',
+        currentId: 'currency-1',
+        rawHash: sha256({ currency: 'GHS' }),
+      },
+      {
+        entityType: 'insurer',
+        legacyId: '15',
+        currentModel: 'Counterparty',
+        currentId: 'cedant-1',
+        rawHash: sha256(source.insurer),
+      },
+      {
+        entityType: 'reinsurer',
+        legacyId: 'r1',
+        currentModel: 'Counterparty',
+        currentId: 'reinsurer-1',
+        rawHash: sha256(source.offer_participant?.[0].reinsurer),
+      },
+      {
+        entityType: 'risk_class',
+        legacyId: 'motor',
+        currentModel: 'RiskClass',
+        currentId: 'risk-class-1',
+        rawHash: riskClassDefinitionHash(riskClass),
+      },
+      {
+        entityType: 'risk_type',
+        legacyId: '25',
+        currentModel: 'RiskType',
+        currentId: 'risk-type-25',
+        rawHash: riskTypeDefinitionHash({
+          legacyClassId: '25',
+          riskTypeName: normalized.className,
+          riskClass,
+        }),
+      },
+      {
+        entityType: 'risk_type_field',
+        legacyId: '25:vehicle_make',
+        currentModel: 'RiskTypeField',
+        currentId: 'risk-field-vehicle-make',
+        rawHash: riskFieldDefinitionHash({
+          riskTypeLegacyId: '25',
+          key: 'Vehicle Make',
+          normalizedKey: 'vehicle_make',
+        }),
+      },
+    ]);
+    const plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      offers: [source],
+      mode: 'dry-run',
+      fixtureOfferIds: [],
+      batchSelection: {
+        mode: 'reference-only',
+        selectedOfferIds: [String(source.offer_id)],
+        classification: 'AUTO_SAFE',
+      },
+    });
+
+    const result = await new LegacyDbAwareDryRun(prisma).resolve({
+      tenantSlug: 'acme-ghana',
+      plan,
+      normalizedOffers: [normalized],
+    });
+
+    const fieldIds = result.resolution.plannedEntities.riskTypeFields.map(
+      (field) => field.legacyId,
+    );
+    expect(fieldIds).toEqual(['25:vehicle_make']);
+    expect(fieldIds).not.toContain('25:year_of_manufacture');
+    expect(result.resolution.projectedCounts.riskTypeFields.create).toBe(0);
+    expect(result.plan.counts.conflicts).toBe(0);
+    expect(legacyImportMapFindMany).toHaveBeenCalledTimes(1);
+    expectNoWrites(writeFns);
+  });
+
   it('projects existing fixture maps as skips instead of creates', async () => {
     const writeFns = writeFunctionMocks();
     const { prisma, legacyImportMapFindMany } = prismaMock(
@@ -956,6 +1052,26 @@ function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {
     ],
     ...overrides,
   };
+}
+
+function offerWithOfferOnlyField(): LegacyOffer {
+  return offer({
+    offer_id: '25',
+    classofbusiness: {
+      class_of_business_id: '25',
+      business_name: 'Motor',
+      business_details: '[{"keydetail":"Vehicle Make"}]',
+    },
+    offer_detail: {
+      policy_number: 'POL-25',
+      insured_by: 'Insured',
+      currency: 'GHS',
+      offer_details: JSON.stringify([
+        { keydetail: 'Vehicle Make', value: 'Truck' },
+        { keydetail: 'Year of Manufacture', value: '2018' },
+      ]),
+    },
+  });
 }
 
 function offerWithAddressIdCollision(): LegacyOffer {

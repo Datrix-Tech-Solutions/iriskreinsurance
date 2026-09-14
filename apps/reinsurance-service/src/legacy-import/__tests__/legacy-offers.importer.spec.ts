@@ -114,6 +114,7 @@ describe('LegacyOffersImporter', () => {
       existingMaps: {
         currency: { GHS: 'currency-existing' },
         risk_type: { '1': 'risk-type-existing' },
+        risk_type_field: { '1:vehicle_make': 'risk-field-existing' },
         insurer: { '15': 'cedant-existing' },
         reinsurer: { r1: 'reinsurer-existing' },
         offer: { [normalized.offerId]: 'placement-existing' },
@@ -203,6 +204,91 @@ describe('LegacyOffersImporter', () => {
     expect(tx.riskType.create).not.toHaveBeenCalled();
     expect(tx.riskTypeField.create).not.toHaveBeenCalled();
     expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('placement batch creates a missing offer-only RiskTypeField and map for the selected offer', async () => {
+    const source = offerWithOfferOnlyField('25', '2018');
+    const { prisma, tx } = prismaMock({
+      existingMaps: completeReferenceMapsForClass('25'),
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([source]),
+      scope: 'placement-batch',
+    });
+
+    expect(result.created.riskTypeFields).toBe(1);
+    expect(mapCreates(tx, 'risk_type_field', '25:year_of_manufacture')).toBe(1);
+    expect(tx.riskTypeField.create).toHaveBeenCalledTimes(1);
+    expect(createData(tx.riskTypeField)).toEqual(
+      expect.objectContaining({
+        riskTypeId: 'risk-type-25-existing',
+        fieldKey: 'year_of_manufacture',
+      }),
+    );
+    expect(createData(tx.placement).offerDetails).toEqual(
+      expect.objectContaining({ year_of_manufacture: '2018' }),
+    );
+    expect(result.created.currencies).toBe(0);
+    expect(result.created.counterparties).toBe(0);
+    expect(result.created.riskClasses).toBe(0);
+    expect(result.created.riskTypes).toBe(0);
+  });
+
+  it('placement batch creates no offer-only RiskTypeField when the selected offer has none', async () => {
+    const { prisma, tx } = prismaMock({
+      existingMaps: completeReferenceMaps(),
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([offer()]),
+      scope: 'placement-batch',
+    });
+
+    expect(result.created.riskTypeFields).toBe(0);
+    expect(tx.riskTypeField.create).not.toHaveBeenCalled();
+    expect(mapCreates(tx, 'risk_type_field', '1:year_of_manufacture')).toBe(0);
+  });
+
+  it('placement batch rerun reuses an existing offer-only RiskTypeField map', async () => {
+    const source = offerWithOfferOnlyField('25', '2018');
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        ...completeReferenceMapsForClass('25'),
+        risk_type_field: {
+          '25:vehicle_make': 'risk-field-25-vehicle-make',
+          '25:year_of_manufacture': 'risk-field-25-year',
+        },
+      },
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([source]),
+      scope: 'placement-batch',
+    });
+
+    expect(result.created.riskTypeFields).toBe(0);
+    expect(tx.riskTypeField.create).not.toHaveBeenCalled();
+    expect(mapCreates(tx, 'risk_type_field', '25:year_of_manufacture')).toBe(0);
+  });
+
+  it('placement batch does not duplicate an offer-only RiskTypeField shared by another selected offer', async () => {
+    const { prisma, tx } = prismaMock({
+      existingMaps: completeReferenceMapsForClass('25'),
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([
+        offerWithOfferOnlyField('25', '2018'),
+        offerWithOfferOnlyField('26', '2019'),
+      ]),
+      scope: 'placement-batch',
+    });
+
+    expect(result.created.riskTypeFields).toBe(1);
+    expect(tx.riskTypeField.create).toHaveBeenCalledTimes(1);
+    expect(mapCreates(tx, 'risk_type_field', '25:year_of_manufacture')).toBe(1);
+    expect(mapCreates(tx, 'risk_type_field', '25:vehicle_make')).toBe(0);
   });
 
   it('placement batch fails closed when a shared reference map is missing', async () => {
@@ -1382,6 +1468,39 @@ function completeReferenceMaps() {
     insurer: { '15': 'cedant-existing' },
     reinsurer: { r1: 'reinsurer-existing' },
   };
+}
+
+function completeReferenceMapsForClass(classId: string) {
+  return {
+    currency: { GHS: 'currency-existing' },
+    risk_class: { motor: 'risk-class-existing' },
+    risk_type: { [classId]: `risk-type-${classId}-existing` },
+    risk_type_field: {
+      [`${classId}:vehicle_make`]: `risk-field-${classId}-vehicle-make`,
+    },
+    insurer: { '15': 'cedant-existing' },
+    reinsurer: { r1: 'reinsurer-existing' },
+  };
+}
+
+function offerWithOfferOnlyField(offerId: string, year: string): LegacyOffer {
+  return offer({
+    offer_id: offerId,
+    classofbusiness: {
+      class_of_business_id: '25',
+      business_name: 'Motor',
+      business_details: '[{"keydetail":"Vehicle Make"}]',
+    },
+    offer_detail: {
+      policy_number: `POL-${offerId}`,
+      insured_by: 'Insured',
+      currency: 'GHS',
+      offer_details: JSON.stringify([
+        { keydetail: 'Vehicle Make', value: 'Truck' },
+        { keydetail: 'Year of Manufacture', value: year },
+      ]),
+    },
+  });
 }
 
 function motorFixture6740(): LegacyOffer {

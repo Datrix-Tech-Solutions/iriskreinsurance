@@ -103,6 +103,7 @@ export class LegacyDbAwareDryRun {
           tenant.id,
           input.normalizedOffers,
           eligibleOfferIds,
+          input.plan,
         )
       : [];
 
@@ -174,8 +175,9 @@ export class LegacyDbAwareDryRun {
     tenantId: string,
     offers: NormalizedLegacyOffer[],
     eligibleOfferIds = new Set(offers.map((offer) => offer.offerId)),
+    plan?: LegacyImportPlan,
   ): Promise<ExistingImportMap[]> {
-    const identities = identitiesFor(offers, eligibleOfferIds);
+    const identities = identitiesFor(offers, eligibleOfferIds, plan);
     if (identities.length === 0) return [];
     const entityTypes = [
       ...new Set(identities.map((identity) => identity.entityType)),
@@ -312,7 +314,7 @@ export class LegacyDbAwareDryRun {
     );
     const riskTypeFields = uniqueBy(
       eligibleOffers.flatMap((offer) =>
-        [...offer.businessFields, ...offer.offerFields].map(
+        riskTypeFieldsForPlan(offer, input.plan).map(
           (field): PlannedRiskTypeField => {
             const riskClass = requireLegacyRiskClass(offer.className);
             return {
@@ -943,6 +945,7 @@ function actionFor(input: {
 function identitiesFor(
   offers: NormalizedLegacyOffer[],
   eligibleOfferIds = new Set(offers.map((offer) => offer.offerId)),
+  plan?: LegacyImportPlan,
 ) {
   return offers.flatMap((offer) => {
     const base = [
@@ -994,12 +997,22 @@ function identitiesFor(
           legacyId: participant.participantId,
         },
       ]),
-      ...[...offer.businessFields, ...offer.offerFields].map((field) => ({
+      ...riskTypeFieldsForPlan(offer, plan).map((field) => ({
         entityType: 'risk_type_field',
         legacyId: `${offer.classId}:${field.normalizedKey}`,
       })),
     ];
   });
+}
+
+function riskTypeFieldsForPlan(
+  offer: NormalizedLegacyOffer,
+  plan?: LegacyImportPlan,
+) {
+  if (plan?.batchSelection?.mode === 'reference-only') {
+    return offer.businessFields;
+  }
+  return [...offer.businessFields, ...offer.offerFields];
 }
 
 function eligibilityByOfferId(plan: LegacyImportPlan) {
