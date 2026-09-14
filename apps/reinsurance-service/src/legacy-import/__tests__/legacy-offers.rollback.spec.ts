@@ -100,6 +100,7 @@ describe('LegacyOffersRollback', () => {
   it('cannot delete business rows from another import run', async () => {
     const { prisma, tx } = prismaMock([
       map('Placement', 'run-1-placement'),
+      map('Counterparty', 'run-1-counterparty'),
       map('CounterpartyAddress', 'run-1-address'),
     ]);
 
@@ -122,6 +123,7 @@ describe('LegacyOffersRollback', () => {
 
   it('deletes exact mapped imported addresses and risk fields', async () => {
     const { prisma, tx } = prismaMock([
+      map('Counterparty', 'counterparty-1'),
       map('CounterpartyAddress', 'address-1'),
       map('CounterpartyAddress', 'address-2'),
       map('RiskTypeField', 'field-1'),
@@ -222,6 +224,103 @@ describe('LegacyOffersRollback', () => {
     expect(tx.riskType.deleteMany).not.toHaveBeenCalled();
   });
 
+  it('preserves a reference-only currency still used by a surviving placement', async () => {
+    const { prisma, tx } = prismaMock([map('Currency', 'currency-ghs')], {
+      currencies: [{ id: 'currency-ghs', isoCode: 'GHS' }],
+      referencedCurrencyPlacements: [{ currency: 'GHS' }],
+    });
+
+    const result = await new LegacyOffersRollback(prisma).rollback(
+      'run-1',
+      'tenant-1',
+    );
+
+    expect(tx.currency.deleteMany).not.toHaveBeenCalled();
+    expect(result.preserved).toContainEqual({
+      currentModel: 'Currency',
+      currentId: 'currency-ghs',
+      reason: 'referenced-by-surviving-placement',
+    });
+  });
+
+  it('deletes a reference-only currency with no surviving dependency', async () => {
+    const { prisma, tx } = prismaMock([map('Currency', 'currency-usd')], {
+      currencies: [{ id: 'currency-usd', isoCode: 'USD' }],
+    });
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.currency.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['currency-usd'] },
+      },
+    });
+  });
+
+  it('preserves counterparty and address when surviving placement data references the counterparty', async () => {
+    const { prisma, tx } = prismaMock(
+      [
+        map('Counterparty', 'counterparty-shared'),
+        map('CounterpartyAddress', 'address-shared'),
+      ],
+      {
+        addresses: [
+          { id: 'address-shared', counterpartyId: 'counterparty-shared' },
+        ],
+        referencedCounterpartyPlacements: [{ cedantId: 'counterparty-shared' }],
+      },
+    );
+
+    const result = await new LegacyOffersRollback(prisma).rollback(
+      'run-1',
+      'tenant-1',
+    );
+
+    expect(tx.counterparty.deleteMany).not.toHaveBeenCalled();
+    expect(tx.counterpartyAddress.deleteMany).not.toHaveBeenCalled();
+    expect(result.preserved).toEqual(
+      expect.arrayContaining([
+        {
+          currentModel: 'Counterparty',
+          currentId: 'counterparty-shared',
+          reason: 'referenced-by-surviving-placement-data',
+        },
+        {
+          currentModel: 'CounterpartyAddress',
+          currentId: 'address-shared',
+          reason: 'counterparty-preserved-or-not-owned-by-rollback',
+        },
+      ]),
+    );
+  });
+
+  it('preserves RiskTypeField when its RiskType is preserved by surviving placement dependency', async () => {
+    const { prisma, tx } = prismaMock(
+      [
+        map('RiskType', 'risk-type-shared'),
+        map('RiskTypeField', 'field-shared'),
+      ],
+      {
+        riskFields: [{ id: 'field-shared', riskTypeId: 'risk-type-shared' }],
+        referencedPlacements: [{ riskTypeId: 'risk-type-shared' }],
+      },
+    );
+
+    const result = await new LegacyOffersRollback(prisma).rollback(
+      'run-1',
+      'tenant-1',
+    );
+
+    expect(tx.riskType.deleteMany).not.toHaveBeenCalled();
+    expect(tx.riskTypeField.deleteMany).not.toHaveBeenCalled();
+    expect(result.preserved).toContainEqual({
+      currentModel: 'RiskTypeField',
+      currentId: 'field-shared',
+      reason: 'risk-type-referenced-by-surviving-placement',
+    });
+  });
+
   it('deduplicates shared delete targets within one rollback run', async () => {
     const { prisma, tx } = prismaMock([
       map('RiskType', 'risk-type-shared'),
@@ -252,7 +351,12 @@ function prismaMock(
   options: {
     survivingMaps?: Array<{ currentModel: string; currentId: string }>;
     referencedPlacements?: Array<{ riskTypeId: string | null }>;
+    referencedCurrencyPlacements?: Array<{ currency: string }>;
+    referencedCounterpartyPlacements?: Array<{ cedantId: string }>;
     survivingRiskTypes?: Array<{ riskClassId: string }>;
+    currencies?: Array<{ id: string; isoCode: string }>;
+    addresses?: Array<{ id: string; counterpartyId: string }>;
+    riskFields?: Array<{ id: string; riskTypeId: string }>;
   } = {},
 ) {
   const tx = transactionMock(maps, options);
@@ -271,9 +375,54 @@ function transactionMock(
   options: {
     survivingMaps?: Array<{ currentModel: string; currentId: string }>;
     referencedPlacements?: Array<{ riskTypeId: string | null }>;
+    referencedCurrencyPlacements?: Array<{ currency: string }>;
+    referencedCounterpartyPlacements?: Array<{ cedantId: string }>;
     survivingRiskTypes?: Array<{ riskClassId: string }>;
+    currencies?: Array<{ id: string; isoCode: string }>;
+    addresses?: Array<{ id: string; counterpartyId: string }>;
+    riskFields?: Array<{ id: string; riskTypeId: string }>;
   } = {},
 ) {
+  const emptyFindMany = jest.fn().mockResolvedValue([]);
+  const riskFields =
+    options.riskFields ??
+    [
+      ...new Set(
+        maps
+          .filter((item) => item.currentModel === 'RiskTypeField')
+          .map((item) => item.currentId),
+      ),
+    ].map((id) => ({
+      id,
+      riskTypeId: 'risk-type-unreferenced',
+    }));
+  const currencies =
+    options.currencies ??
+    maps
+      .filter((item) => item.currentModel === 'Currency')
+      .map((item) => ({
+        id: item.currentId,
+        isoCode: item.currentId,
+      }));
+  const counterpartyIds = new Set(
+    maps
+      .filter((item) => item.currentModel === 'Counterparty')
+      .map((item) => item.currentId),
+  );
+  const addresses =
+    options.addresses ??
+    maps
+      .filter((item) => item.currentModel === 'CounterpartyAddress')
+      .map((item) => ({
+        id: item.currentId,
+        counterpartyId:
+          [...counterpartyIds].find((id) =>
+            item.currentId.toLowerCase().includes(id.toLowerCase()),
+          ) ??
+          (counterpartyIds.size === 1
+            ? [...counterpartyIds][0]
+            : 'counterparty-unreferenced'),
+      }));
   return {
     legacyImportMap: {
       findMany: jest.fn((input: LegacyMapFindManyInput) => {
@@ -295,23 +444,53 @@ function transactionMock(
     placementClosing: delegate(),
     placement: {
       ...delegate(),
-      findMany: jest.fn().mockResolvedValue(options.referencedPlacements ?? []),
+      findMany: jest.fn((input: { where?: Record<string, unknown> }) => {
+        if (input.where && 'riskTypeId' in input.where) {
+          return Promise.resolve(options.referencedPlacements ?? []);
+        }
+        if (input.where && 'currency' in input.where) {
+          return Promise.resolve(options.referencedCurrencyPlacements ?? []);
+        }
+        if (input.where && 'cedantId' in input.where) {
+          return Promise.resolve(
+            options.referencedCounterpartyPlacements ?? [],
+          );
+        }
+        return Promise.resolve([]);
+      }),
     },
-    counterpartyAddress: delegate(),
+    counterpartyAddress: {
+      ...delegate(),
+      findMany: jest.fn().mockResolvedValue(addresses),
+    },
     counterparty: delegate(),
-    riskTypeField: delegate(),
+    riskTypeField: {
+      ...delegate(),
+      findMany: jest.fn().mockResolvedValue(riskFields),
+    },
     riskType: {
       ...delegate(),
       findMany: jest.fn().mockResolvedValue(options.survivingRiskTypes ?? []),
     },
     riskClass: delegate(),
-    currency: delegate(),
+    currency: {
+      ...delegate(),
+      findMany: jest.fn().mockResolvedValue(currencies),
+    },
+    placementPayment: { findMany: emptyFindMany },
+    placementNote: { findMany: emptyFindMany },
+    placementClaimAllocation: { findMany: emptyFindMany },
+    placementClaimCashCall: { findMany: emptyFindMany },
+    placementClaimRecoveryApproval: { findMany: emptyFindMany },
+    placementClaimRecoveryReceipt: { findMany: emptyFindMany },
+    placementEndorsementParticipant: { findMany: emptyFindMany },
   };
 }
 
 function delegate() {
   return {
     deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    findMany: jest.fn().mockResolvedValue([]),
   };
 }
 

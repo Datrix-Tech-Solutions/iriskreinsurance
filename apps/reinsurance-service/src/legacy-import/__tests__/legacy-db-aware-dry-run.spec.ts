@@ -644,6 +644,85 @@ describe('LegacyDbAwareDryRun', () => {
     expectNoWrites(writeFns);
   });
 
+  it('projects DB-aware participant, closing, reference, and map counts', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+
+    const result = await resolveOffers(prisma, [offer()]);
+
+    expect(result.plan.counts.creates.participants).toBe(0);
+    expect(result.resolution.projectedCounts.currencies.create).toBe(1);
+    expect(result.resolution.projectedCounts.counterparties.create).toBe(2);
+    expect(result.resolution.projectedCounts.riskClasses.create).toBe(1);
+    expect(result.resolution.projectedCounts.riskTypes.create).toBe(1);
+    expect(result.resolution.projectedCounts.riskTypeFields.create).toBe(1);
+    expect(result.resolution.projectedCounts.placements.create).toBe(1);
+    expect(result.resolution.projectedCounts.participants.create).toBe(1);
+    expect(result.resolution.projectedCounts.placementClosings.create).toBe(1);
+    expect(result.resolution.projectedCounts.legacyImportMaps.create).toBe(9);
+    expect(
+      result.resolution.projectedCounts.legacyImportMaps.byEntityType
+        .offer_participant.create,
+    ).toBe(1);
+    expectNoWrites(writeFns);
+  });
+
+  it('projects existing fixture maps as skips instead of creates', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', email: 'admin@acmeghana.com', role: 'TENANT_ADMIN' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const source = offer();
+    const normalized = new LegacyOffersNormalizer().normalize(source);
+    legacyImportMapFindMany.mockResolvedValue([
+      {
+        entityType: 'offer',
+        legacyId: '1',
+        currentModel: 'Placement',
+        currentId: 'placement-1',
+        rawHash: normalized.rawHash,
+      },
+      {
+        entityType: 'offer_participant',
+        legacyId: 'p1',
+        currentModel: 'PlacementParticipant',
+        currentId: 'participant-1',
+        rawHash: normalized.participants[0].rawHash,
+      },
+      {
+        entityType: 'offer_participant_closing',
+        legacyId: 'p1',
+        currentModel: 'PlacementClosing',
+        currentId: 'closing-1',
+        rawHash: historicalPlacementClosingHash(
+          normalized,
+          normalized.participants[0],
+        ),
+      },
+    ]);
+
+    const result = await resolveOffers(prisma, [source]);
+
+    expect(result.resolution.projectedCounts.placements.skip).toBe(1);
+    expect(result.resolution.projectedCounts.participants.skip).toBe(1);
+    expect(result.resolution.projectedCounts.placementClosings.skip).toBe(1);
+    expect(result.resolution.projectedCounts.legacyImportMaps.skip).toBe(3);
+    expect(result.resolution.projectedCounts.legacyImportMaps.create).toBe(6);
+    expectNoWrites(writeFns);
+  });
+
   it('plans historical placement closings for eligible participants', async () => {
     const writeFns = writeFunctionMocks();
     const { prisma } = prismaMock(

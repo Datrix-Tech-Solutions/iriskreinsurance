@@ -4,6 +4,7 @@ import { LEGACY_SOURCE_SYSTEM } from './legacy-import.types';
 export type RollbackLegacyImportResult = {
   importRunId: string;
   deleted: Record<string, number>;
+  preserved: Array<{ currentModel: string; currentId: string; reason: string }>;
 };
 
 export class LegacyOffersRollback {
@@ -24,14 +25,8 @@ export class LegacyOffersRollback {
         select: { currentModel: true, currentId: true },
       });
       const ids = byModel(maps);
-      const riskTypeFieldIds = await filterIdsWithoutSurvivingImportMap(
-        tx,
-        tenantId,
-        importRunId,
-        'RiskTypeField',
-        ids.RiskTypeField ?? [],
-      );
       const deleted: Record<string, number> = {};
+      const preserved: RollbackLegacyImportResult['preserved'] = [];
 
       deleted.placementClosings = await deleteMany(tx, 'placementClosing', {
         tenantId,
@@ -49,28 +44,52 @@ export class LegacyOffersRollback {
         tenantId,
         id: { in: ids.Placement ?? [] },
       });
+      const counterpartyIds = await filterCounterpartyIdsSafeToDelete(
+        tx,
+        tenantId,
+        importRunId,
+        ids.Counterparty ?? [],
+        preserved,
+      );
+      const counterpartyAddressIds =
+        await filterCounterpartyAddressIdsSafeToDelete(
+          tx,
+          tenantId,
+          importRunId,
+          ids.CounterpartyAddress ?? [],
+          counterpartyIds,
+          preserved,
+        );
       deleted.counterpartyAddresses = await deleteMany(
         tx,
         'counterpartyAddress',
         {
           tenantId,
-          id: { in: ids.CounterpartyAddress ?? [] },
+          id: { in: counterpartyAddressIds },
         },
       );
       deleted.counterparties = await deleteMany(tx, 'counterparty', {
         tenantId,
-        id: { in: ids.Counterparty ?? [] },
-      });
-      deleted.riskTypeFields = await deleteMany(tx, 'riskTypeField', {
-        tenantId,
-        id: { in: riskTypeFieldIds },
+        id: { in: counterpartyIds },
       });
       const riskTypeIds = await filterRiskTypeIdsSafeToDelete(
         tx,
         tenantId,
         importRunId,
         ids.RiskType ?? [],
+        preserved,
       );
+      const riskTypeFieldIds = await filterRiskTypeFieldIdsSafeToDelete(
+        tx,
+        tenantId,
+        importRunId,
+        ids.RiskTypeField ?? [],
+        preserved,
+      );
+      deleted.riskTypeFields = await deleteMany(tx, 'riskTypeField', {
+        tenantId,
+        id: { in: riskTypeFieldIds },
+      });
       deleted.riskTypes = await deleteMany(tx, 'riskType', {
         tenantId,
         id: { in: riskTypeIds },
@@ -79,14 +98,22 @@ export class LegacyOffersRollback {
         tx,
         tenantId,
         ids.RiskClass ?? [],
+        preserved,
       );
       deleted.riskClasses = await deleteMany(tx, 'riskClass', {
         tenantId,
         id: { in: riskClassIds },
       });
+      const currencyIds = await filterCurrencyIdsSafeToDelete(
+        tx,
+        tenantId,
+        importRunId,
+        ids.Currency ?? [],
+        preserved,
+      );
       deleted.currencies = await deleteMany(tx, 'currency', {
         tenantId,
-        id: { in: ids.Currency ?? [] },
+        id: { in: currencyIds },
       });
       deleted.legacyImportMaps = (
         await tx.legacyImportMap.deleteMany({
@@ -98,13 +125,132 @@ export class LegacyOffersRollback {
         data: {
           status: 'ROLLED_BACK',
           finishedAt: new Date(),
-          summary: { rollbackDeleted: deleted } as Prisma.InputJsonValue,
+          summary: {
+            rollbackDeleted: deleted,
+            rollbackPreserved: preserved,
+          } as Prisma.InputJsonValue,
         },
       });
 
-      return { importRunId, deleted };
+      return { importRunId, deleted, preserved };
     });
   }
+}
+
+async function filterCurrencyIdsSafeToDelete(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  importRunId: string,
+  ids: string[],
+  preserved: RollbackLegacyImportResult['preserved'],
+) {
+  const withoutSurvivingMaps = await filterIdsWithoutSurvivingImportMap(
+    tx,
+    tenantId,
+    importRunId,
+    'Currency',
+    ids,
+    preserved,
+  );
+  if (withoutSurvivingMaps.length === 0) return [];
+  const currencies = await tx.currency.findMany({
+    where: { tenantId, id: { in: withoutSurvivingMaps } },
+    select: { id: true, isoCode: true },
+  });
+  const referencedPlacements = await tx.placement.findMany({
+    where: {
+      tenantId,
+      currency: { in: currencies.map((currency) => currency.isoCode) },
+    },
+    select: { currency: true },
+  });
+  const referencedIsoCodes = new Set(
+    referencedPlacements.map((placement) => placement.currency),
+  );
+  return currencies
+    .filter((currency) => {
+      const referenced = referencedIsoCodes.has(currency.isoCode);
+      if (referenced) {
+        preserved.push({
+          currentModel: 'Currency',
+          currentId: currency.id,
+          reason: 'referenced-by-surviving-placement',
+        });
+      }
+      return !referenced;
+    })
+    .map((currency) => currency.id);
+}
+
+async function filterCounterpartyIdsSafeToDelete(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  importRunId: string,
+  ids: string[],
+  preserved: RollbackLegacyImportResult['preserved'],
+) {
+  const withoutSurvivingMaps = await filterIdsWithoutSurvivingImportMap(
+    tx,
+    tenantId,
+    importRunId,
+    'Counterparty',
+    ids,
+    preserved,
+  );
+  if (withoutSurvivingMaps.length === 0) return [];
+  const referencedIds = await referencedCounterpartyIds(
+    tx,
+    tenantId,
+    withoutSurvivingMaps,
+  );
+  return withoutSurvivingMaps.filter((id) => {
+    const referenced = referencedIds.has(id);
+    if (referenced) {
+      preserved.push({
+        currentModel: 'Counterparty',
+        currentId: id,
+        reason: 'referenced-by-surviving-placement-data',
+      });
+    }
+    return !referenced;
+  });
+}
+
+async function filterCounterpartyAddressIdsSafeToDelete(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  importRunId: string,
+  ids: string[],
+  deletableCounterpartyIds: string[],
+  preserved: RollbackLegacyImportResult['preserved'],
+) {
+  const withoutSurvivingMaps = await filterIdsWithoutSurvivingImportMap(
+    tx,
+    tenantId,
+    importRunId,
+    'CounterpartyAddress',
+    ids,
+    preserved,
+  );
+  if (withoutSurvivingMaps.length === 0) return [];
+  const addresses = await tx.counterpartyAddress.findMany({
+    where: { tenantId, id: { in: withoutSurvivingMaps } },
+    select: { id: true, counterpartyId: true },
+  });
+  const deletableCounterparties = new Set(deletableCounterpartyIds);
+  return addresses
+    .filter((address) => {
+      const preserve = !deletableCounterparties.has(address.counterpartyId);
+      if (preserve) {
+        preserved.push({
+          currentModel: 'CounterpartyAddress',
+          currentId: address.id,
+          reason: 'counterparty-preserved-or-not-owned-by-rollback',
+        });
+      }
+      return !preserve;
+    })
+    .map((address) => address.id);
 }
 
 function byModel(rows: Array<{ currentModel: string; currentId: string }>) {
@@ -121,6 +267,7 @@ async function filterRiskTypeIdsSafeToDelete(
   tenantId: string,
   importRunId: string,
   ids: string[],
+  preserved: RollbackLegacyImportResult['preserved'],
 ) {
   const withoutSurvivingMaps = await filterIdsWithoutSurvivingImportMap(
     tx,
@@ -128,6 +275,7 @@ async function filterRiskTypeIdsSafeToDelete(
     importRunId,
     'RiskType',
     ids,
+    preserved,
   );
   if (withoutSurvivingMaps.length === 0) return [];
   const referencedPlacements = await tx.placement.findMany({
@@ -142,13 +290,71 @@ async function filterRiskTypeIdsSafeToDelete(
       .map((placement) => placement.riskTypeId)
       .filter((id): id is string => Boolean(id)),
   );
-  return withoutSurvivingMaps.filter((id) => !referencedRiskTypeIds.has(id));
+  return withoutSurvivingMaps.filter((id) => {
+    const referenced = referencedRiskTypeIds.has(id);
+    if (referenced) {
+      preserved.push({
+        currentModel: 'RiskType',
+        currentId: id,
+        reason: 'referenced-by-surviving-placement',
+      });
+    }
+    return !referenced;
+  });
+}
+
+async function filterRiskTypeFieldIdsSafeToDelete(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  importRunId: string,
+  ids: string[],
+  preserved: RollbackLegacyImportResult['preserved'],
+) {
+  const withoutSurvivingMaps = await filterIdsWithoutSurvivingImportMap(
+    tx,
+    tenantId,
+    importRunId,
+    'RiskTypeField',
+    ids,
+    preserved,
+  );
+  if (withoutSurvivingMaps.length === 0) return [];
+  const fields = await tx.riskTypeField.findMany({
+    where: { tenantId, id: { in: withoutSurvivingMaps } },
+    select: { id: true, riskTypeId: true },
+  });
+  const referencedPlacements = await tx.placement.findMany({
+    where: {
+      tenantId,
+      riskTypeId: { in: fields.map((field) => field.riskTypeId) },
+    },
+    select: { riskTypeId: true },
+  });
+  const referencedRiskTypeIds = new Set(
+    referencedPlacements
+      .map((placement) => placement.riskTypeId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  return fields
+    .filter((field) => {
+      const preserve = referencedRiskTypeIds.has(field.riskTypeId);
+      if (preserve) {
+        preserved.push({
+          currentModel: 'RiskTypeField',
+          currentId: field.id,
+          reason: 'risk-type-referenced-by-surviving-placement',
+        });
+      }
+      return !preserve;
+    })
+    .map((field) => field.id);
 }
 
 async function filterRiskClassIdsSafeToDelete(
   tx: Prisma.TransactionClient,
   tenantId: string,
   ids: string[],
+  preserved: RollbackLegacyImportResult['preserved'],
 ) {
   if (ids.length === 0) return [];
   const survivingRiskTypes = await tx.riskType.findMany({
@@ -161,7 +367,17 @@ async function filterRiskClassIdsSafeToDelete(
   const referencedRiskClassIds = new Set(
     survivingRiskTypes.map((riskType) => riskType.riskClassId),
   );
-  return ids.filter((id) => !referencedRiskClassIds.has(id));
+  return ids.filter((id) => {
+    const referenced = referencedRiskClassIds.has(id);
+    if (referenced) {
+      preserved.push({
+        currentModel: 'RiskClass',
+        currentId: id,
+        reason: 'referenced-by-surviving-risk-type',
+      });
+    }
+    return !referenced;
+  });
 }
 
 async function filterIdsWithoutSurvivingImportMap(
@@ -170,6 +386,7 @@ async function filterIdsWithoutSurvivingImportMap(
   importRunId: string,
   currentModel: string,
   ids: string[],
+  preserved?: RollbackLegacyImportResult['preserved'],
 ) {
   if (ids.length === 0) return [];
   const survivingMaps = await tx.legacyImportMap.findMany({
@@ -183,7 +400,83 @@ async function filterIdsWithoutSurvivingImportMap(
     select: { currentId: true },
   });
   const survivingIds = new Set(survivingMaps.map((map) => map.currentId));
-  return ids.filter((id) => !survivingIds.has(id));
+  return ids.filter((id) => {
+    const survives = survivingIds.has(id);
+    if (survives) {
+      preserved?.push({
+        currentModel,
+        currentId: id,
+        reason: 'referenced-by-surviving-import-map',
+      });
+    }
+    return !survives;
+  });
+}
+
+async function referencedCounterpartyIds(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  ids: string[],
+) {
+  const [
+    placements,
+    participants,
+    payments,
+    notes,
+    claimAllocations,
+    cashCalls,
+    recoveryApprovals,
+    recoveryReceipts,
+    endorsementParticipants,
+  ] = await Promise.all([
+    tx.placement.findMany({
+      where: { tenantId, cedantId: { in: ids } },
+      select: { cedantId: true },
+    }),
+    tx.placementParticipant.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementPayment.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementNote.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementClaimAllocation.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementClaimCashCall.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementClaimRecoveryApproval.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementClaimRecoveryReceipt.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+    tx.placementEndorsementParticipant.findMany({
+      where: { tenantId, counterpartyId: { in: ids } },
+      select: { counterpartyId: true },
+    }),
+  ]);
+  return new Set([
+    ...placements.map((row) => row.cedantId),
+    ...participants.map((row) => row.counterpartyId),
+    ...payments.map((row) => row.counterpartyId),
+    ...notes.map((row) => row.counterpartyId),
+    ...claimAllocations.map((row) => row.counterpartyId),
+    ...cashCalls.map((row) => row.counterpartyId),
+    ...recoveryApprovals.map((row) => row.counterpartyId),
+    ...recoveryReceipts.map((row) => row.counterpartyId),
+    ...endorsementParticipants.map((row) => row.counterpartyId),
+  ]);
 }
 
 async function deleteMany(

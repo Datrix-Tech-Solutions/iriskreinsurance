@@ -29,6 +29,7 @@ export type BuildLegacyImportPlanInput = {
   offers: LegacyOffer[];
   mode: LegacyImportMode;
   fixtureOfferIds?: string[];
+  batchSelection?: LegacyImportPlan['batchSelection'];
   existingMaps?: ExistingImportMap[];
 };
 
@@ -109,6 +110,7 @@ export class LegacyOffersPlanGenerator {
       sourceFileHash: input.sourceFileHash,
       mode: input.mode,
       fixtureOfferIds,
+      batchSelection: input.batchSelection,
       counts: summarize(records),
       classification,
       duplicateLegacyIds,

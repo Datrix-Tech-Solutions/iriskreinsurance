@@ -67,6 +67,52 @@ describe('LegacyOffersClassifier', () => {
     );
   });
 
+  it('keeps suspicious historical policy dates out of AUTO_SAFE batches', () => {
+    const suspiciousDates = [
+      {
+        offer_detail: {
+          policy_number: 'POL-293',
+          insured_by: 'Insured One',
+          currency: 'GHS',
+          period_of_insurance_from: '0021-09-09',
+          period_of_insurance_to: '2022-01-08',
+          offer_details: '[{"keydetail":"Vehicle Make","value":"Truck"}]',
+        },
+        reason: 'suspicious-inception-date',
+      },
+      {
+        offer_detail: {
+          policy_number: 'POL-2254',
+          insured_by: 'Insured One',
+          currency: 'GHS',
+          period_of_insurance_from: '2023-10-18',
+          period_of_insurance_to: '2924-10-17',
+          offer_details: '[{"keydetail":"Vehicle Make","value":"Truck"}]',
+        },
+        reason: 'suspicious-expiry-date',
+      },
+      {
+        offer_detail: {
+          policy_number: 'POL-1513',
+          insured_by: 'Insured One',
+          currency: 'GHS',
+          period_of_insurance_from: '2023-02-08',
+          period_of_insurance_to: '2034-02-07',
+          offer_details: '[{"keydetail":"Vehicle Make","value":"Truck"}]',
+        },
+        reason: 'suspicious-expiry-date',
+      },
+    ];
+
+    for (const { offer_detail, reason } of suspiciousDates) {
+      const result = classifier.classify(
+        normalizer.normalize(offer({ offer_detail })),
+      );
+      expect(result.classification).toBe('NEEDS_FINANCIAL_REVIEW');
+      expect(result.reasons).toContain(reason);
+    }
+  });
+
   it('classifies hard participant arithmetic mismatch as DATA_MISMATCH', () => {
     const source = offer({ placed_share: 20, fac_premium: 200 });
     source.offer_participant![0].participant_fac_premium = 199.9;

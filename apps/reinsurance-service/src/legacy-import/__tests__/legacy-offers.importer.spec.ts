@@ -143,6 +143,122 @@ describe('LegacyOffersImporter', () => {
     expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(9);
   });
 
+  it('reference-only apply creates reference rows and no placement-owned rows', async () => {
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([offer()]),
+      scope: 'reference-only',
+    });
+
+    expect(result.created.placements).toBe(0);
+    expect(result.created.participants).toBe(0);
+    expect(result.created.placementClosings).toBe(0);
+    expect(tx.placement.create).not.toHaveBeenCalled();
+    expect(tx.placementParticipant.create).not.toHaveBeenCalled();
+    expect(tx.placementClosing.create).not.toHaveBeenCalled();
+    expect(result.created.currencies).toBe(1);
+    expect(result.created.counterparties).toBe(2);
+    expect(result.created.riskClasses).toBe(1);
+    expect(result.created.riskTypes).toBe(1);
+    expect(result.created.riskTypeFields).toBe(1);
+  });
+
+  it('placement batch reuses preloaded reference maps without creating shared references', async () => {
+    const { prisma, tx } = prismaMock({
+      existingMaps: completeReferenceMaps(),
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([offer()]),
+      scope: 'placement-batch',
+    });
+
+    expect(result.created.currencies).toBe(0);
+    expect(result.created.counterparties).toBe(0);
+    expect(result.created.riskClasses).toBe(0);
+    expect(result.created.riskTypes).toBe(0);
+    expect(result.created.riskTypeFields).toBe(0);
+    expect(result.created.placements).toBe(1);
+    expect(result.created.participants).toBe(1);
+    expect(result.created.placementClosings).toBe(1);
+    expect(tx.currency.create).not.toHaveBeenCalled();
+    expect(tx.counterparty.create).not.toHaveBeenCalled();
+    expect(tx.riskClass.create).not.toHaveBeenCalled();
+    expect(tx.riskType.create).not.toHaveBeenCalled();
+    expect(tx.riskTypeField.create).not.toHaveBeenCalled();
+    expect(tx.legacyImportMap.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('placement batch fails closed when a shared reference map is missing', async () => {
+    const { prisma, transactionState, tx } = prismaMock({
+      existingMaps: {
+        currency: { GHS: 'currency-existing' },
+        risk_class: { motor: 'risk-class-existing' },
+      },
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply({
+        ...applyInput([offer()]),
+        scope: 'placement-batch',
+      }),
+    ).rejects.toThrow('Placement batch requires preloaded risk_type map for 1');
+
+    expect(transactionState.rolledBack).toBe(true);
+    expect(tx.placement.create).not.toHaveBeenCalled();
+    expect(tx.placementParticipant.create).not.toHaveBeenCalled();
+    expect(tx.placementClosing.create).not.toHaveBeenCalled();
+  });
+
+  it('placement batch fails closed when a required child address map is missing despite parent counterparty maps', async () => {
+    const source = offer({
+      insurer: {
+        insurer_id: '15',
+        insurer_company_name: 'Cedant',
+        insurer_address: { country: 'Ghana' },
+      },
+    });
+    const { prisma, transactionState, tx } = prismaMock({
+      existingMaps: completeReferenceMaps(),
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply({
+        ...applyInput([source]),
+        scope: 'placement-batch',
+      }),
+    ).rejects.toThrow(
+      'Placement batch requires preloaded counterparty_address map for insurer:15:primary',
+    );
+
+    expect(transactionState.rolledBack).toBe(true);
+    expect(tx.legacyImportRun.create).not.toHaveBeenCalled();
+    expect(tx.placement.create).not.toHaveBeenCalled();
+  });
+
+  it('placement batch fails closed when a required RiskTypeField map is missing despite parent RiskType map', async () => {
+    const { prisma, transactionState, tx } = prismaMock({
+      existingMaps: {
+        ...completeReferenceMaps(),
+        risk_type_field: {},
+      },
+    });
+
+    await expect(
+      new LegacyOffersImporter(prisma).apply({
+        ...applyInput([offer()]),
+        scope: 'placement-batch',
+      }),
+    ).rejects.toThrow(
+      'Placement batch requires preloaded risk_type_field map for 1:vehicle_make',
+    );
+
+    expect(transactionState.rolledBack).toBe(true);
+    expect(tx.legacyImportRun.create).not.toHaveBeenCalled();
+    expect(tx.placement.create).not.toHaveBeenCalled();
+  });
+
   it('uses legacy offer.created_at as Placement.createdAt for fixture 6740', async () => {
     const { prisma, tx } = prismaMock();
 
@@ -1237,6 +1353,17 @@ function applyInput(sources: LegacyOffer[]) {
     sourceFileHash: 'file-hash',
     plan,
     normalizedOffers,
+  };
+}
+
+function completeReferenceMaps() {
+  return {
+    currency: { GHS: 'currency-existing' },
+    risk_class: { motor: 'risk-class-existing' },
+    risk_type: { '1': 'risk-type-existing' },
+    risk_type_field: { '1:vehicle_make': 'risk-field-existing' },
+    insurer: { '15': 'cedant-existing' },
+    reinsurer: { r1: 'reinsurer-existing' },
   };
 }
 

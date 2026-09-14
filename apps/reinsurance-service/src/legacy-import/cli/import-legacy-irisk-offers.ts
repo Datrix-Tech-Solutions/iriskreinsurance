@@ -1,11 +1,18 @@
 import { PrismaClient } from '../../../prisma/generated/client';
 import { LegacyDbAwareDryRun } from '../legacy-db-aware-dry-run';
 import { LegacyOffersImporter } from '../legacy-offers.importer';
-import { LegacyOffersNormalizer } from '../legacy-offers.normalizer';
+import {
+  selectLegacyOffersForImport,
+  validateApplySelection,
+} from '../legacy-offers.batch-selector';
 import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffersReader } from '../legacy-offers.reader';
 import { LegacyOffersRollback } from '../legacy-offers.rollback';
-import { LEGACY_SOURCE_SYSTEM, LegacyImportMode } from '../legacy-import.types';
+import {
+  LEGACY_SOURCE_SYSTEM,
+  LegacyImportMode,
+  LegacyOfferClassification,
+} from '../legacy-import.types';
 
 type CliOptions = {
   source?: string;
@@ -14,6 +21,10 @@ type CliOptions = {
   importUserId?: string;
   mode: LegacyImportMode;
   fixtureOfferIds: string[];
+  classification?: LegacyOfferClassification;
+  batchSize?: number;
+  afterOfferId?: string;
+  referenceOnly: boolean;
   allowApply: boolean;
   resolveDb: boolean;
   importRunId?: string;
@@ -31,25 +42,26 @@ async function main() {
 
   const reader = new LegacyOffersReader();
   const file = await reader.read(options.source);
-  const selectedOffers =
-    options.fixtureOfferIds.length > 0
-      ? file.offers.filter((offer) =>
-          options.fixtureOfferIds.includes(String(offer.offer_id)),
-        )
-      : file.offers;
-  const normalizer = new LegacyOffersNormalizer();
-  const normalizedOffers = selectedOffers.map((offer) =>
-    normalizer.normalize(offer),
-  );
+  const selection = selectLegacyOffersForImport({
+    offers: file.offers,
+    fixtureOfferIds: options.fixtureOfferIds,
+    classification: options.classification,
+    batchSize: options.batchSize,
+    afterOfferId: options.afterOfferId,
+    referenceOnly: options.referenceOnly,
+  });
+  const normalizedOffers = selection.normalizedOffers;
+  const selectedOfferIds = selection.selectedOfferIds;
 
   const plan = new LegacyOffersPlanGenerator().build({
     tenantSlug: options.tenantSlug,
     tenantId: options.tenantId,
     sourceFilePath: file.sourceFilePath,
     sourceFileHash: file.sourceFileHash,
-    offers: file.offers,
+    offers: selection.selectedOffers,
     mode: options.mode,
     fixtureOfferIds: options.fixtureOfferIds,
+    batchSelection: batchSelectionForPlan(selection),
     existingMaps: [],
   });
 
@@ -70,9 +82,10 @@ async function main() {
         tenantId: resolved.resolution.tenant.id,
         sourceFilePath: file.sourceFilePath,
         sourceFileHash: file.sourceFileHash,
-        offers: file.offers,
+        offers: selection.selectedOffers,
         mode: options.mode,
         fixtureOfferIds: options.fixtureOfferIds,
+        batchSelection: batchSelectionForPlan(selection),
         existingMaps: resolved.existingMaps,
       });
       console.log(
@@ -94,8 +107,12 @@ async function main() {
   if (!options.allowApply) {
     throw new Error('Apply requires --allow-apply.');
   }
-  if (options.fixtureOfferIds.length === 0) {
-    throw new Error('Apply is Phase-1 fixture-limited and requires --fixture.');
+  validateApplySelection(selection);
+  if (selection.mode === 'reference-only' && !options.resolveDb) {
+    throw new Error('Reference apply requires --resolve-db.');
+  }
+  if (selection.mode === 'classification-batch' && !options.resolveDb) {
+    throw new Error('Batch apply requires --resolve-db.');
   }
   if (!options.tenantId || !options.importUserId) {
     throw new Error('Apply requires --tenant-id and --import-user-id.');
@@ -103,19 +120,82 @@ async function main() {
 
   const prisma = new PrismaClient();
   try {
+    const applyPlan = options.resolveDb
+      ? await buildDbAwarePlan({
+          prisma,
+          options,
+          file,
+          plan,
+          normalizedOffers,
+          selectedOfferIds,
+          batchSelection: batchSelectionForPlan(selection),
+        })
+      : plan;
     const result = await new LegacyOffersImporter(prisma).apply({
       tenantId: options.tenantId,
       tenantSlug: options.tenantSlug,
       importUserId: options.importUserId,
       sourceFilePath: file.sourceFilePath,
       sourceFileHash: file.sourceFileHash,
-      plan,
+      plan: applyPlan,
       normalizedOffers,
+      scope: applyScopeForSelection(selection.mode),
     });
-    console.log(JSON.stringify(result, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          selectedOfferIds,
+          rollbackCommand: `npm run legacy:irisk:offers --workspace=apps/reinsurance-service -- --mode rollback --tenant-id ${options.tenantId} --import-run-id ${result.importRunId} --allow-apply`,
+          ...result,
+        },
+        null,
+        2,
+      ),
+    );
   } finally {
     await prisma.$disconnect();
   }
+}
+
+async function buildDbAwarePlan(input: {
+  prisma: PrismaClient;
+  options: CliOptions;
+  file: { sourceFilePath: string; sourceFileHash: string };
+  plan: ReturnType<LegacyOffersPlanGenerator['build']>;
+  normalizedOffers: ReturnType<
+    typeof selectLegacyOffersForImport
+  >['normalizedOffers'];
+  selectedOfferIds: string[];
+  batchSelection: ReturnType<typeof batchSelectionForPlan>;
+}) {
+  const resolved = await new LegacyDbAwareDryRun(input.prisma).resolve({
+    tenantSlug: input.options.tenantSlug,
+    plan: input.plan,
+    normalizedOffers: input.normalizedOffers,
+  });
+  return new LegacyOffersPlanGenerator().build({
+    tenantSlug: input.options.tenantSlug,
+    tenantId: resolved.resolution.tenant.id,
+    sourceFilePath: input.file.sourceFilePath,
+    sourceFileHash: input.file.sourceFileHash,
+    offers: input.normalizedOffers.map((offer) => offer.source),
+    mode: input.options.mode,
+    fixtureOfferIds: input.options.fixtureOfferIds,
+    batchSelection: input.batchSelection,
+    existingMaps: resolved.existingMaps,
+  });
+}
+
+function batchSelectionForPlan(
+  selection: ReturnType<typeof selectLegacyOffersForImport>,
+) {
+  return {
+    mode: selection.mode,
+    selectedOfferIds: selection.selectedOfferIds,
+    classification: selection.classification,
+    batchSize: selection.batchSize,
+    afterOfferId: selection.afterOfferId,
+  };
 }
 
 async function rollback(options: CliOptions) {
@@ -144,6 +224,7 @@ function parseArgs(argv: string[]): CliOptions {
     fixtureOfferIds: [],
     allowApply: false,
     resolveDb: false,
+    referenceOnly: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -163,6 +244,18 @@ function parseArgs(argv: string[]): CliOptions {
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean);
+    } else if (arg === '--classification') {
+      options.classification = parseClassification(
+        requiredValue(arg, next, () => index++),
+      );
+    } else if (arg === '--batch-size') {
+      options.batchSize = parseBatchSize(
+        requiredValue(arg, next, () => index++),
+      );
+    } else if (arg === '--after-offer-id') {
+      options.afterOfferId = requiredValue(arg, next, () => index++);
+    } else if (arg === '--reference-only') {
+      options.referenceOnly = true;
     } else if (arg === '--allow-apply') {
       options.allowApply = true;
     } else if (arg === '--resolve-db') {
@@ -174,6 +267,33 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
   return options;
+}
+
+function applyScopeForSelection(
+  mode: ReturnType<typeof selectLegacyOffersForImport>['mode'],
+) {
+  if (mode === 'reference-only') return 'reference-only';
+  if (mode === 'classification-batch') return 'placement-batch';
+  return 'fixture';
+}
+
+function parseClassification(value: string): LegacyOfferClassification {
+  if (
+    value === 'AUTO_SAFE' ||
+    value === 'NEEDS_FINANCIAL_REVIEW' ||
+    value === 'DATA_MISMATCH'
+  ) {
+    return value;
+  }
+  throw new Error(`Unsupported classification '${value}'.`);
+}
+
+function parseBatchSize(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`Invalid --batch-size '${value}'.`);
+  }
+  return parsed;
 }
 
 function parseMode(value: string): LegacyImportMode {
