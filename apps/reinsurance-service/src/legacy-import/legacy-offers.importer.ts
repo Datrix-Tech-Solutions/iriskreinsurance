@@ -37,7 +37,7 @@ export const LEGACY_IMPORT_TRANSACTION_OPTIONS = {
   timeout: 120_000,
 } as const;
 
-export const LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS = {
+export const LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS = {
   maxWait: 60_000,
   timeout: 900_000,
 } as const;
@@ -1011,8 +1011,8 @@ export class LegacyOffersImporter {
 }
 
 function transactionOptionsForScope(scope: ApplyLegacyOffersInput['scope']) {
-  return scope === 'reference-only'
-    ? LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS
+  return scope === 'reference-only' || scope === 'placement-batch'
+    ? LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS
     : LEGACY_IMPORT_TRANSACTION_OPTIONS;
 }
 

@@ -1,6 +1,6 @@
 import { PrismaClient } from '../../../prisma/generated/client';
 import {
-  LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS,
+  LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS,
   LEGACY_IMPORT_TRANSACTION_OPTIONS,
   canonicalLegacyOfferDetails,
   historicalPlacementClosingHash,
@@ -34,7 +34,23 @@ describe('LegacyOffersImporter', () => {
 
     expect(transaction).toHaveBeenCalledWith(
       expect.any(Function),
-      LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS,
+      LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS,
+    );
+  });
+
+  it('uses a longer importer-only transaction timeout for placement-batch apply', async () => {
+    const { prisma, transaction } = prismaMock({
+      existingMaps: completeReferenceMaps(),
+    });
+
+    await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([offer()]),
+      scope: 'placement-batch',
+    });
+
+    expect(transaction).toHaveBeenCalledWith(
+      expect.any(Function),
+      LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS,
     );
   });
 
@@ -1169,7 +1185,7 @@ function prismaMock(
       callback: (tx: ReturnType<typeof transactionMock>) => Promise<unknown>,
       options?:
         | typeof LEGACY_IMPORT_TRANSACTION_OPTIONS
-        | typeof LEGACY_IMPORT_REFERENCE_ONLY_TRANSACTION_OPTIONS,
+        | typeof LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS,
     ) => {
       void options;
       txState.active = true;
