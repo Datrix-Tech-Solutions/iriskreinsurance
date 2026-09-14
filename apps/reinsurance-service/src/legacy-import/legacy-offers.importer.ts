@@ -280,7 +280,18 @@ export class LegacyOffersImporter {
       'risk_type',
       offer.classId,
     );
-    if (mappedRiskType) return mappedRiskType.currentId;
+    if (mappedRiskType) {
+      await this.ensureRiskTypeFields(
+        tx,
+        mapCache,
+        input,
+        importRunId,
+        offer,
+        mappedRiskType.currentId,
+        created,
+      );
+      return mappedRiskType.currentId;
+    }
     if (input.scope === 'placement-batch') {
       throw new Error(
         `Placement batch requires preloaded risk_type map for ${offer.classId}`,
@@ -363,9 +374,29 @@ export class LegacyOffersImporter {
       createdByImport: createdRiskType,
     });
 
+    await this.ensureRiskTypeFields(
+      tx,
+      mapCache,
+      input,
+      importRunId,
+      offer,
+      riskType.id,
+      created,
+    );
+    return riskType.id;
+  }
+
+  private async ensureRiskTypeFields(
+    tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
+    input: ApplyLegacyOffersInput,
+    importRunId: string,
+    offer: NormalizedLegacyOffer,
+    riskTypeId: string,
+    created: Record<string, number>,
+  ) {
     const allFields = uniqueFields([
-      ...offer.businessFields,
-      ...offer.offerFields,
+      ...riskTypeFieldsForScope(offer, input.scope),
     ]);
     for (const field of allFields) {
       const riskFieldLegacyId = `${offer.classId}:${field.normalizedKey}`;
@@ -380,7 +411,7 @@ export class LegacyOffersImporter {
       const existingField = await tx.riskTypeField.findFirst({
         where: {
           tenantId: input.tenantId,
-          riskTypeId: riskType.id,
+          riskTypeId,
           section: RiskTypeFieldSection.OFFER_DETAILS,
           fieldKey: field.normalizedKey,
         },
@@ -390,7 +421,7 @@ export class LegacyOffersImporter {
         (await tx.riskTypeField.create({
           data: {
             tenantId: input.tenantId,
-            riskTypeId: riskType.id,
+            riskTypeId,
             section: RiskTypeFieldSection.OFFER_DETAILS,
             fieldKey: field.normalizedKey,
             label: field.key,
@@ -413,7 +444,6 @@ export class LegacyOffersImporter {
         createdByImport: !existingField,
       });
     }
-    return riskType.id;
   }
 
   private async ensureCedant(
@@ -913,13 +943,11 @@ export class LegacyOffersImporter {
             legacyId: offer.classId,
             currentModel: 'RiskType',
           },
-          ...uniqueFields([...offer.businessFields, ...offer.offerFields]).map(
-            (field) => ({
-              entityType: 'risk_type_field',
-              legacyId: `${offer.classId}:${field.normalizedKey}`,
-              currentModel: 'RiskTypeField',
-            }),
-          ),
+          ...offer.businessFields.map((field) => ({
+            entityType: 'risk_type_field',
+            legacyId: `${offer.classId}:${field.normalizedKey}`,
+            currentModel: 'RiskTypeField',
+          })),
           {
             entityType: 'insurer',
             legacyId: offer.insurerId,
@@ -1006,6 +1034,24 @@ function uniqueFields(fields: Array<{ key: string; normalizedKey: string }>) {
   return [
     ...new Map(fields.map((field) => [field.normalizedKey, field])).values(),
   ];
+}
+
+function riskTypeFieldsForScope(
+  offer: NormalizedLegacyOffer,
+  scope: ApplyLegacyOffersInput['scope'],
+) {
+  if (scope === 'reference-only') return offer.businessFields;
+  if (scope === 'placement-batch') return offerOnlyFields(offer);
+  return [...offer.businessFields, ...offer.offerFields];
+}
+
+function offerOnlyFields(offer: NormalizedLegacyOffer) {
+  const businessFieldKeys = new Set(
+    offer.businessFields.map((field) => field.normalizedKey),
+  );
+  return offer.offerFields.filter(
+    (field) => !businessFieldKeys.has(field.normalizedKey),
+  );
 }
 
 function uniqueMapRequirements<
