@@ -109,6 +109,16 @@ export type LegacyOfferEndorsement = {
   approval_status?: string | null;
 };
 
+export type LegacyClosedDateLookupEntry = {
+  legacyOfferId: string;
+  closedDate: Date;
+  sourceFile?: string;
+  sourceRow?: number;
+  evidence?: Record<string, unknown>;
+};
+
+export type LegacyClosedDateLookup = Map<string, LegacyClosedDateLookupEntry>;
+
 export type LegacyOffer = {
   offer_id?: string | null;
   offer_status?: string | null;

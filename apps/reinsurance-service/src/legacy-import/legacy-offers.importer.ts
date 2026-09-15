@@ -16,6 +16,7 @@ import { riskFieldDefinitionHash, sha256 } from './legacy-hash';
 import {
   LEGACY_SOURCE_SYSTEM,
   LEGACY_TOLERANCES,
+  LegacyClosedDateLookup,
   LegacyImportPlan,
   NormalizedLegacyOffer,
   NormalizedLegacyParticipant,
@@ -50,6 +51,7 @@ export type ApplyLegacyOffersInput = {
   sourceFileHash: string;
   plan: LegacyImportPlan;
   normalizedOffers: NormalizedLegacyOffer[];
+  closedDateLookup?: LegacyClosedDateLookup;
   scope?: 'fixture' | 'reference-only' | 'placement-batch';
 };
 
@@ -806,6 +808,8 @@ export class LegacyOffersImporter {
       );
     }
 
+    const confirmedAt =
+      input.closedDateLookup?.get(offer.offerId)?.closedDate ?? null;
     const closingNumber = historicalPlacementClosingNumber(legacyId);
     const existingClosing = await tx.placementClosing.findFirst({
       where: {
@@ -828,6 +832,7 @@ export class LegacyOffersImporter {
         participantId,
         closingNumber,
         status: PlacementClosingStatus.CONFIRMED,
+        confirmedAt,
         signedLinePercent: participant.percentage,
         sharePercent: participantRow.sharePercent,
         sumInsuredSnapshot: participant.facSumInsured,

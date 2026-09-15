@@ -8,6 +8,7 @@ import {
   LegacyOffersImporter,
 } from '../legacy-offers.importer';
 import { riskFieldDefinitionHash } from '../legacy-hash';
+import { parseLegacyClosedDateOnly } from '../legacy-closed-date-lookup.reader';
 import { LegacyOffersNormalizer } from '../legacy-offers.normalizer';
 import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffer } from '../legacy-import.types';
@@ -485,6 +486,69 @@ describe('LegacyOffersImporter', () => {
       },
       data: { status: 'CLOSED' },
     });
+  });
+
+  it('sets historical closing confirmedAt from the closed-date lookup', async () => {
+    const source = offer({ offer_id: '6740' });
+    const lookupDate = parseLegacyClosedDateOnly('2026-09-11');
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([source]),
+      closedDateLookup: new Map([
+        [
+          '6740',
+          {
+            legacyOfferId: '6740',
+            closedDate: lookupDate,
+          },
+        ],
+      ]),
+    });
+
+    expect(createData(tx.placementClosing)).toEqual(
+      expect.objectContaining({
+        confirmedAt: lookupDate,
+      }),
+    );
+  });
+
+  it('sets all participant closings for an offer to the same historical closed date', async () => {
+    const source = motorFixture6740();
+    const lookupDate = parseLegacyClosedDateOnly('2026-09-11');
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply({
+      ...applyInput([source]),
+      closedDateLookup: new Map([
+        [
+          '6740',
+          {
+            legacyOfferId: '6740',
+            closedDate: lookupDate,
+          },
+        ],
+      ]),
+    });
+
+    expect(tx.placementClosing.create).toHaveBeenCalledTimes(4);
+    for (const call of tx.placementClosing.create.mock.calls) {
+      expect(createDataFromCall(call[0])).toEqual(
+        expect.objectContaining({ confirmedAt: lookupDate }),
+      );
+    }
+  });
+
+  it('leaves historical closing confirmedAt null when no lookup exists', async () => {
+    const { prisma, tx } = prismaMock();
+
+    await new LegacyOffersImporter(prisma).apply(applyInput([offer()]));
+
+    expect(createData(tx.placementClosing)).toEqual(
+      expect.objectContaining({
+        confirmedAt: null,
+      }),
+    );
   });
 
   it('uses only the canonical participant sharePercent for historical closings', async () => {
@@ -1378,6 +1442,10 @@ function renderedDetailLabels(value: unknown) {
       .replace(/_/g, ' ')
       .replace(/\b\w/g, (character) => character.toUpperCase()),
   );
+}
+
+function createDataFromCall(input: unknown) {
+  return (input as { data?: Record<string, unknown> }).data ?? {};
 }
 
 function createData(model: PrismaDelegate, callIndex = 0) {
