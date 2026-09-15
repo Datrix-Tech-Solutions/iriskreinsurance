@@ -1,4 +1,5 @@
 import { PrismaClient } from '../../../prisma/generated/client';
+import { LegacyClosedDateLookupReader } from '../legacy-closed-date-lookup.reader';
 import { LegacyDbAwareDryRun } from '../legacy-db-aware-dry-run';
 import { LegacyOffersImporter } from '../legacy-offers.importer';
 import {
@@ -16,6 +17,7 @@ import {
 
 type CliOptions = {
   source?: string;
+  closedDateLookupFile?: string;
   tenantSlug: string;
   tenantId?: string;
   importUserId?: string;
@@ -37,7 +39,7 @@ async function main() {
     return;
   }
   if (!options.source) {
-    throw new Error('--source is required for dry-run and apply modes.');
+    throw new Error('--source-file is required for dry-run and apply modes.');
   }
 
   const reader = new LegacyOffersReader();
@@ -52,6 +54,12 @@ async function main() {
   });
   const normalizedOffers = selection.normalizedOffers;
   const selectedOfferIds = selection.selectedOfferIds;
+  const closedDateLookup = options.closedDateLookupFile
+    ? await new LegacyClosedDateLookupReader().read(
+        options.closedDateLookupFile,
+        new Set(normalizedOffers.map((offer) => offer.offerId)),
+      )
+    : undefined;
 
   const plan = new LegacyOffersPlanGenerator().build({
     tenantSlug: options.tenantSlug,
@@ -67,7 +75,16 @@ async function main() {
 
   if (options.mode === 'dry-run') {
     if (!options.resolveDb) {
-      console.log(JSON.stringify(plan, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            ...plan,
+            closedDateLookup: closedDateLookupSummary(closedDateLookup),
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
     const prisma = new PrismaClient();
@@ -92,6 +109,7 @@ async function main() {
         JSON.stringify(
           {
             ...dbAwarePlan,
+            closedDateLookup: closedDateLookupSummary(closedDateLookup),
             dbResolution: resolved.resolution,
           },
           null,
@@ -139,6 +157,7 @@ async function main() {
       sourceFileHash: file.sourceFileHash,
       plan: applyPlan,
       normalizedOffers,
+      closedDateLookup: closedDateLookup?.entries,
       scope: applyScopeForSelection(selection.mode),
     });
     console.log(
@@ -186,6 +205,19 @@ async function buildDbAwarePlan(input: {
   });
 }
 
+function closedDateLookupSummary(
+  file: Awaited<ReturnType<LegacyClosedDateLookupReader['read']>> | undefined,
+) {
+  if (!file) return undefined;
+  return {
+    sourceFilePath: file.sourceFilePath,
+    sourceFileHash: file.sourceFileHash,
+    applicableCount: file.entries.size,
+    ignoredLookupOnlyCount: file.ignoredLookupOnlyIds.length,
+    ignoredLookupOnlyIds: file.ignoredLookupOnlyIds,
+  };
+}
+
 function batchSelectionForPlan(
   selection: ReturnType<typeof selectLegacyOffersForImport>,
 ) {
@@ -229,9 +261,11 @@ function parseArgs(argv: string[]): CliOptions {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
-    if (arg === '--source')
+    if (arg === '--source' || arg === '--source-file')
       options.source = requiredValue(arg, next, () => index++);
-    else if (arg === '--tenant-slug') {
+    else if (arg === '--closed-date-lookup-file') {
+      options.closedDateLookupFile = requiredValue(arg, next, () => index++);
+    } else if (arg === '--tenant-slug') {
       options.tenantSlug = requiredValue(arg, next, () => index++);
     } else if (arg === '--tenant-id') {
       options.tenantId = requiredValue(arg, next, () => index++);
