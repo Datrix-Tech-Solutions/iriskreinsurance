@@ -217,9 +217,11 @@ function summarize(records: LegacyImportPlan['records']) {
   };
   for (const record of records) {
     if (record.action === 'create') {
+      const participantCount = record.participantCount ?? 0;
       creates.placements += 1;
-      creates.placementClosings += record.participantCount ?? 0;
-      creates.legacyImportMaps += 1 + (record.participantCount ?? 0);
+      creates.participants += participantCount;
+      creates.placementClosings += participantCount;
+      creates.legacyImportMaps += 1 + participantCount + participantCount;
     }
     if (record.action === 'skip') summary.skips += 1;
     if (record.action === 'conflict') summary.conflicts += 1;

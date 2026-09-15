@@ -657,7 +657,6 @@ describe('LegacyDbAwareDryRun', () => {
 
     const result = await resolveOffers(prisma, [offer()]);
 
-    expect(result.plan.counts.creates.participants).toBe(0);
     expect(result.resolution.projectedCounts.currencies.create).toBe(1);
     expect(result.resolution.projectedCounts.counterparties.create).toBe(2);
     expect(result.resolution.projectedCounts.riskClasses.create).toBe(1);
@@ -667,6 +666,29 @@ describe('LegacyDbAwareDryRun', () => {
     expect(result.resolution.projectedCounts.participants.create).toBe(1);
     expect(result.resolution.projectedCounts.placementClosings.create).toBe(1);
     expect(result.resolution.projectedCounts.legacyImportMaps.create).toBe(9);
+    const plannedBusinessCreates = [
+      ...result.resolution.plannedEntities.placements,
+      ...result.resolution.plannedEntities.participants,
+      ...result.resolution.plannedEntities.placementClosings,
+    ].filter((entity) => entity.action === 'create');
+    expect(result.plan.counts.creates.placements).toBe(
+      result.resolution.plannedEntities.placements.filter(
+        (entity) => entity.action === 'create',
+      ).length,
+    );
+    expect(result.plan.counts.creates.participants).toBe(
+      result.resolution.plannedEntities.participants.filter(
+        (entity) => entity.action === 'create',
+      ).length,
+    );
+    expect(result.plan.counts.creates.placementClosings).toBe(
+      result.resolution.plannedEntities.placementClosings.filter(
+        (entity) => entity.action === 'create',
+      ).length,
+    );
+    expect(result.plan.counts.creates.legacyImportMaps).toBe(
+      plannedBusinessCreates.length,
+    );
     expect(
       result.resolution.projectedCounts.legacyImportMaps.byEntityType
         .offer_participant.create,
