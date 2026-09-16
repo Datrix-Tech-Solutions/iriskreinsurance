@@ -120,6 +120,28 @@ describe('LegacyOffersClassifier', () => {
     expect(result.classification).toBe('DATA_MISMATCH');
     expect(result.reasons).toContain('participant-fac-premium-mismatch');
   });
+
+  it('classifies nonpositive participant signed lines as DATA_MISMATCH', () => {
+    const source = offer();
+    source.offer_participant![0].offer_participant_percentage = 0;
+    source.offer_participant![0].participant_fac_premium = 0;
+    source.offer_participant![0].participant_fac_sum_insured = 0;
+    source.offer_participant![0].offer_amount = 0;
+    source.offer_participant![0].offer_extra_charges = {
+      agreed_commission_amount: 0,
+      agreed_brokerage_percentage: 0,
+    };
+    source.placed_share = 0;
+    source.facultative_offer = 0;
+    source.fac_premium = 0;
+    source.fac_sum_insured = 0;
+    source.commission_amount = 0;
+
+    const result = classifier.classify(normalizer.normalize(source));
+
+    expect(result.classification).toBe('DATA_MISMATCH');
+    expect(result.reasons).toContain('nonpositive-participant-signed-line');
+  });
 });
 
 function offer(overrides: Partial<LegacyOffer> = {}): LegacyOffer {

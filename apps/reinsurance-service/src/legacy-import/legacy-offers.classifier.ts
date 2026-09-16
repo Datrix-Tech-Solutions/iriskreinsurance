@@ -2,6 +2,7 @@ import {
   LegacyClassificationResult,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
+import { LegacyDecimal } from './legacy-decimal';
 import { LegacyOffersReconciler } from './legacy-offers.reconciler';
 
 export class LegacyOffersClassifier {
@@ -10,6 +11,7 @@ export class LegacyOffersClassifier {
   classify(offer: NormalizedLegacyOffer): LegacyClassificationResult {
     const reconciliation = this.reconciler.reconcile(offer);
     const hardMismatchReasons = hardMismatchReasonsFor(
+      offer,
       reconciliation.mismatches,
     );
     if (hardMismatchReasons.length > 0) {
@@ -43,9 +45,18 @@ export class LegacyOffersClassifier {
 }
 
 function hardMismatchReasonsFor(
+  offer: NormalizedLegacyOffer,
   mismatches: LegacyClassificationResult['reconciliation']['mismatches'],
 ) {
   const reasons: string[] = [];
+  if (
+    offer.participants.some(
+      (participant) =>
+        !LegacyDecimal.from(participant.percentage).gt(LegacyDecimal.zero()),
+    )
+  ) {
+    reasons.push('nonpositive-participant-signed-line');
+  }
   if (mismatches.percentage) reasons.push('participant-percentage-mismatch');
   if (mismatches.facPremium) reasons.push('participant-fac-premium-mismatch');
   if (mismatches.facSumInsured) {
