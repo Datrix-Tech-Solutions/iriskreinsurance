@@ -3,6 +3,13 @@ name: Deploy to Dev
 on:
   push:
     branches: [dev]
+  workflow_dispatch:
+    inputs:
+      force_all_services:
+        description: Rebuild and deploy every DEV service
+        required: false
+        default: false
+        type: boolean
 
 # ── 1. Concurrency control ─────────────────────────────────────────────────────
 # Allow a newer dev push to replace an older in-flight deployment.
@@ -55,21 +62,25 @@ jobs:
     name: Detect Changed Services
     runs-on: ubuntu-latest
     needs: quality-gates
+    permissions:
+      contents: read
+      actions: read
 
     # ── 6. Per-service boolean outputs ──────────────────────────────────────────
     # Each output is 'true'/'false' so the build matrix can skip unchanged services
     # without fragile inline jq parsing of a JSON array.
     outputs:
-      changed: ${{ steps.filter.outputs.changes }}
-      api-gateway: ${{ steps.filter.outputs.api-gateway }}
-      auth-service: ${{ steps.filter.outputs.auth-service }}
-      hr-service: ${{ steps.filter.outputs.hr-service }}
-      notification-service: ${{ steps.filter.outputs.notification-service }}
-      subscription-service: ${{ steps.filter.outputs.subscription-service }}
-      marketing-service: ${{ steps.filter.outputs.marketing-service }}
-      reinsurance-service: ${{ steps.filter.outputs.reinsurance-service }}
-      accounting-service: ${{ steps.filter.outputs.accounting-service }}
-      nextjs-web: ${{ steps.filter.outputs.nextjs-web }}
+      changed: ${{ steps.filter.outputs.changes || steps.fallback.outputs.changes }}
+      api-gateway: ${{ steps.filter.outputs.api-gateway || steps.fallback.outputs.api-gateway }}
+      auth-service: ${{ steps.filter.outputs.auth-service || steps.fallback.outputs.auth-service }}
+      hr-service: ${{ steps.filter.outputs.hr-service || steps.fallback.outputs.hr-service }}
+      notification-service: ${{ steps.filter.outputs.notification-service || steps.fallback.outputs.notification-service }}
+      subscription-service: ${{ steps.filter.outputs.subscription-service || steps.fallback.outputs.subscription-service }}
+      marketing-service: ${{ steps.filter.outputs.marketing-service || steps.fallback.outputs.marketing-service }}
+      reinsurance-service: ${{ steps.filter.outputs.reinsurance-service || steps.fallback.outputs.reinsurance-service }}
+      accounting-service: ${{ steps.filter.outputs.accounting-service || steps.fallback.outputs.accounting-service }}
+      nextjs-web: ${{ steps.filter.outputs.nextjs-web || steps.fallback.outputs.nextjs-web }}
+      force-all: ${{ steps.baseline.outputs.force_all || steps.fallback.outputs.force_all }}
 
     steps:
       - name: Checkout code
@@ -78,10 +89,19 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
           fetch-depth: 0
 
+      - name: Resolve cumulative DEV baseline
+        id: baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FORCE_ALL_SERVICES: ${{ inputs.force_all_services || 'false' }}
+        run: bash .github/scripts/resolve-dev-deploy-base.sh
+
       - name: Detect changed services
         id: filter
+        if: steps.baseline.outputs.found == 'true' && steps.baseline.outputs.force_all != 'true'
         uses: dorny/paths-filter@v4
         with:
+          base: ${{ steps.baseline.outputs.base }}
           filters: |
             api-gateway:
               - 'apps/api-gateway/**'
@@ -126,6 +146,12 @@ jobs:
             nextjs-web:
               - 'apps/web/work-phelo-web/**'
           list-files: none
+
+      - name: Rebuild all services without a successful DEV baseline
+        id: fallback
+        if: steps.baseline.outputs.found != 'true' || steps.baseline.outputs.force_all == 'true'
+        run: |
+          bash .github/scripts/emit-dev-all-service-outputs.sh "$GITHUB_OUTPUT"
 
   build-and-push:
     name: Build & Push — ${{ matrix.service }}

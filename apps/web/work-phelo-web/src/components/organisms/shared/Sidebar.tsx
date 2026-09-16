@@ -45,10 +45,10 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
       className={cn(
         'shrink-0 flex items-center justify-center',
         isDeactivated
-          ? 'text-white/30'
+          ? 'text-gray-400'
           : isCurrent
-            ? 'text-(--sidebar-active-text,var(--module-btn-bg,var(--color-brand)))'
-            : 'text-white/70',
+            ? 'text-(--sidebar-active-text,#fff)'
+            : 'text-(--sidebar-item-text,rgba(255,255,255,0.7))',
       )}
     >
       {item.icon}
@@ -63,7 +63,7 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
           'text-sm whitespace-nowrap overflow-hidden transition-[max-width,opacity,transform] duration-500',
           collapsed
             ? 'max-w-0 opacity-0 -translate-x-3'
-            : 'max-w-44 opacity-100 translate-x-0 delay-100',
+            : 'max-w-44 opacity-100 translate-x-0 delay-350',
         )}
       >
         {item.label}
@@ -81,14 +81,14 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
     <div className="relative group/tip px-2">
       {/* Active left-bar accent */}
       {isCurrent && !isDeactivated && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.75 bg-white rounded-r-full" />
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.75 bg-(--sidebar-accent,#fff) rounded-r-full" />
       )}
 
       {isDeactivated ? (
         /* Deactivated — visible but non-clickable, grayed out */
         <div
           title={collapsed ? item.label : undefined}
-          className={cn(baseRow, 'cursor-not-allowed text-white/30')}
+          className={cn(baseRow, 'cursor-not-allowed text-gray-400')}
         >
           {inner}
         </div>
@@ -99,8 +99,8 @@ function SidebarItem({ item, collapsed }: { item: NavItem; collapsed: boolean })
           className={cn(
             baseRow,
             isCurrent
-              ? 'bg-(--sidebar-active-bg,white) text-(--sidebar-active-text,var(--module-btn-bg,var(--color-brand))) font-semibold shadow-sm border border-(--glass-border,rgba(255,255,255,0.55))'
-              : 'text-white/80 hover:bg-white/10 hover:text-white',
+              ? 'bg-(--sidebar-active-bg,white) text-(--sidebar-active-text,#fff) font-semibold shadow-sm'
+              : 'text-(--sidebar-item-text,rgba(255,255,255,0.8)) hover:bg-gray-500/10 hover:text-(--sidebar-item-text,rgba(255,255,255,0.95))',
           )}
         >
           {inner}
@@ -142,13 +142,7 @@ function SidebarChildItem({
 
   if (isDeactivated) {
     return (
-      <div
-        className={cn(
-          baseRow,
-          'cursor-not-allowed',
-          variant === 'onColor' ? 'text-white/30' : 'text-gray-400',
-        )}
-      >
+      <div className={cn(baseRow, 'cursor-not-allowed', 'text-gray-400')}>
         <span className="truncate">{item.label}</span>
       </div>
     );
@@ -161,10 +155,10 @@ function SidebarChildItem({
         baseRow,
         isCurrent
           ? variant === 'onColor'
-            ? 'bg-(--sidebar-active-bg,white) text-(--sidebar-active-text,var(--module-btn-bg,var(--color-brand))) font-semibold'
+            ? 'bg-(--sidebar-active-bg,white) text-(--sidebar-active-text,#fff) font-semibold'
             : 'bg-(--module-btn-bg,var(--color-brand)) text-white font-semibold'
           : variant === 'onColor'
-            ? 'text-white/70 hover:bg-white/10 hover:text-white'
+            ? 'text-(--sidebar-item-text,rgba(255,255,255,0.7)) hover:bg-gray-500/10 hover:text-(--sidebar-item-text,rgba(255,255,255,0.95))'
             : 'text-gray-500 hover:bg-(--surface-hover-subtle,var(--color-gray-50)) hover:text-(--text-hover-strong,var(--color-gray-900))',
       )}
     >
@@ -199,7 +193,7 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
     <div className="relative group/tip px-2">
       {/* Highlight bar when a child is active */}
       {isAnyChildActive && !isDeactivated && !collapsed && (
-        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.75 bg-white rounded-r-full" />
+        <span className="absolute left-0 top-1.5 bottom-1.5 w-0.75 bg-(--sidebar-accent,#fff) rounded-r-full" />
       )}
 
       <button
@@ -211,20 +205,20 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
         className={cn(
           baseRow,
           isDeactivated
-            ? 'cursor-not-allowed text-white/30'
+            ? 'cursor-not-allowed text-gray-400'
             : isAnyChildActive
-              ? 'bg-(--sidebar-active-bg,white) text-(--sidebar-active-text,var(--module-btn-bg,var(--color-brand))) font-semibold shadow-sm border border-(--glass-border,rgba(255,255,255,0.55))'
-              : 'text-white/80 hover:bg-white/10 hover:text-white',
+              ? 'bg-(--sidebar-active-bg,white) text-(--sidebar-active-text,#fff) font-semibold shadow-sm'
+              : 'text-(--sidebar-item-text,rgba(255,255,255,0.8)) hover:bg-gray-500/10 hover:text-(--sidebar-item-text,rgba(255,255,255,0.95))',
         )}
       >
         <span
           className={cn(
             'shrink-0 flex items-center justify-center',
             isDeactivated
-              ? 'text-white/30'
+              ? 'text-gray-400'
               : isAnyChildActive
-                ? 'text-(--sidebar-active-text,var(--module-btn-bg,var(--color-brand)))'
-                : 'text-white/70',
+                ? 'text-(--sidebar-active-text,#fff)'
+                : 'text-(--sidebar-item-text,rgba(255,255,255,0.7))',
           )}
         >
           {item.icon}
@@ -235,7 +229,7 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
             'text-sm whitespace-nowrap overflow-hidden flex-1 text-left transition-[max-width,opacity,transform] duration-500',
             collapsed
               ? 'max-w-0 opacity-0 -translate-x-3'
-              : 'max-w-44 opacity-100 translate-x-0 delay-100',
+              : 'max-w-44 opacity-100 translate-x-0 delay-350',
           )}
         >
           {item.label}
@@ -243,7 +237,7 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
         <span
           className={cn(
             'overflow-hidden transition-[max-width,opacity] duration-500',
-            collapsed ? 'max-w-0 opacity-0' : 'max-w-6 opacity-100 delay-100',
+            collapsed ? 'max-w-0 opacity-0' : 'max-w-6 opacity-100 delay-350',
           )}
         >
           <ChevronDown
@@ -288,7 +282,7 @@ function SidebarDropdownItem({ item, collapsed }: { item: NavItem; collapsed: bo
           )}
         >
           <div className="min-h-0 overflow-hidden">
-            <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-white/20 pl-2">
+            <div className="mt-0.5 ml-3 flex flex-col gap-0.5 border-l border-(--sidebar-divider,rgba(255,255,255,0.2)) pl-2">
               {item.children
                 ?.filter((child) => child.enabled !== false)
                 .map((child) => (
@@ -313,7 +307,8 @@ export function Sidebar({ groups, collapsed = false }: SidebarProps) {
       onMouseEnter={() => collapsed && setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
       className={cn(
-        'bg-(--sidebar-bg,var(--module-btn-bg,var(--color-brand))) border-r border-(--sidebar-border,rgba(255,255,255,0.1)) shadow-lg flex flex-col shrink-0 overflow-hidden',
+        // Transparent panel — items sit directly on the app background.
+        'bg-transparent flex flex-col shrink-0 overflow-hidden',
         // Mobile: absolute drawer that slides over content (below the top nav)
         'absolute inset-y-0 left-0 z-40 w-60 transition-transform duration-200',
         // Desktop: static in flex flow with width animation (spring curve)
@@ -330,9 +325,9 @@ export function Sidebar({ groups, collapsed = false }: SidebarProps) {
             <div key={group.label} className="mb-1">
               {/* Group label / divider */}
               {effectiveCollapsed ? (
-                <div className="mx-3 my-2 h-px bg-white/20" />
+                <div className="mx-3 my-2 h-px bg-(--sidebar-divider,rgba(255,255,255,0.2))" />
               ) : (
-                <p className="px-5 pt-3 pb-1.5 text-[10px] font-semibold tracking-widest text-white/50 uppercase select-none">
+                <p className="px-5 pt-3 pb-1.5 text-[10px] font-semibold tracking-widest text-(--sidebar-label,rgba(255,255,255,0.5)) uppercase select-none">
                   {group.label}
                 </p>
               )}

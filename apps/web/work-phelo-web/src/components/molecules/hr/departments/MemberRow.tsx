@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { Avatar } from '@/components/atoms/Avatar';
 import { EmployeeOption } from '@/types/hr';
 
 interface MemberRowProps {
@@ -9,8 +10,6 @@ interface MemberRowProps {
 }
 
 export function MemberRow({ employee: emp, checked, alreadyInDept, onToggle }: MemberRowProps) {
-  const initials = `${emp.firstName[0]}${emp.lastName[0]}`.toUpperCase();
-
   return (
     <label
       className={cn(
@@ -25,9 +24,7 @@ export function MemberRow({ employee: emp, checked, alreadyInDept, onToggle }: M
         onChange={() => !alreadyInDept && onToggle(emp.id)}
         className="w-4 h-4 rounded accent-brand shrink-0"
       />
-      <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center text-white text-xs font-bold shrink-0">
-        {initials}
-      </div>
+      <Avatar name={`${emp.firstName} ${emp.lastName}`} avatarUrl={emp.avatarUrl} size={32} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-900 truncate">
           {emp.firstName} {emp.lastName}

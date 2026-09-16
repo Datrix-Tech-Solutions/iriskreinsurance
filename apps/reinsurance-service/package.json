@@ -15,6 +15,8 @@
     "test": "jest",
     "pretest:unit": "npm run db:generate",
     "test:unit": "jest",
+    "legacy:irisk:offers": "ts-node src/legacy-import/cli/import-legacy-irisk-offers.ts",
+    "legacy:irisk:closed-dates": "ts-node src/legacy-import/cli/import-legacy-irisk-closed-dates.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:validate": "prisma validate"

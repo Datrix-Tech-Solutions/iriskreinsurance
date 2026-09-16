@@ -5,19 +5,24 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import {
   useMyProfile,
-  useEmployeeOptions,
   useMyTasks,
   useEmployeeDashboard,
+  useEmployeeOptions,
   useClockIn,
   useClockOut,
   useUpcomingBirthdays,
+  useModuleTransition,
 } from '@/hooks';
 import { useLeaveBalances, useMyLeaveRequests } from '@/hooks/hr/useLeave';
 import { useMyPayslips } from '@/hooks/hr/usePayroll';
 import { usePublicHolidays } from '@/hooks/hr/usePublicHolidays';
+import { useHrSidebarGroups } from '@/hooks/hr/useHrSidebarGroups';
 import { formatTime, formatMinutes, resolveHolidayUpcomingDate } from '@/lib/formatters';
 import { EmployeeWelcomeCard } from '@/components/molecules/dashboard/EmployeeWelcomeCard';
 import { QuickActionsCard } from '@/components/molecules/dashboard/QuickActionsCard';
+import { RequestLeaveCard } from '@/components/molecules/dashboard/RequestLeaveCard';
+import { UpcomingLeaveCard } from '@/components/molecules/dashboard/UpcomingLeaveCard';
+import { MyTeamCard } from '@/components/molecules/dashboard/MyTeamCard';
 import { AttendanceMetricCard } from '@/components/molecules/shared/AttendanceMetricCard';
 import { AnnouncementCard } from '@/components/molecules/dashboard/announcmentCard';
 import { BirthdaysCard } from '@/components/molecules/dashboard/birthdayCard';
@@ -76,27 +81,87 @@ export default function EmployeeDashboardPage({
     : '';
 
   const { data: myProfile } = useMyProfile();
-  const { data: employeeOptions = [] } = useEmployeeOptions();
   const { data: balancesRaw } = useLeaveBalances();
   const { data: myLeaveRaw } = useMyLeaveRequests();
   const { data: myPayslipsRaw } = useMyPayslips();
   const { data: myTasksRaw = [] } = useMyTasks();
+  const { data: employeeOptions = [] } = useEmployeeOptions();
   const { data: dashboard } = useEmployeeDashboard();
   const { data: holidaysRaw } = usePublicHolidays();
   const { data: birthdaysRaw } = useUpcomingBirthdays();
 
-  const managerName = (() => {
-    if (!myProfile?.managerId) return undefined;
-    const mgr = employeeOptions.find((e) => e.id === myProfile.managerId);
-    return mgr ? `${mgr.firstName} ${mgr.lastName}` : undefined;
-  })();
-
   const leaveBalances = Array.isArray(balancesRaw) ? balancesRaw : [];
+  const annualLeaveBalance = leaveBalances.find((b) => /annual/i.test(b.leaveTypeName));
   const myLeave = useMemo(() => (Array.isArray(myLeaveRaw) ? myLeaveRaw : []), [myLeaveRaw]);
   const myPayslips = Array.isArray(myPayslipsRaw) ? myPayslipsRaw : [];
 
+  // The leave request currently in progress (approved, today falls inside its range) — takes
+  // priority over "upcoming" since it's not upcoming anymore, it's happening.
+  const currentLeave = useMemo(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    return myLeave.find(
+      (r) =>
+        r.status === 'APPROVED' &&
+        r.startDate.slice(0, 10) <= todayIso &&
+        r.endDate.slice(0, 10) >= todayIso,
+    );
+  }, [myLeave]);
+  const onLeaveToday = Boolean(currentLeave);
+
+  const upcomingLeave = useMemo(() => {
+    if (currentLeave) return undefined;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    return [...myLeave]
+      .filter(
+        (r) =>
+          (r.status === 'APPROVED' || r.status === 'PENDING') &&
+          r.startDate.slice(0, 10) >= todayIso,
+      )
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  }, [myLeave, currentLeave]);
+
+  /* ── My Team — same department as me, plus my reporting manager ── */
+  const teamMembers = useMemo(() => {
+    const deptId = myProfile?.department?.id;
+    const managerId = myProfile?.managerId;
+    const rank: Record<string, number> = { ON_LEAVE: 0, SUSPENDED: 1, PROBATION: 2, ACTIVE: 3 };
+
+    return employeeOptions
+      .filter(
+        (e) =>
+          e.id !== myProfile?.id &&
+          e.employmentStatus !== 'TERMINATED' &&
+          e.employmentStatus !== 'OFFBOARDED' &&
+          ((!!deptId && e.department?.id === deptId) || e.id === managerId),
+      )
+      .map((e) => {
+        const name = `${e.firstName} ${e.lastName}`.trim();
+        return {
+          id: e.id,
+          name,
+          role: e.jobTitle,
+          initials:
+            name
+              .split(' ')
+              .map((p) => p[0] ?? '')
+              .join('')
+              .slice(0, 2)
+              .toUpperCase() || '?',
+          color: avatarColor(name),
+          status: e.employmentStatus,
+          isManager: e.id === managerId,
+        };
+      })
+      .sort((a, b) => {
+        if (a.isManager !== b.isManager) return a.isManager ? -1 : 1;
+        const byStatus = (rank[a.status] ?? 9) - (rank[b.status] ?? 9);
+        return byStatus !== 0 ? byStatus : a.name.localeCompare(b.name);
+      });
+  }, [employeeOptions, myProfile?.id, myProfile?.department?.id, myProfile?.managerId]);
+
   /* ── Panel states ── */
   const [applyLeaveOpen, setApplyLeaveOpen] = useState(false);
+  const [applyLeaveTypeId, setApplyLeaveTypeId] = useState<string | null>(null);
   const [payslipsOpen, setPayslipsOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [myLeaveOpen, setMyLeaveOpen] = useState(false);
@@ -228,6 +293,11 @@ export default function EmployeeDashboardPage({
     });
   };
 
+  const openApplyLeave = (leaveTypeId?: string) => {
+    setApplyLeaveTypeId(leaveTypeId ?? null);
+    setApplyLeaveOpen(true);
+  };
+
   const handleOpenMyLeave = () => {
     setMyLeaveOpen(true);
     const ids = myLeave
@@ -237,40 +307,63 @@ export default function EmployeeDashboardPage({
     localStorage.setItem('dashboard_leave_seen_ids', JSON.stringify(ids));
   };
 
+  /* ── Modules the user can access (same source as the sidebar's "Modules" group) ── */
+  const sidebarGroups = useHrSidebarGroups(tenantSlug, 'hr');
+  const { navigateToModule } = useModuleTransition();
+  const accessibleModules = useMemo(() => {
+    const group = sidebarGroups.find((g) => g.label === 'Modules');
+    return (group?.items ?? [])
+      .filter((item) => item.enabled !== false)
+      .map((item) => ({ key: item.key, label: item.label, href: item.href }));
+  }, [sidebarGroups]);
+
   if (isTenantAdmin) return null;
 
   return (
     <div className="p-6 flex flex-col gap-6 flex-1 min-h-0 overflow-y-auto">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-        <div className="flex flex-col gap-6">
-          <EmployeeWelcomeCard
-            fullName={fullName}
-            avatarUrl={myProfile?.avatarUrl}
-            jobTitle={myProfile?.jobTitle}
-            department={myProfile?.department?.name}
-            branch={myProfile?.branch?.name}
-            managerName={managerName}
-            companyName={user?.tenantName}
-          />
-          <UpcomingHolidaysCard holidays={holidays} />
-        </div>
+      <EmployeeWelcomeCard fullName={fullName} avatarUrl={myProfile?.avatarUrl} />
 
+      <div className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.6fr_1fr] gap-6 items-stretch">
         <div className="flex flex-col gap-6">
           <AttendanceMetricCard
             clockedIn={clockedIn}
             isDone={isDone}
             clockInTime={clockInTime}
+            clockedInAt={attendance?.clockedInAt}
             hoursWorked={hoursWorked}
+            onLeaveToday={onLeaveToday}
             onClockIn={handleClockIn}
             onClockOut={handleClockOut}
             isLoading={isClockingIn || isClockingOut}
           />
-          <AnnouncementCard announcements={announcements} />
+
+          <UpcomingHolidaysCard holidays={holidays} />
+        </div>
+
+        <div className="flex flex-col gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_0.5fr] gap-6 items-stretch">
+            <RequestLeaveCard
+              annualBalance={annualLeaveBalance}
+              onRequestLeave={() => openApplyLeave(annualLeaveBalance?.leaveTypeId)}
+            />
+            <UpcomingLeaveCard request={currentLeave ?? upcomingLeave} isCurrent={onLeaveToday} />
+          </div>
+          <BirthdaysCard
+            birthdays={birthdays}
+            scrollRef={birthdayRef}
+            onScrollLeft={() => scrollBirthdays('left')}
+            onScrollRight={() => scrollBirthdays('right')}
+          />
+          <MyTeamCard
+            members={teamMembers}
+            departmentName={myProfile?.department?.name}
+            viewAllHref={`/${tenantSlug}/hr/employees`}
+          />
         </div>
 
         <div className="flex flex-col gap-6">
           <QuickActionsCard
-            onApplyLeave={() => setApplyLeaveOpen(true)}
+            onApplyLeave={() => openApplyLeave()}
             onLeave={handleOpenMyLeave}
             onPayslips={() => setPayslipsOpen(true)}
             onAssets={() => setAssetsOpen(true)}
@@ -278,30 +371,36 @@ export default function EmployeeDashboardPage({
             onProjects={() => setProjectsOpen(true)}
             leaveBadge={leaveBadgeCount}
             projectsBadge={projectsBadgeCount}
+            modules={accessibleModules}
+            onModule={(module) =>
+              navigateToModule({
+                moduleKey: module.key,
+                moduleName: module.label,
+                path: module.href,
+              })
+            }
           />
-
-          <BirthdaysCard
-            birthdays={birthdays}
-            scrollRef={birthdayRef}
-            onScrollLeft={() => scrollBirthdays('left')}
-            onScrollRight={() => scrollBirthdays('right')}
-          />
+          <AnnouncementCard announcements={announcements} />
         </div>
       </div>
 
       {/* Panels */}
       <ApplyLeavePanel
         isOpen={applyLeaveOpen}
-        onClose={() => setApplyLeaveOpen(false)}
+        onClose={() => {
+          setApplyLeaveOpen(false);
+          setApplyLeaveTypeId(null);
+        }}
         tenantSlug={tenantSlug}
         balances={leaveBalances}
+        initialLeaveTypeId={applyLeaveTypeId ?? undefined}
       />
       <MyLeavePanel
         isOpen={myLeaveOpen}
         onClose={() => setMyLeaveOpen(false)}
         onRequestLeave={() => {
           setMyLeaveOpen(false);
-          setApplyLeaveOpen(true);
+          openApplyLeave();
         }}
         requests={myLeave}
       />

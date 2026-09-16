@@ -203,6 +203,7 @@ export interface GetUserStatusesCommand {
 export interface UserStatusSnapshot {
   userId: string;
   status: string;
+  avatarUrl?: string | null;
 }
 
 export interface PermissionRecipient {

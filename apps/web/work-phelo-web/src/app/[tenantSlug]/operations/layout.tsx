@@ -4,9 +4,12 @@
 
 import { use, useState } from 'react';
 import { useAuthStore } from '@/store/auth.store';
+import { useNavRailStore } from '@/store/navRail.store';
 import { TopNav } from '@/components/organisms/shared/TopNav';
 import { Sidebar } from '@/components/organisms/shared/Sidebar';
+import { ModuleRail } from '@/components/organisms/shared/ModuleRail';
 import { REINSURANCE_NAV_GROUPS } from '@/config/reinsurance-nav';
+import { useHrSidebarGroups } from '@/hooks/hr/useHrSidebarGroups';
 import { AppBackground } from '@/components/atoms/AppBackground';
 import { useModuleThemeScope } from '@/hooks';
 
@@ -43,8 +46,14 @@ export default function OperationsLayout({
     items: group.items.map(prefixItem),
   }));
 
+  // Parked, icon-only HR rail — shown once the user has visited HR, sitting
+  // next to Operations' own sidebar (which behaves exactly as before).
+  const hasVisitedHr = useNavRailStore((s) => s.hasVisitedHr);
+  const parkedHrGroups = useHrSidebarGroups(tenantSlug, 'operations');
+
   return (
     <AppBackground className="h-dvh overflow-hidden flex layout-operations">
+      {hasVisitedHr && <ModuleRail groups={parkedHrGroups} />}
       <Sidebar groups={groups} collapsed={collapsed} />
       <div className="flex flex-1 min-h-0 min-w-0 flex-col relative">
         <TopNav

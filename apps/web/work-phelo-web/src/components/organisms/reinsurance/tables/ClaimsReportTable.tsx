@@ -13,6 +13,7 @@ import {
   useReinsurerOptions,
   useCurrencyOptions,
   useClaimsReport,
+  useReportPagination,
 } from '@/hooks';
 import {
   ClaimReportRow,
@@ -23,7 +24,6 @@ import {
 import { exportToCsv } from '@/lib/exportCsv';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 
-const PAGE_SIZE = 10;
 const MS_PER_DAY = 86_400_000;
 
 const BUCKET_OPTIONS: { value: ClaimsReportBucket; label: string }[] = [
@@ -41,8 +41,8 @@ const STAGE_OPTIONS: { value: string; label: string }[] = [
 // share has been recovered.
 const PAYMENT_STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'part', label: 'Part Payment' },
-  { value: 'full', label: 'Full Payment' },
-  { value: 'outstanding', label: 'Outstanding' },
+  { value: 'full', label: 'Paid' },
+  { value: 'outstanding', label: 'Unpaid' },
 ];
 
 type ClaimsReportScope = 'general' | 'cedant' | 'reinsurer';
@@ -378,7 +378,6 @@ const COLUMNS_BY_SCOPE: Record<ClaimsReportScope, ReportColumn[]> = {
 export function ClaimsReportTable() {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
-  const [page, setPage] = useState(1);
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
   const [startDate, setStartDate] = useState('');
@@ -435,14 +434,21 @@ export function ClaimsReportTable() {
     const wantFinalized = stages.includes('finalized');
     const paySel = paymentStatuses.length ? new Set(paymentStatuses) : null;
     return rows.filter((r) => {
-      const finalized = r.finalizedAt != null;
+      
+      if (r.bucket === 'notification') return false;
+      
+      const finalized = r.bucket === 'closed' || r.claimState === 'FINALIZED';
       if (!finalized) return wantPending;
       if (!wantFinalized) return false;
       if (!paySel) return true;
+      
       const paid = r.iriskSharePaid ?? 0;
-      const isFull = r.bucket === 'closed';
-      const isOutstanding = !isFull && paid <= 0.01;
-      const isPart = !isFull && !isOutstanding;
+      const outstanding = r.iriskShareOutstanding;
+      const isOutstanding = paid <= 0.01;
+      const isFull =
+        !isOutstanding &&
+        (r.bucket === 'closed' || (outstanding != null && outstanding <= 0.01));
+      const isPart = !isOutstanding && !isFull;
       const key = isFull ? 'full' : isPart ? 'part' : 'outstanding';
       return paySel.has(key);
     });
@@ -466,8 +472,8 @@ export function ClaimsReportTable() {
     return flat;
   }, [stageFilteredRows, scope, reinsurerIds]);
 
-  const totalPages = Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE));
-  const paged = displayRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } =
+    useReportPagination(displayRows);
 
   const handleExport = () => {
     const headers = columns.map((c) => c.label);
@@ -480,7 +486,7 @@ export function ClaimsReportTable() {
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={paged}
+          data={pagedRows}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(
@@ -488,8 +494,12 @@ export function ClaimsReportTable() {
             )
           }
           onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
+          toolbarTrailing={rowsPerPageControl}
           extraFilters={
-            <div className="flex items-center gap-2 flex-wrap">
+            // w-full forces the filter group to own the first toolbar line, so the
+            // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
+            // always wrap onto a second line and sit flush right at its end.
+            <div className="flex w-full items-center gap-2 flex-wrap">
               <div className="w-50">
                 <DatePicker
                   size="sm"
@@ -538,11 +548,11 @@ export function ClaimsReportTable() {
                 />
               </div>
               {stages.includes('finalized') && (
-                <div className="w-40">
+                <div className="w-45">
                   <MultiSelect
                     size="sm"
                     variant="inline"
-                    placeholder="Payment status"
+                    placeholder="Recovery statuses"
                     options={PAYMENT_STATUS_OPTIONS}
                     value={paymentStatuses}
                     onChange={(next) => {

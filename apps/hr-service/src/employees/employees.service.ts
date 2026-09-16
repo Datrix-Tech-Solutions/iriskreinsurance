@@ -114,7 +114,7 @@ export class EmployeesService {
 
   private async getUserStatusMap(tenantId: string, userIds: string[]) {
     if (userIds.length === 0) {
-      return new Map<string, string>();
+      return new Map<string, { status: string; avatarUrl?: string | null }>();
     }
 
     const uniqueUserIds = Array.from(new Set(userIds));
@@ -123,18 +123,28 @@ export class EmployeesService {
       userIds: uniqueUserIds,
     });
 
-    return new Map(statuses.map((status) => [status.userId, status.status]));
+    return new Map(
+      statuses.map((status) => [
+        status.userId,
+        { status: status.status, avatarUrl: status.avatarUrl },
+      ]),
+    );
   }
 
   private withUserStatus<T extends { userId?: string | null }>(
     employee: T,
-    statusMap: Map<string, string>,
+    statusMap: Map<string, { status: string; avatarUrl?: string | null }>,
   ) {
-    const userStatus = employee.userId
-      ? (statusMap.get(employee.userId) ?? 'PENDING_VERIFICATION')
-      : 'PENDING_VERIFICATION';
+    const profile = employee.userId
+      ? statusMap.get(employee.userId)
+      : undefined;
+    const userStatus = profile?.status ?? 'PENDING_VERIFICATION';
 
-    return { ...employee, userStatus };
+    return {
+      ...employee,
+      ...(profile?.avatarUrl ? { avatarUrl: profile.avatarUrl } : {}),
+      userStatus,
+    };
   }
 
   private isDuplicateEmployeeNumberError(error: unknown): boolean {

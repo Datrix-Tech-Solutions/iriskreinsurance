@@ -18,8 +18,6 @@ export default function HRManagementLayout({ children }: { children: React.React
   const user = useAuthStore((s) => s.user);
   const base = `/${params.tenantSlug}/hr/hrmanagement`;
   const {
-    canManageLeaveTypes,
-    canConfigureAppraisal,
     canAccessRoles,
     canViewAuditLogs,
     canReadDepartments,
@@ -49,39 +47,6 @@ export default function HRManagementLayout({ children }: { children: React.React
       ],
     },
     {
-      tabs: canManageLeaveTypes
-        ? [
-            { key: 'leave-types', label: 'Leave Types', href: `${base}/leave-types` },
-            {
-              key: 'public-holidays',
-              label: 'Public Holidays',
-              href: `${base}/public-holidays`,
-            },
-          ]
-        : [],
-    },
-    {
-      tabs: canConfigureAppraisal
-        ? [
-            {
-              key: 'appraisal-templates',
-              label: 'Appraisal Templates',
-              href: `${base}/appraisal/templates`,
-            },
-            {
-              key: 'appraisal-cycles',
-              label: 'Appraisal Cycles',
-              href: `${base}/appraisal/cycles`,
-            },
-            {
-              key: 'appraisal-settings',
-              label: 'Appraisal Settings',
-              href: `${base}/appraisal/settings`,
-            },
-          ]
-        : [],
-    },
-    {
       tabs: canAccessRoles
         ? [{ key: 'roles', label: 'Roles & Permissions', href: `${base}/roles` }]
         : [],
@@ -105,7 +70,7 @@ export default function HRManagementLayout({ children }: { children: React.React
         <div className={pageHeader}>
           <h1 className="text-xl font-semibold text-gray-900">HR Settings</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            Configure leave types, appraisal templates, cycles, and roles
+            Configure branches, departments, roles, and company policies
           </p>
         </div>
         <TabBar groups={groups} className={pagePx} />

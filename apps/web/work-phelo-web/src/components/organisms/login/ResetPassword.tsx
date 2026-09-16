@@ -2,12 +2,12 @@
 
 import { useForm, useWatch } from 'react-hook-form';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AppLogo } from '@/components/atoms/AppLogo';
 import { useResetPassword } from '@/hooks';
 import { Button } from '@/components/atoms/Button';
 import { FormField } from '@/components/molecules/shared/FormField';
-import { cardClass, cn } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { extractError } from '@/lib/extractError';
+import { AuthCard } from '@/components/organisms/login/AuthCard';
 
 interface ResetPasswordForm {
   password: string;
@@ -64,21 +64,14 @@ export function ResetPassword({ tenantSlug }: ResetPasswordProps) {
   };
 
   return (
-    <div className={cardClass('w-full max-w-sm px-8 py-10')}>
-      <div className="flex justify-center mb-6">
-        <AppLogo />
-      </div>
-
-      <h1 className="text-2xl font-semibold text-gray-900 text-center mb-2">
-        Set Your New Password
-      </h1>
-      <p className="text-sm text-gray-500 text-center mb-6">
-        For security reasons, you must create a new password before accessing your workspace.
-      </p>
-
+    <AuthCard
+      title="Set Your New Password"
+      tenantSlug={tenantSlug}
+      subtitle="For security reasons, you must create a new password before accessing your workspace."
+    >
       <form
         onSubmit={handleSubmit(handleReset)}
-        className="flex flex-col gap-(--field-stack-gap,0.75rem)"
+        className="flex flex-col gap-(--field-stack-gap,0.75rem) [&_input]:border-white/75! [&_input]:text-white/95! [&_input]:placeholder:text-white/75! [&_label]:text-white/75!"
       >
         <div>
           <FormField
@@ -95,7 +88,7 @@ export function ResetPassword({ tenantSlug }: ResetPasswordProps) {
                 key={label}
                 className={cn(
                   'flex items-center gap-1.5 text-xs',
-                  test(password) ? 'text-green-600' : 'text-gray-400',
+                  test(password) ? 'text-green-400' : 'text-white/55',
                 )}
               >
                 <span>{test(password) ? '✓' : '✗'}</span>
@@ -127,6 +120,6 @@ export function ResetPassword({ tenantSlug }: ResetPasswordProps) {
           Update Password
         </Button>
       </form>
-    </div>
+    </AuthCard>
   );
 }

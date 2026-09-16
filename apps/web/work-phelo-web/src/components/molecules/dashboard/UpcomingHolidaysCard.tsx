@@ -43,7 +43,7 @@ const columns: Column<Holiday>[] = [
 export function UpcomingHolidaysCard({ holidays }: UpcomingHolidaysCardProps) {
   return (
     <div className={transparentCardClass('py-5 flex flex-col gap-3 min-h-60 flex-1')}>
-      <h2 className="text-base font-bold text-gray-900">Upcoming Holidays</h2>
+      <h2 className="text-base font-bold text-(--module-btn-bg,var(--color-brand))">Upcoming Holidays</h2>
       <div className="-mx-3 px-3">
         <DataList columns={columns} data={holidays} emptyMessage="No upcoming public holidays" />
       </div>

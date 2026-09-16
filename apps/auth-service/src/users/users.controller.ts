@@ -5,6 +5,7 @@ import {
   ApiResponse,
   ApiParam,
   ApiBody,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import {
   Controller,
@@ -18,7 +19,12 @@ import {
   Res,
   HttpCode,
   HttpStatus,
+  BadRequestException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { UsersService } from './users.service';
 import { InviteUserDto, UserSystemRole } from './dto/invite-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -38,6 +44,71 @@ import { setAuthCookies } from '../common/cookie.helper';
 @ApiBearerAuth('access-token')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Post('me/avatar')
+  @UseGuards(JwtAuthGuard)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+      fileFilter: (_request, file, callback) => {
+        if (
+          !['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)
+        ) {
+          callback(
+            new BadRequestException(
+              'Only JPEG, PNG, and WebP images are supported.',
+            ),
+            false,
+          );
+          return;
+        }
+        callback(null, true);
+      },
+    }),
+  )
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Upload or replace the authenticated user avatar',
+    description:
+      'Accepts one JPEG, PNG, or WebP image up to 5 MB. The image is stored in tenant/user-scoped object storage.',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+          description: 'JPEG, PNG, or WebP image; maximum 5 MB.',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Avatar uploaded successfully.',
+    schema: {
+      example: {
+        avatarUrl:
+          'tenant-assets/tenants/tenant-id/user-avatar/users/user-id/avatar/uuid-avatar.webp',
+        user: { id: 'user-id', avatarUrl: 'tenant-assets/...' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing, malformed, unsupported, or oversized image.',
+  })
+  @ApiResponse({ status: 401, description: 'Missing or invalid token.' })
+  uploadOwnAvatar(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: Request & { user: RequestUser },
+  ) {
+    return this.usersService.uploadAvatar(req.user.tenantId, req.user.id, file);
+  }
 
   @Post('invite')
   @UseGuards(JwtAuthGuard, PermissionsGuard)

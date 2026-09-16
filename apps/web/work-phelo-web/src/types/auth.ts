@@ -7,6 +7,7 @@ export interface User {
   tenantName: string;
   firstName: string;
   lastName?: string;
+  avatarUrl?: string | null;
   moduleConfig?: Record<string, boolean>;
   featureConfig?: Record<string, Record<string, boolean>>;
 }

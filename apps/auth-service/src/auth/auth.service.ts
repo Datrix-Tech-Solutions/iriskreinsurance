@@ -28,6 +28,7 @@ import { WorkspaceUrl } from '../common/workspace-url.helper';
 import { RequestUser } from '@work-phelo/types';
 import { generateSecureToken } from '../common/otp.helper';
 import { normalizeEmail } from '../common/email.helper';
+import { TenantAssetStorageService } from '../tenants/tenant-asset-storage.service';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MINUTES = 30;
@@ -41,7 +42,62 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly rabbitmq: RabbitMQPublisher,
     private readonly audit: AuditService,
+    private readonly storage: TenantAssetStorageService,
   ) {}
+
+  async resolveAvatarUrl(
+    tenantId: string,
+    userId: string,
+    avatarUrl: string | null | undefined,
+  ) {
+    return this.storage.resolveUserAvatarUrl({
+      tenantId,
+      userId,
+      objectKey: avatarUrl,
+    });
+  }
+
+  async getCurrentUser(id: string, tenantId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, tenantId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        tenantId: true,
+        firstName: true,
+        lastName: true,
+        avatarUrl: true,
+        tenant: {
+          select: {
+            slug: true,
+            name: true,
+            moduleConfig: true,
+            featureConfig: true,
+          },
+        },
+      },
+    });
+    if (!user) throw new UnauthorizedException('User not found or inactive');
+
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tenantId: user.tenantId,
+      tenantSlug: user.tenant.slug,
+      tenantName: user.tenant.name,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatarUrl: await this.resolveAvatarUrl(
+        user.tenantId,
+        user.id,
+        user.avatarUrl,
+      ),
+      moduleConfig: user.tenant.moduleConfig ?? {},
+      featureConfig: user.tenant.featureConfig ?? {},
+    };
+  }
 
   signAccessToken(user: RequestUser): string {
     return this.jwtService.sign(

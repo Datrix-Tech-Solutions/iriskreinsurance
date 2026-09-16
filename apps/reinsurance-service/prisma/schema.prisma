@@ -992,6 +992,47 @@ model ReinsuranceAccountingOutbox {
   @@schema("reinsurance")
 }
 
+model LegacyImportRun {
+  id             String            @id @default(uuid())
+  tenantId       String
+  sourceSystem   String
+  sourceFileHash String
+  sourceFilePath String
+  mode           String
+  status         String            @default("STARTED")
+  startedAt      DateTime          @default(now())
+  finishedAt     DateTime?
+  summary        Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  maps           LegacyImportMap[]
+
+  @@index([tenantId, sourceSystem, startedAt])
+  @@index([tenantId, status])
+  @@schema("reinsurance")
+}
+
+model LegacyImportMap {
+  id              String          @id @default(uuid())
+  tenantId        String
+  sourceSystem    String
+  entityType      String
+  legacyId        String
+  currentModel    String
+  currentId       String
+  rawHash         String
+  importRunId     String
+  createdByImport Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  importRun       LegacyImportRun @relation(fields: [importRunId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, sourceSystem, entityType, legacyId])
+  @@index([tenantId, importRunId])
+  @@index([tenantId, currentModel, currentId])
+  @@schema("reinsurance")
+}
+
 model PlacementPayment {
   id                    String                       @id @default(uuid())
   tenantId              String

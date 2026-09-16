@@ -363,7 +363,7 @@ export default function PayrollHistoryDetailPage({
       <div className="flex items-center justify-between shrink-0">
         <nav className="flex items-center gap-2 text-sm text-gray-400">
           <Link
-            href={`/${tenantSlug}/hr/payroll?tab=history`}
+            href={`/${tenantSlug}/hr/payroll/history`}
             className="hover:text-gray-700 transition-colors"
           >
             History
