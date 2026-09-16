@@ -63,7 +63,7 @@ export function AnnouncementCard({ announcements }: AnnouncementCardProps) {
 
   return (
     <>
-      <div className={cardClass('p-5 flex flex-col min-h-100 flex-1 border-gray-200')}>
+      <div className={cardClass('p-3 flex flex-col min-h-100 flex-1 border-gray-200')}>
         {/* Header */}
         <div className="flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
@@ -87,7 +87,7 @@ export function AnnouncementCard({ announcements }: AnnouncementCardProps) {
         </div>
 
         {/* Divider */}
-        <div className="h-px bg-gray-100 -mx-5 mt-4 shrink-0" />
+        <div className="h-px bg-gray-100 -mx-5 mt-1 shrink-0" />
 
         {/* List */}
         <div className="flex flex-col divide-y divide-gray-100 overflow-y-auto max-h-225">
