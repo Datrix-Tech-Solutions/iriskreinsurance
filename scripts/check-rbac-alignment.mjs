@@ -56,7 +56,7 @@ const backendPermissions = extractEnumMembers(
   'Permission',
 );
 const frontendPermissions = extractEnumMembers(
-  read('apps/web/work-phelo-web/src/lib/permissionMap.ts'),
+  read('apps/web/work-phelo-rein-web/src/lib/permissionMap.ts'),
   'Permission',
 );
 const runtimeResources = extractNamedResources(
@@ -64,13 +64,13 @@ const runtimeResources = extractNamedResources(
 );
 const seededResources = extractNamedResources(read('apps/auth-service/prisma/seed-resources.ts'));
 const permissionMapResources = extractRuleResources(
-  read('apps/web/work-phelo-web/src/lib/permissionMap.ts'),
+  read('apps/web/work-phelo-rein-web/src/lib/permissionMap.ts'),
 );
 const featureMappingResources = extractFeatureMappingResources(
-  read('apps/web/work-phelo-web/src/lib/permissionMap.ts'),
+  read('apps/web/work-phelo-rein-web/src/lib/permissionMap.ts'),
 );
 const visibleResources = extractVisibleResources(
-  read('apps/web/work-phelo-web/src/lib/permissionMap.ts'),
+  read('apps/web/work-phelo-rein-web/src/lib/permissionMap.ts'),
 );
 
 assertEmpty(

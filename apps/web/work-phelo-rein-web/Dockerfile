@@ -3,13 +3,13 @@ FROM node:20-alpine AS base
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-COPY apps/web/work-phelo-web/package.json apps/web/work-phelo-web/package-lock.json ./
+COPY apps/web/work-phelo-rein-web/package.json apps/web/work-phelo-rein-web/package-lock.json ./
 RUN npm ci
 
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY apps/web/work-phelo-web/ .
+COPY apps/web/work-phelo-rein-web/ .
 ARG NEXT_PUBLIC_API_URL=https://api.iriskreinsurance.com/api/v1
 ARG NEXT_PUBLIC_APP_BASE_URL=https://iriskreinsurance.com
 ARG NEXT_PUBLIC_ENABLE_ANNOUNCEMENT_SMS=false
