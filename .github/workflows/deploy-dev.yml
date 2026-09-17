@@ -144,7 +144,7 @@ jobs:
               - 'package*.json'
               - 'tsconfig*.json'
             nextjs-web:
-              - 'apps/web/work-phelo-web/**'
+              - 'apps/web/work-phelo-rein-web/**'
           list-files: none
 
       - name: Rebuild all services without a successful DEV baseline
@@ -195,7 +195,7 @@ jobs:
           - service: accounting-service
             dockerfile: apps/accounting-service/Dockerfile
           - service: nextjs-web
-            dockerfile: apps/web/work-phelo-web/Dockerfile
+            dockerfile: apps/web/work-phelo-rein-web/Dockerfile
 
     steps:
       - name: Checkout code
