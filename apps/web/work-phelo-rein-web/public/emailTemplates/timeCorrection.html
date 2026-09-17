@@ -1,0 +1,147 @@
+`Time correction request pending your approval — ${employeeFullName}`,
+`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Time Correction Request</title>
+</head>
+<body style="margin:0; padding:0; background:#f4f4f4; font-family:Arial, sans-serif;">
+
+  <table align="center" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff; margin:40px auto; border-radius:8px; overflow:hidden;">
+
+    <!-- Header -->
+    <tr>
+      <td style="padding:20px 30px;">
+        <h2 style="margin:0; font-weight:bold;">
+          <span style="color:#ff6a00;">WORK</span><span style="color:#1a3557;">Phelo</span>
+        </h2>
+      </td>
+    </tr>
+
+    <!-- Hero Section -->
+    <tr>
+      <td style="background:#eef1f4; padding:40px 30px;">
+        <table width="100%">
+          <tr>
+            <td style="font-size:28px; font-weight:600; color:#555;">
+              Time Correction Request
+            </td>
+            <td align="right">
+              <img src="public/mail_image.png" alt="" width="120" />
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Main Content -->
+    <tr>
+      <td style="padding:30px; color:#555; font-size:15px; line-height:1.6;">
+
+        <p>Hi ${managerFirstName},</p>
+
+        <p>
+          <strong>${employeeFullName}</strong> has submitted a time correction request that requires your approval.
+        </p>
+
+        <p><strong>Correction details:</strong></p>
+        
+        <table style="width:100%; border-collapse:collapse; margin:15px 0; color:#555; font-size:15px;">
+          <tr>
+            <td style="padding:8px 0; width:190px; font-weight:500;">Employee:</td>
+            <td style="padding:8px 0;">${employeeFullName}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Date of correction:</td>
+            <td style="padding:8px 0;">${attendanceDate}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Original clock in:</td>
+            <td style="padding:8px 0;">${originalClockIn}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Original clock out:</td>
+            <td style="padding:8px 0;">${originalClockOut}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Original total hours:</td>
+            <td style="padding:8px 0;">${originalTotalHours}</td>
+          </tr>
+        </table>
+
+        <p><strong>Requested correction:</strong></p>
+        
+        <table style="width:100%; border-collapse:collapse; margin:15px 0; color:#555; font-size:15px;">
+          <tr>
+            <td style="padding:8px 0; width:190px; font-weight:500;">Corrected clock in:</td>
+            <td style="padding:8px 0;">${correctedClockIn}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Corrected clock out:</td>
+            <td style="padding:8px 0;">${correctedClockOut}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Corrected total hours:</td>
+            <td style="padding:8px 0;">${correctedTotalHours}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0; font-weight:500;">Hours difference:</td>
+            <td style="padding:8px 0; color:#1a3557; font-weight:500;">${hoursDifference}</td>
+          </tr>
+        </table>
+
+        <p><strong>Reason submitted by ${employeeFirstName}:</strong></p>
+        <p style="background:#f9f9f9; padding:16px; border-left:4px solid #ff6a00; margin:15px 0; color:#444; line-height:1.5;">
+          ${correctionReason}
+        </p>
+
+        ${employeeNotes ? `
+        <p><strong>Additional notes:</strong></p>
+        <p style="background:#f9f9f9; padding:16px; border-left:4px solid #ff6a00; margin:15px 0; color:#444; line-height:1.5;">
+          ${employeeNotes}
+        </p>` : ''}
+
+        <p style="margin:30px 0;">
+          <a href="${viewCorrectionUrl}" style="
+            background:#1a3557;
+            color:#ffffff;
+            padding:12px 24px;
+            text-decoration:none;
+            border-radius:6px;
+            display:inline-block;
+            font-weight:500;
+          ">
+            View Correction Request →
+          </a>
+        </p>
+
+        <p style="color:#777; font-size:14px;">
+          Attendance records must be accurate before payroll is processed. 
+          Please review and action this request promptly.
+        </p>
+
+        <p style="color:#555;">
+          If you have any questions, contact your HR administrator.
+        </p>
+
+        <p style="margin-top:30px;">Thank you,</p>
+
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="padding:20px 30px; border-top:1px solid #eee;">
+        <h3 style="margin:0;">
+          <span style="color:#ff6a00;">WORK</span><span style="color:#1a3557;">Phelo</span>
+        </h3>
+        <p style="color:#888; font-size:12px; margin-top:5px;">
+          © 2026 WorkPhelo All rights reserved
+        </p>
+      </td>
+    </tr>
+
+  </table>
+
+</body>
+</html>`
