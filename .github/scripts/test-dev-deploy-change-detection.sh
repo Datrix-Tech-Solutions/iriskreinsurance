@@ -24,7 +24,7 @@ service_matches_path() {
 
   case "$service" in
     nextjs-web)
-      [[ "$path" == apps/web/work-phelo-web/* ]]
+      [[ "$path" == apps/web/work-phelo-rein-web/* ]]
       ;;
     *)
       [[ "$path" == apps/${service}/* || "$path" == packages/* || "$path" == package.json || "$path" == package-lock.json || "$path" == tsconfig.* || "$path" == tsconfig*.json ]]
