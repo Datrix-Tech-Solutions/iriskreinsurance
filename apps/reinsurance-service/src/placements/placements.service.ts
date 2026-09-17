@@ -234,6 +234,7 @@ export class PlacementsService {
         ? {
             OR: [
               { reference: { contains: query.search, mode: 'insensitive' } },
+              { policyNumber: { contains: query.search, mode: 'insensitive' } },
               { title: { contains: query.search, mode: 'insensitive' } },
               {
                 classOfBusiness: {
