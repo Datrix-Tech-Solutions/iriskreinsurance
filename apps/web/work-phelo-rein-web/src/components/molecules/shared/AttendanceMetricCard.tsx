@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, MapPin } from 'lucide-react';
+import { History, Loader2, MapPin } from 'lucide-react';
 import { Button } from '@/components/atoms/Button';
 import { Modal } from '@/components/organisms/shared/Modal';
+import { MyAttendancePanel } from '@/components/organisms/dashboard/MyAttendancePanel';
 import { useClockInLocation } from '@/hooks';
 import { cardClass, cn } from '@/lib/utils';
 
@@ -56,6 +57,7 @@ export function AttendanceMetricCard({
 }: AttendanceMetricCardProps) {
   const [confirmClockIn, setConfirmClockIn] = useState(false);
   const [confirmClockOut, setConfirmClockOut] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const location = useClockInLocation();
 
   // Ticking every second for the live clock / worked duration.
@@ -101,24 +103,41 @@ export function AttendanceMetricCard({
         >
           {formatDate(now)}
         </span>
-        <span
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-full border px-2 text-[10px] font-semibold tracking-wider',
-            active
-              ? 'border-green-200 bg-green-50 text-green-700'
-              : blockedByLeave
-                ? 'border-purple-200 bg-purple-50 text-purple-600'
-                : 'border-gray-200 bg-gray-100 text-gray-500',
-          )}
-        >
+        <div className="flex items-center gap-2">
           <span
             className={cn(
-              'w-1.5 h-1.5 rounded-full',
-              active ? 'bg-green-500 animate-pulse' : blockedByLeave ? 'bg-purple-400' : 'bg-gray-400',
+              'inline-flex items-center gap-1.5 rounded-full border px-2 text-[10px] font-semibold tracking-wider',
+              active
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : blockedByLeave
+                  ? 'border-purple-200 bg-purple-50 text-purple-600'
+                  : 'border-gray-200 bg-gray-100 text-gray-500',
             )}
-          />
-          {active ? 'CLOCKED IN' : blockedByLeave ? 'ON LEAVE' : 'CLOCKED OUT'}
-        </span>
+          >
+            <span
+              className={cn(
+                'w-1.5 h-1.5 rounded-full',
+                active
+                  ? 'bg-green-500 animate-pulse'
+                  : blockedByLeave
+                    ? 'bg-purple-400'
+                    : 'bg-gray-400',
+              )}
+            />
+            {active ? 'CLOCKED IN' : blockedByLeave ? 'ON LEAVE' : 'CLOCKED OUT'}
+          </span>
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            aria-label="Check history"
+            className="group flex items-center gap-0 rounded-full py-1 pl-1 pr-1 -m-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 hover:gap-1.5 hover:pr-2.5 transition-all duration-200"
+          >
+            <History className="w-3.5 h-3.5 shrink-0" />
+            <span className="max-w-0 group-hover:max-w-26 overflow-hidden whitespace-nowrap text-[11px] font-medium transition-all duration-200">
+              Check history
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Live clock */}
@@ -192,9 +211,10 @@ export function AttendanceMetricCard({
             <Button
               variant="primary"
               size="sm"
+              disabled={location.status !== 'ready'}
               onClick={() => {
                 setConfirmClockIn(false);
-                onClockIn(location.status === 'ready' ? (location.label ?? undefined) : undefined);
+                onClockIn(location.label ?? undefined);
                 location.reset();
               }}
               className="bg-brand hover:bg-brand-hover"
@@ -217,9 +237,18 @@ export function AttendanceMetricCard({
           </p>
         )}
         {location.status === 'error' && (
-          <p className="mt-2 text-xs text-gray-400">
-            Location unavailable — you can still clock in.
-          </p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-red-500">
+              Location unavailable — enable location access to clock in.
+            </p>
+            <button
+              type="button"
+              onClick={() => location.capture()}
+              className="shrink-0 text-xs font-medium text-brand hover:underline"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </Modal>
 
@@ -247,6 +276,8 @@ export function AttendanceMetricCard({
           </>
         }
       />
+
+      <MyAttendancePanel isOpen={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   );
 }
