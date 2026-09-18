@@ -3,7 +3,7 @@ import { geocodeReverse } from '@/lib/maptiler';
 
 export type LocationCaptureStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-// Best-effort location label for clock-in — never blocks the action if it fails or is denied.
+// Location label for clock-in — clock-in is blocked until this resolves to 'ready'.
 export function useClockInLocation() {
   const [status, setStatus] = useState<LocationCaptureStatus>('idle');
   const [label, setLabel] = useState<string | null>(null);
