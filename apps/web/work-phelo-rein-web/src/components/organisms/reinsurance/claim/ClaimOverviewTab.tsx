@@ -43,9 +43,11 @@ export function ClaimOverviewTab({ placement, claim }: ClaimOverviewTabProps) {
   const claimAmount = claim ? parseFloat(claim.finalLossAmount ?? claim.estimatedLossAmount) : null;
   const isActualAmount = !!claim?.finalLossAmount;
 
-  // A PENDING claim has no generated allocations: show the allocations table read-only
-  // (no Preview / Send Mail column) and hide the cedant settlement list entirely.
-  const isPending = claim?.claimState === 'PENDING';
+  // A PENDING actual claim has no generated allocations: show the allocations table read-only
+  // (no Preview / Send Mail column) and hide the cedant settlement list entirely. Notification-
+  // stage claims are also PENDING by default but still need Preview for the notification letter.
+  const isNotification = !claim || claim.finalLossAmount == null;
+  const isPending = claim?.claimState === 'PENDING' && !isNotification;
 
   // A cash call only ever gets created via "Send Mail" below, so its existence for an
   // allocation means their share has already been sent to them.
