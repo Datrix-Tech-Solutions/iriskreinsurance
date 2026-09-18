@@ -85,6 +85,125 @@ describe('LegacyOffersPlanGenerator', () => {
       }),
     ]);
   });
+
+  it('makes financially resolved NEEDS_FINANCIAL_REVIEW offers scoped-eligible without relabeling classification', () => {
+    const paidOffer = offer({ payment_status: 'PAID' });
+    const plan = generator.build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offers: [paidOffer],
+      scopedFinancialResolvedOfferIds: new Set(['1']),
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        offerId: '1',
+        classification: 'NEEDS_FINANCIAL_REVIEW',
+        scopedEligibility: 'SCOPED_FINANCIAL_RESOLVED',
+        action: 'create',
+        reasons: expect.arrayContaining([
+          'scoped-financial-resolved',
+          'paid-payment-status',
+        ]),
+      }),
+    );
+    expect(plan.counts.creates.placements).toBe(1);
+  });
+
+  it('keeps financially unresolved NEEDS_FINANCIAL_REVIEW offers entirely blocked', () => {
+    const plan = generator.build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offers: [offer({ payment_status: 'PAID' })],
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        classification: 'NEEDS_FINANCIAL_REVIEW',
+        scopedEligibility: 'FINANCIAL_UNRESOLVED',
+        action: 'review',
+      }),
+    );
+    expect(plan.counts.financialReview).toBe(1);
+    expect(plan.counts.creates.placements).toBe(0);
+  });
+
+  it('keeps DATA_MISMATCH offers entirely blocked even if passed as scoped financial resolved', () => {
+    const source = offer();
+    source.offer_participant![0].offer_participant_percentage = 0;
+    source.offer_participant![0].participant_fac_premium = 0;
+    source.offer_participant![0].participant_fac_sum_insured = 0;
+    source.placed_share = 0;
+    source.fac_premium = 0;
+    source.fac_sum_insured = 0;
+    source.commission_amount = 0;
+    const plan = generator.build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offers: [source],
+      scopedFinancialResolvedOfferIds: new Set(['1']),
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        classification: 'DATA_MISMATCH',
+        scopedEligibility: 'DATA_MISMATCH',
+        action: 'reject',
+      }),
+    );
+    expect(plan.counts.rejected).toBe(1);
+    expect(plan.counts.creates.placements).toBe(0);
+  });
+
+  it('allows claims, endorsements, suspicious expiry, and material share delta only when financially resolved', () => {
+    const source = offer({
+      payment_status: 'PAID',
+      facultative_offer: 20,
+      placed_share: 15,
+      offer_claims: [{ offer_claim_id: 'claim-1' }],
+      offer_endorsements: [{ offer_endorsement_id: 'endorsement-1' }],
+      offer_detail: {
+        policy_number: 'POL-1',
+        insured_by: 'Insured',
+        currency: 'GHS',
+        period_of_insurance_to: '2034-02-07',
+        offer_details: '[]',
+      },
+    });
+    source.offer_participant![0].offer_participant_percentage = 15;
+    source.offer_participant![0].participant_fac_premium = 150;
+    source.offer_participant![0].participant_fac_sum_insured = 150;
+    source.fac_premium = 150;
+    source.fac_sum_insured = 150;
+    const plan = generator.build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offers: [source],
+      scopedFinancialResolvedOfferIds: new Set(['1']),
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        classification: 'NEEDS_FINANCIAL_REVIEW',
+        scopedEligibility: 'SCOPED_FINANCIAL_RESOLVED',
+        action: 'create',
+        reasons: expect.arrayContaining([
+          'claims-present',
+          'endorsements-present',
+          'suspicious-expiry-date',
+          'material-facultative-offer-vs-placed-share-delta',
+        ]),
+      }),
+    );
+  });
 });
 
 function planHashFor(source: LegacyOffer) {

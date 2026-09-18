@@ -28,6 +28,18 @@ export class LegacyOffersRollback {
       const deleted: Record<string, number> = {};
       const preserved: RollbackLegacyImportResult['preserved'] = [];
 
+      deleted.paymentAllocations = await deleteMany(
+        tx,
+        'placementPaymentAllocation',
+        {
+          tenantId,
+          id: { in: ids.PlacementPaymentAllocation ?? [] },
+        },
+      );
+      deleted.placementPayments = await deleteMany(tx, 'placementPayment', {
+        tenantId,
+        id: { in: ids.PlacementPayment ?? [] },
+      });
       deleted.placementClosings = await deleteMany(tx, 'placementClosing', {
         tenantId,
         id: { in: ids.PlacementClosing ?? [] },

@@ -2,9 +2,13 @@ import { randomUUID } from 'crypto';
 import {
   CounterpartyOrigin,
   CounterpartyType,
+  PlacementPaymentDirection,
+  PlacementPaymentStatus,
+  PlacementPaymentType,
   PlacementClosingStatus,
   PlacementParticipantRole,
   PlacementParticipantStatus,
+  PlacementSettlementMethod,
   PlacementStatus,
   PlacementType,
   Prisma,
@@ -29,6 +33,10 @@ import {
   riskClassDefinitionHash,
   riskTypeDefinitionHash,
 } from './legacy-risk-taxonomy';
+import {
+  LegacyFinancialPlan,
+  LegacyFinancialPlanRecord,
+} from './legacy-financials';
 
 type LegacyImportPrisma = PrismaClient | Prisma.TransactionClient;
 type LegacyImportMapCache = Map<string, LegacyImportMapRecord | null>;
@@ -52,6 +60,7 @@ export type ApplyLegacyOffersInput = {
   plan: LegacyImportPlan;
   normalizedOffers: NormalizedLegacyOffer[];
   closedDateLookup?: LegacyClosedDateLookup;
+  historicalFinancials?: LegacyFinancialPlan;
   scope?: 'fixture' | 'reference-only' | 'placement-batch';
 };
 
@@ -68,12 +77,19 @@ export class LegacyOffersImporter {
 
   async apply(input: ApplyLegacyOffersInput): Promise<ApplyLegacyOffersResult> {
     const scope = input.scope ?? 'fixture';
+    const financialOfferIds = new Set(
+      input.historicalFinancials?.records
+        .filter((record) => record.action === 'create')
+        .map((record) => record.legacyOfferId) ?? [],
+    );
     const creatableOfferIds = new Set(
       input.plan.records
         .filter(
           (record) =>
-            record.classification === 'AUTO_SAFE' &&
-            (scope === 'reference-only' || record.action === 'create'),
+            isScopedBusinessEligible(record) &&
+            (scope === 'reference-only' ||
+              record.action === 'create' ||
+              financialOfferIds.has(record.offerId)),
         )
         .map((record) => record.offerId),
     );
@@ -106,7 +122,38 @@ export class LegacyOffersImporter {
       });
 
       const created = emptyCreatedCounts();
+      const planRecordByOfferId = new Map(
+        input.plan.records.map((record) => [record.offerId, record]),
+      );
       for (const offer of offers) {
+        const planRecord = planRecordByOfferId.get(offer.offerId);
+        if (
+          planRecord?.action === 'skip' &&
+          financialOfferIds.has(offer.offerId)
+        ) {
+          const placementMap = await this.findMap(
+            tx,
+            mapCache,
+            input.tenantId,
+            'offer',
+            offer.offerId,
+          );
+          if (!placementMap) {
+            throw new Error(
+              `Legacy placement map missing for financial backfill offer ${offer.offerId}`,
+            );
+          }
+          await this.createHistoricalFinancialRecords(
+            tx,
+            mapCache,
+            input,
+            importRunId,
+            offer,
+            placementMap.currentId,
+            created,
+          );
+          continue;
+        }
         await this.ensureCurrency(
           tx,
           mapCache,
@@ -179,6 +226,15 @@ export class LegacyOffersImporter {
             created,
           );
         }
+        await this.createHistoricalFinancialRecords(
+          tx,
+          mapCache,
+          input,
+          importRunId,
+          offer,
+          placementId,
+          created,
+        );
       }
 
       await tx.legacyImportRun.update({
@@ -735,7 +791,7 @@ export class LegacyOffersImporter {
         sharePercent: participant.percentage,
         signedLinePercent: participant.percentage,
         brokerageFee: participant.brokerageFee,
-        notes: `Imported legacy participant ${participant.participantId}; financial closings/payments deferred.`,
+        notes: `Imported legacy participant ${participant.participantId}; historical closing/payment evidence migrated when available.`,
       },
     });
     created.participants += 1;
@@ -862,6 +918,198 @@ export class LegacyOffersImporter {
       createdByImport: true,
     });
     return closing.id;
+  }
+
+  private async createHistoricalFinancialRecords(
+    tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
+    input: ApplyLegacyOffersInput,
+    importRunId: string,
+    offer: NormalizedLegacyOffer,
+    placementId: string,
+    created: Record<string, number>,
+  ) {
+    const records =
+      input.historicalFinancials?.records.filter(
+        (record) =>
+          record.legacyOfferId === offer.offerId && record.action === 'create',
+      ) ?? [];
+    for (const record of records) {
+      if (record.kind === 'PREMIUM_RECEIPT') {
+        await this.createHistoricalPremiumReceipt(
+          tx,
+          mapCache,
+          input,
+          importRunId,
+          record,
+          placementId,
+          created,
+        );
+      } else {
+        await this.createHistoricalReinsurerDisbursement(
+          tx,
+          mapCache,
+          input,
+          importRunId,
+          record,
+          placementId,
+          created,
+        );
+      }
+    }
+  }
+
+  private async createHistoricalPremiumReceipt(
+    tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
+    input: ApplyLegacyOffersInput,
+    importRunId: string,
+    record: LegacyFinancialPlanRecord,
+    placementId: string,
+    created: Record<string, number>,
+  ) {
+    const existingMap = await this.findMap(
+      tx,
+      mapCache,
+      input.tenantId,
+      record.entityType,
+      record.legacyId,
+    );
+    if (existingMap) {
+      assertFinancialMapMatches(existingMap, record);
+      return existingMap.currentId;
+    }
+    const placement = await tx.placement.findFirst({
+      where: { id: placementId, tenantId: input.tenantId },
+      select: { id: true, cedantId: true },
+    });
+    if (!placement) {
+      throw new Error(
+        `Mapped placement not found for legacy financial offer ${record.legacyOfferId}`,
+      );
+    }
+    const paymentDate = new Date(`${record.effectiveDate}T00:00:00.000Z`);
+    const payment = await tx.placementPayment.create({
+      data: {
+        tenantId: input.tenantId,
+        placementId,
+        counterpartyId: placement.cedantId,
+        type: PlacementPaymentType.PREMIUM_RECEIVED,
+        direction: PlacementPaymentDirection.INBOUND,
+        amount: record.amount,
+        currency: record.currency,
+        paymentDate,
+        reference: record.reference,
+        settlementMethod: PlacementSettlementMethod.OTHER,
+        notes: financialNotes(record),
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
+        bankConfirmedAt: paymentDate,
+        bankConfirmedByUserId: input.importUserId,
+        createdByUserId: input.importUserId,
+      },
+    });
+    created.placementPayments += 1;
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
+      entityType: record.entityType,
+      legacyId: record.legacyId,
+      currentModel: 'PlacementPayment',
+      currentId: payment.id,
+      rawHash: record.rawHash,
+      createdByImport: true,
+    });
+    return payment.id;
+  }
+
+  private async createHistoricalReinsurerDisbursement(
+    tx: LegacyImportPrisma,
+    mapCache: LegacyImportMapCache,
+    input: ApplyLegacyOffersInput,
+    importRunId: string,
+    record: LegacyFinancialPlanRecord,
+    placementId: string,
+    created: Record<string, number>,
+  ) {
+    const existingMap = await this.findMap(
+      tx,
+      mapCache,
+      input.tenantId,
+      record.entityType,
+      record.legacyId,
+    );
+    if (existingMap) {
+      assertFinancialMapMatches(existingMap, record);
+      return existingMap.currentId;
+    }
+    if (!record.legacyParticipantId) {
+      throw new Error(
+        `Legacy disbursement ${record.legacyId} is missing participant identity`,
+      );
+    }
+    const participantMap = record.participantId
+      ? null
+      : await this.findMap(
+          tx,
+          mapCache,
+          input.tenantId,
+          'offer_participant',
+          record.legacyParticipantId,
+        );
+    const closingMap = record.closingId
+      ? null
+      : await this.findMap(
+          tx,
+          mapCache,
+          input.tenantId,
+          'offer_participant_closing',
+          record.legacyParticipantId,
+        );
+    const participantId = record.participantId ?? participantMap?.currentId;
+    const closingId = record.closingId ?? closingMap?.currentId;
+    const participant = await tx.placementParticipant.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        placementId,
+        id: participantId,
+      },
+      select: { id: true, counterpartyId: true },
+    });
+    if (!participant || !closingId) {
+      throw new Error(
+        `Mapped participant/closing not found for legacy disbursement ${record.legacyParticipantId}`,
+      );
+    }
+    const paymentDate = new Date(`${record.effectiveDate}T00:00:00.000Z`);
+    const payment = await tx.placementPayment.create({
+      data: {
+        tenantId: input.tenantId,
+        placementId,
+        participantId: participant.id,
+        closingId,
+        counterpartyId: participant.counterpartyId,
+        type: PlacementPaymentType.REINSURER_DISBURSEMENT,
+        direction: PlacementPaymentDirection.OUTBOUND,
+        amount: record.amount,
+        currency: record.currency,
+        paymentDate,
+        reference: record.reference,
+        settlementMethod: PlacementSettlementMethod.OTHER,
+        notes: financialNotes(record),
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
+        bankConfirmedAt: paymentDate,
+        bankConfirmedByUserId: input.importUserId,
+        createdByUserId: input.importUserId,
+      },
+    });
+    created.placementPayments += 1;
+    await this.createMap(tx, mapCache, input.tenantId, importRunId, created, {
+      entityType: record.entityType,
+      legacyId: record.legacyId,
+      currentModel: 'PlacementPayment',
+      currentId: payment.id,
+      rawHash: record.rawHash,
+      createdByImport: true,
+    });
+    return payment.id;
   }
 
   private async findMap(
@@ -1015,6 +1263,15 @@ export class LegacyOffersImporter {
   }
 }
 
+function isScopedBusinessEligible(
+  record: ApplyLegacyOffersInput['plan']['records'][number],
+) {
+  return (
+    record.classification === 'AUTO_SAFE' ||
+    record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED'
+  );
+}
+
 function transactionOptionsForScope(scope: ApplyLegacyOffersInput['scope']) {
   return scope === 'reference-only' || scope === 'placement-batch'
     ? LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS
@@ -1033,6 +1290,42 @@ function importMapCacheKey(
   legacyId: string,
 ) {
   return `${tenantId}:${entityType}:${legacyId}`;
+}
+
+function assertFinancialMapMatches(
+  existingMap: LegacyImportMapRecord,
+  record: LegacyFinancialPlanRecord,
+) {
+  if (
+    existingMap.currentModel !== 'PlacementPayment' ||
+    existingMap.rawHash !== record.rawHash
+  ) {
+    throw new Error(
+      `Legacy financial map conflict for ${record.entityType} ${record.legacyId}`,
+    );
+  }
+}
+
+function financialNotes(record: LegacyFinancialPlanRecord) {
+  const contributingRows = record.provenance.contributingRows?.length
+    ? `contributingRows=${JSON.stringify(record.provenance.contributingRows)}`
+    : undefined;
+  return [
+    record.notes,
+    `legacyOfferId=${record.legacyOfferId}`,
+    record.legacyParticipantId
+      ? `legacyParticipantId=${record.legacyParticipantId}`
+      : undefined,
+    `sourceSystem=${LEGACY_SOURCE_SYSTEM}`,
+    `sourceFile=${record.provenance.sourceFile}`,
+    `sourceMonth=${record.provenance.sourceMonth}`,
+    `sourceRow=${record.provenance.sourceRow}`,
+    contributingRows,
+    `effectiveDateSource=${record.effectiveDateSource}`,
+    'historicalMigration=true',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function uniqueFields(fields: Array<{ key: string; normalizedKey: string }>) {
@@ -1137,6 +1430,8 @@ function emptyCreatedCounts() {
     placements: 0,
     participants: 0,
     placementClosings: 0,
+    placementPayments: 0,
+    paymentAllocations: 0,
     legacyImportRuns: 1,
     legacyImportMaps: 0,
   };

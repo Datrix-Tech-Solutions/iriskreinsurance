@@ -18,7 +18,7 @@ export class UpdatePlacementParticipantStatusDto {
       '  CLOSED → terminal (no transitions)\n\n' +
       'Moving a participant to ACCEPTED requires that signedLinePercent is already set ' +
       'and greater than 0. Set signedLinePercent via PATCH /participants/:id first if needed.\n\n' +
-      'Only ACCEPTED participants contribute to totalAcceptedPercent and trigger placement ' +
+      'ACCEPTED and CLOSED participants contribute to totalAcceptedPercent. ACCEPTED participants trigger placement ' +
       'status recalculation (for MARKETING, PARTIALLY_PLACED and PLACED placements).',
   })
   @IsEnum(PlacementParticipantStatus)

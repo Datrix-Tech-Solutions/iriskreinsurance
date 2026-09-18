@@ -228,6 +228,11 @@ export type LegacyClassificationResult = {
 export type LegacyImportPlanRecord = {
   offerId: string;
   classification: LegacyOfferClassification;
+  scopedEligibility?:
+    | 'AUTO_SAFE'
+    | 'SCOPED_FINANCIAL_RESOLVED'
+    | 'FINANCIAL_UNRESOLVED'
+    | 'DATA_MISMATCH';
   action: 'create' | 'skip' | 'update' | 'conflict' | 'reject' | 'review';
   reasons: string[];
   rawHash: string;

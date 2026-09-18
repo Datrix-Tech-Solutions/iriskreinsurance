@@ -1019,10 +1019,14 @@ function eligibilityByOfferId(plan: LegacyImportPlan) {
   return new Map(
     plan.records.map((record) => [
       record.offerId,
-      record.classification === 'AUTO_SAFE'
+      record.classification === 'AUTO_SAFE' ||
+      record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED'
         ? {
             eligible: true,
-            reason: 'phase-1-auto-safe',
+            reason:
+              record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED'
+                ? 'phase-1-scoped-financial-resolved'
+                : 'phase-1-auto-safe',
           }
         : {
             eligible: false,

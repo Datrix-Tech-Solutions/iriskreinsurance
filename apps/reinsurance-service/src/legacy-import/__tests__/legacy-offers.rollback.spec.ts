@@ -24,6 +24,43 @@ describe('LegacyOffersRollback', () => {
     expect(closingOrder).toBeLessThan(participantOrder);
   });
 
+  it('deletes mapped payment allocations and payments before placement closings', async () => {
+    const { prisma, tx } = prismaMock([
+      map('PlacementPaymentAllocation', 'allocation-1'),
+      map('PlacementPayment', 'payment-1'),
+      map('PlacementClosing', 'closing-1'),
+    ]);
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.placementPaymentAllocation.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['allocation-1'] },
+      },
+    });
+    expect(tx.placementPayment.deleteMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        id: { in: ['payment-1'] },
+      },
+    });
+    expect(
+      tx.placementPaymentAllocation.deleteMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(tx.placementPayment.deleteMany.mock.invocationCallOrder[0]);
+    expect(
+      tx.placementPayment.deleteMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(tx.placementClosing.deleteMany.mock.invocationCallOrder[0]);
+  });
+
+  it('does not delete manual payments that lack importer ownership maps', async () => {
+    const { prisma, tx } = prismaMock([map('Placement', 'placement-1')]);
+
+    await new LegacyOffersRollback(prisma).rollback('run-1', 'tenant-1');
+
+    expect(tx.placementPayment.deleteMany).not.toHaveBeenCalled();
+  });
+
   it('deletes exact mapped addresses and leaves unrelated addresses on imported counterparties alone', async () => {
     const { prisma, tx } = prismaMock([
       map('Counterparty', 'counterparty-1'),
@@ -442,6 +479,11 @@ function transactionMock(
     },
     placementParticipant: delegate(),
     placementClosing: delegate(),
+    placementPaymentAllocation: delegate(),
+    placementPayment: {
+      ...delegate(),
+      findMany: emptyFindMany,
+    },
     placement: {
       ...delegate(),
       findMany: jest.fn((input: { where?: Record<string, unknown> }) => {
@@ -477,7 +519,6 @@ function transactionMock(
       ...delegate(),
       findMany: jest.fn().mockResolvedValue(currencies),
     },
-    placementPayment: { findMany: emptyFindMany },
     placementNote: { findMany: emptyFindMany },
     placementClaimAllocation: { findMany: emptyFindMany },
     placementClaimCashCall: { findMany: emptyFindMany },

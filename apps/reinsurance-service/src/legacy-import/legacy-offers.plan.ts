@@ -31,6 +31,7 @@ export type BuildLegacyImportPlanInput = {
   fixtureOfferIds?: string[];
   batchSelection?: LegacyImportPlan['batchSelection'];
   existingMaps?: ExistingImportMap[];
+  scopedFinancialResolvedOfferIds?: Set<string>;
 };
 
 export class LegacyOffersPlanGenerator {
@@ -98,6 +99,7 @@ export class LegacyOffersPlanGenerator {
           result.classification,
           result.reasons,
           existing,
+          input.scopedFinancialResolvedOfferIds ?? new Set<string>(),
         ),
       );
     }
@@ -125,11 +127,13 @@ export class LegacyOffersPlanGenerator {
     classification: LegacyOfferClassification,
     reasons: string[],
     existing: Map<string, ExistingImportMap>,
+    scopedFinancialResolvedOfferIds: Set<string>,
   ): LegacyImportPlanRecord {
     if (classification === 'DATA_MISMATCH') {
       return {
         offerId: offer.offerId,
         classification,
+        scopedEligibility: 'DATA_MISMATCH',
         action: 'reject',
         reasons,
         rawHash: offer.rawHash,
@@ -137,10 +141,20 @@ export class LegacyOffersPlanGenerator {
         errors: [],
       };
     }
-    if (classification === 'NEEDS_FINANCIAL_REVIEW') {
+    const scopedEligibility =
+      classification === 'AUTO_SAFE'
+        ? 'AUTO_SAFE'
+        : scopedFinancialResolvedOfferIds.has(offer.offerId)
+          ? 'SCOPED_FINANCIAL_RESOLVED'
+          : 'FINANCIAL_UNRESOLVED';
+    if (
+      classification === 'NEEDS_FINANCIAL_REVIEW' &&
+      scopedEligibility !== 'SCOPED_FINANCIAL_RESOLVED'
+    ) {
       return {
         offerId: offer.offerId,
         classification,
+        scopedEligibility,
         action: 'review',
         reasons,
         rawHash: offer.rawHash,
@@ -153,8 +167,9 @@ export class LegacyOffersPlanGenerator {
       return {
         offerId: offer.offerId,
         classification,
+        scopedEligibility,
         action: 'create',
-        reasons,
+        reasons: scopedReasons(reasons, scopedEligibility),
         rawHash: offer.rawHash,
         participantCount: offer.participants.length,
         errors: [],
@@ -164,8 +179,9 @@ export class LegacyOffersPlanGenerator {
       return {
         offerId: offer.offerId,
         classification,
+        scopedEligibility,
         action: 'skip',
-        reasons: ['legacy-import-map-match'],
+        reasons: scopedReasons(['legacy-import-map-match'], scopedEligibility),
         rawHash: offer.rawHash,
         currentPlacementId: existingPlacement.currentId,
         participantCount: offer.participants.length,
@@ -175,14 +191,26 @@ export class LegacyOffersPlanGenerator {
     return {
       offerId: offer.offerId,
       classification,
+      scopedEligibility,
       action: 'conflict',
-      reasons: ['legacy-import-map-raw-hash-mismatch'],
+      reasons: scopedReasons(
+        ['legacy-import-map-raw-hash-mismatch'],
+        scopedEligibility,
+      ),
       rawHash: offer.rawHash,
       currentPlacementId: existingPlacement.currentId,
       participantCount: offer.participants.length,
       errors: [],
     };
   }
+}
+
+function scopedReasons(
+  reasons: string[],
+  scopedEligibility: LegacyImportPlanRecord['scopedEligibility'],
+) {
+  if (scopedEligibility !== 'SCOPED_FINANCIAL_RESOLVED') return reasons;
+  return ['scoped-financial-resolved', ...reasons];
 }
 
 function groupIssuesByOffer(issues: LegacyValidationIssue[]) {

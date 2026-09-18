@@ -2756,7 +2756,12 @@ export class PlacementsService {
     );
     const totalAcceptedPercent = this.roundPercent(
       placement.participants.reduce((sum, item) => {
-        if (item.status !== PlacementParticipantStatus.ACCEPTED) return sum;
+        if (
+          item.status !== PlacementParticipantStatus.ACCEPTED &&
+          item.status !== PlacementParticipantStatus.CLOSED
+        ) {
+          return sum;
+        }
         return sum + this.decimalToNumber(item.signedLinePercent);
       }, 0),
     );

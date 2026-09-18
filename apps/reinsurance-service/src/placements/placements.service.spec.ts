@@ -1040,6 +1040,7 @@ describe('PlacementsService', () => {
       cid: string,
       sharePercent: number,
       status: PlacementParticipantStatus,
+      signedLinePercent: number | null = null,
     ) => ({
       id,
       tenantId: 'tenant-1',
@@ -1048,7 +1049,7 @@ describe('PlacementsService', () => {
       role: PlacementParticipantRole.CO_REINSURER,
       status,
       sharePercent,
-      signedLinePercent: null,
+      signedLinePercent,
       brokerageFee: null,
       notes: null,
       createdAt: new Date(),
@@ -1097,6 +1098,68 @@ describe('PlacementsService', () => {
     expect(result.totalOfferedPercent).toBe(120);
     expect(result.totalAcceptedPercent).toBe(0);
     expect(result.remainingPercent).toBe(30);
+  });
+
+  it('counts CLOSED participants with signed lines as accepted capacity', async () => {
+    const makeParticipant = (
+      id: string,
+      cid: string,
+      sharePercent: number,
+      signedLinePercent: number,
+      status: PlacementParticipantStatus,
+    ) => ({
+      id,
+      tenantId: 'tenant-1',
+      placementId: 'placement-1',
+      counterpartyId: cid,
+      role: PlacementParticipantRole.CO_REINSURER,
+      status,
+      sharePercent,
+      signedLinePercent,
+      brokerageFee: null,
+      notes: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      counterparty: {
+        id: cid,
+        type: CounterpartyType.REINSURER,
+        name: `Re ${id}`,
+        registrationNumber: null,
+      },
+    });
+
+    prisma.placement.findFirst.mockResolvedValue({
+      ...placement,
+      facultativeOffer: 60,
+      participants: [
+        makeParticipant(
+          'p-accepted',
+          'r-accepted',
+          25,
+          25,
+          PlacementParticipantStatus.ACCEPTED,
+        ),
+        makeParticipant(
+          'p-closed',
+          'r-closed',
+          35,
+          35,
+          PlacementParticipantStatus.CLOSED,
+        ),
+        makeParticipant(
+          'p-quoted',
+          'r-quoted',
+          40,
+          40,
+          PlacementParticipantStatus.QUOTED,
+        ),
+      ],
+    });
+
+    const result = await service.findOne('tenant-1', 'placement-1');
+
+    expect(result.totalAcceptedPercent).toBe(60);
+    expect(result.remainingPercent).toBe(0);
   });
 
   it('updates only an active record using the tenant-qualified compound key', async () => {

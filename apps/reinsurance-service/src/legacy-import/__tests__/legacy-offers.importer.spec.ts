@@ -92,6 +92,34 @@ describe('LegacyOffersImporter', () => {
     expect(tx.legacyImportRun.update).not.toHaveBeenCalled();
   });
 
+  it('rolls back the scoped offer transaction if historical financial creation fails', async () => {
+    const input = applyInput([offer({ payment_status: 'PAID' })]);
+    input.plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'acme-ghana',
+      tenantId: 'tenant-1',
+      sourceFilePath: 'legacy-offers.json',
+      sourceFileHash: 'file-hash',
+      offers: input.normalizedOffers.map((normalized) => normalized.source),
+      mode: 'apply',
+      fixtureOfferIds: ['1'],
+      scopedFinancialResolvedOfferIds: new Set(['1']),
+    });
+    input.historicalFinancials = financialPlan([
+      premiumReceiptRecord('1', '700.00'),
+    ]);
+    const { prisma, transactionState, tx } = prismaMock({
+      failModel: 'placementPayment',
+    });
+
+    await expect(new LegacyOffersImporter(prisma).apply(input)).rejects.toThrow(
+      'placementPayment create failed',
+    );
+
+    expect(tx.placement.create).toHaveBeenCalledTimes(1);
+    expect(transactionState.rolledBack).toBe(true);
+    expect(tx.legacyImportRun.update).not.toHaveBeenCalled();
+  });
+
   it('does not apply NEEDS_FINANCIAL_REVIEW or DATA_MISMATCH offers even if plan actions are malformed', async () => {
     const sources = [
       offer({ offer_id: 'review-1', payment_status: 'PAID' }),
@@ -758,6 +786,156 @@ describe('LegacyOffersImporter', () => {
     );
   });
 
+  it('creates a bank-confirmed historical premium receipt with migration provenance', async () => {
+    const input = applyInput([offer()]);
+    input.historicalFinancials = financialPlan([
+      premiumReceiptRecord('1', '700.00'),
+    ]);
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(result.created.placementPayments).toBe(1);
+    expect(createData(tx.placementPayment)).toEqual(
+      expect.objectContaining({
+        tenantId: 'tenant-1',
+        placementId: 'placement-created-1',
+        counterpartyId: 'counterparty-created-1',
+        type: 'PREMIUM_RECEIVED',
+        direction: 'INBOUND',
+        amount: '700.00',
+        currency: 'GHS',
+        reference: 'LEGACY-IRISK-RECEIPT-1',
+        settlementMethod: 'OTHER',
+        status: 'BANK_CONFIRMED',
+        bankConfirmedAt: new Date('2026-01-15T00:00:00.000Z'),
+        bankConfirmedByUserId: 'user-1',
+        createdByUserId: 'user-1',
+      }),
+    );
+    expect(String(createData(tx.placementPayment).notes)).toContain(
+      'effectiveDateSource=derived_from_date_closed',
+    );
+    expect(mapCreates(tx, 'offer_premium_receipt', '1')).toBe(1);
+    expect(tx.placementPaymentAllocation.create).not.toHaveBeenCalled();
+    expect(tx.placementNote.create).not.toHaveBeenCalled();
+    expect(tx.reinsuranceAccountingOutbox.create).not.toHaveBeenCalled();
+  });
+
+  it('backfills a historical premium receipt onto an existing mapped placement without recreating the placement', async () => {
+    const input = applyInput([offer()]);
+    input.plan = {
+      ...input.plan,
+      records: input.plan.records.map((record) => ({
+        ...record,
+        action: 'skip' as const,
+      })),
+      counts: { ...input.plan.counts, skips: 1 },
+    };
+    input.historicalFinancials = financialPlan([
+      premiumReceiptRecord('1', '125.25'),
+    ]);
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        offer: { '1': 'placement-existing' },
+      },
+      existingRecords: {
+        placement: [
+          {
+            id: 'placement-existing',
+            tenantId: 'tenant-1',
+            cedantId: 'cedant-existing',
+          },
+        ],
+      },
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(result.created.placements).toBe(0);
+    expect(tx.placement.create).not.toHaveBeenCalled();
+    expect(tx.placementPayment.create).toHaveBeenCalledTimes(1);
+    expect(createData(tx.placementPayment)).toEqual(
+      expect.objectContaining({
+        placementId: 'placement-existing',
+        amount: '125.25',
+      }),
+    );
+  });
+
+  it('creates a bank-confirmed historical reinsurer disbursement for deterministic participant evidence', async () => {
+    const input = applyInput([offer()]);
+    input.historicalFinancials = financialPlan([
+      disbursementRecord('1', 'p1', '550.00'),
+    ]);
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(result.created.placementPayments).toBe(1);
+    expect(createData(tx.placementPayment)).toEqual(
+      expect.objectContaining({
+        placementId: 'placement-created-1',
+        participantId: 'placementParticipant-created-1',
+        closingId: 'placementClosing-created-1',
+        counterpartyId: 'counterparty-created-2',
+        type: 'REINSURER_DISBURSEMENT',
+        direction: 'OUTBOUND',
+        amount: '550.00',
+        reference: 'LEGACY-IRISK-DISBURSEMENT-p1',
+        settlementMethod: 'OTHER',
+        status: 'BANK_CONFIRMED',
+        bankConfirmedAt: new Date('2026-01-15T00:00:00.000Z'),
+        bankConfirmedByUserId: 'user-1',
+      }),
+    );
+    expect(mapCreates(tx, 'offer_participant_disbursement', 'p1')).toBe(1);
+    expect(tx.placementPaymentAllocation.create).not.toHaveBeenCalled();
+    expect(tx.placementNote.create).not.toHaveBeenCalled();
+    expect(tx.reinsuranceAccountingOutbox.create).not.toHaveBeenCalled();
+  });
+
+  it('skips an already mapped historical financial payment on rerun', async () => {
+    const input = applyInput([offer()]);
+    input.historicalFinancials = financialPlan([
+      premiumReceiptRecord('1', '700.00'),
+    ]);
+    const { prisma, tx } = prismaMock({
+      existingMaps: {
+        offer_premium_receipt: {
+          '1': {
+            currentId: 'payment-existing',
+            rawHash: 'receipt-hash-1-700.00',
+          },
+        },
+      },
+    });
+
+    const result = await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(result.created.placementPayments).toBe(0);
+    expect(tx.placementPayment.create).not.toHaveBeenCalled();
+    expect(mapCreates(tx, 'offer_premium_receipt', '1')).toBe(0);
+  });
+
+  it('fails closed when a historical financial import map has a mismatched hash', async () => {
+    const input = applyInput([offer()]);
+    input.historicalFinancials = financialPlan([
+      premiumReceiptRecord('1', '700.00'),
+    ]);
+    const { prisma } = prismaMock({
+      existingMaps: {
+        offer_premium_receipt: {
+          '1': { currentId: 'payment-existing', rawHash: 'different' },
+        },
+      },
+    });
+
+    await expect(new LegacyOffersImporter(prisma).apply(input)).rejects.toThrow(
+      'Legacy financial map conflict for offer_premium_receipt 1',
+    );
+  });
+
   it('rejects a historical closing hash mismatch', async () => {
     const input = applyInput([offer()]);
     const normalized = input.normalizedOffers[0];
@@ -1306,6 +1484,20 @@ function transactionMock(
       options,
     ),
     placementClosing: delegate('placementClosing', txState, state, options),
+    placementPayment: delegate('placementPayment', txState, state, options),
+    placementPaymentAllocation: delegate(
+      'placementPaymentAllocation',
+      txState,
+      state,
+      options,
+    ),
+    placementNote: delegate('placementNote', txState, state, options),
+    reinsuranceAccountingOutbox: delegate(
+      'reinsuranceAccountingOutbox',
+      txState,
+      state,
+      options,
+    ),
   };
 }
 
@@ -1514,6 +1706,8 @@ function currentModelFor(entityType: string) {
     offer: 'Placement',
     offer_participant: 'PlacementParticipant',
     offer_participant_closing: 'PlacementClosing',
+    offer_premium_receipt: 'PlacementPayment',
+    offer_participant_disbursement: 'PlacementPayment',
   };
   return currentModels[entityType] ?? entityType;
 }
@@ -1540,6 +1734,88 @@ function applyInput(sources: LegacyOffer[]) {
     sourceFileHash: 'file-hash',
     plan,
     normalizedOffers,
+    historicalFinancials: undefined,
+  };
+}
+
+function financialPlan(records: Array<Record<string, unknown>>) {
+  return {
+    enabled: true,
+    sourceDir: 'manager-source',
+    offerCrosswalkFile: 'offer-crosswalk.json',
+    participantCrosswalkFile: 'participant-crosswalk.json',
+    counts: {
+      premiumReceipts: { create: 0, skip: 0, review: 0, conflict: 0 },
+      reinsurerDisbursements: { create: 0, skip: 0, review: 0, conflict: 0 },
+    },
+    blockedOffers: [],
+    records,
+    sourceFieldPolicy: [],
+    warnings: [],
+  } as never;
+}
+
+function premiumReceiptRecord(offerId: string, amount: string) {
+  return {
+    kind: 'PREMIUM_RECEIPT',
+    entityType: 'offer_premium_receipt',
+    legacyId: offerId,
+    legacyOfferId: offerId,
+    action: 'create',
+    reason: 'positive-paid-fac-premium',
+    amount,
+    currency: 'GHS',
+    effectiveDate: '2026-01-15',
+    effectiveDateSource: 'derived_from_date_closed',
+    paymentStatus: 'PAID',
+    canonicalStatus: 'BANK_CONFIRMED',
+    reference: `LEGACY-IRISK-RECEIPT-${offerId}`,
+    settlementMethod: 'OTHER',
+    notes: 'Historical legacy iRisk premium receipt.',
+    rawHash: `receipt-hash-${offerId}-${amount}`,
+    provenance: {
+      sourceSystem: 'legacy-irisk-graphql',
+      sourceFile: 'joined_jan_2026.json',
+      sourceMonth: 'jan',
+      sourceRow: 1,
+      dateIsDerived: true,
+      matchClass: 'EXACT',
+    },
+  };
+}
+
+function disbursementRecord(
+  offerId: string,
+  participantId: string,
+  amount: string,
+) {
+  return {
+    kind: 'REINSURER_DISBURSEMENT',
+    entityType: 'offer_participant_disbursement',
+    legacyId: participantId,
+    legacyOfferId: offerId,
+    legacyParticipantId: participantId,
+    action: 'create',
+    reason: 'positive-paid-net-reinsurer-components',
+    amount,
+    currency: 'GHS',
+    effectiveDate: '2026-01-15',
+    effectiveDateSource: 'derived_from_date_closed',
+    paymentStatus: 'PAID',
+    canonicalStatus: 'BANK_CONFIRMED',
+    reference: `LEGACY-IRISK-DISBURSEMENT-${participantId}`,
+    settlementMethod: 'OTHER',
+    notes: 'Historical legacy iRisk reinsurer disbursement.',
+    rawHash: `disbursement-hash-${participantId}-${amount}`,
+    provenance: {
+      sourceSystem: 'legacy-irisk-graphql',
+      sourceFile: 'joined_jan_2026.json',
+      sourceMonth: 'jan',
+      sourceRow: 1,
+      dateIsDerived: true,
+      matchClass: 'EXACT',
+      participantMatchClass: 'EXACT',
+    },
   };
 }
 

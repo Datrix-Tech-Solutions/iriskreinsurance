@@ -66,7 +66,7 @@ export class PlacementParticipantResponseDto {
     description:
       'Signed line percentage — the share this participant accepted. ' +
       'Returned as a JSON string by Prisma. ' +
-      'Only ACCEPTED participants contribute to the placement totalAcceptedPercent.',
+      'ACCEPTED and CLOSED participants contribute to the placement totalAcceptedPercent.',
   })
   signedLinePercent!: string | null;
 
@@ -285,7 +285,7 @@ export class PlacementResponseDto {
   @ApiProperty({
     example: 20,
     description:
-      'Sum of signedLinePercent for ACCEPTED participants only. ' +
+      'Sum of signedLinePercent for ACCEPTED and CLOSED participants. ' +
       'This is the binding accepted capacity and drives auto-recalculation of placement status. ' +
       'Validation permits up to 100 when facultativeOffer is absent, but placement preview/display calculations treat an absent facultativeOffer as 0 to match the frontend.',
   })
