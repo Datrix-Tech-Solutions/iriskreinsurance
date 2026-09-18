@@ -103,11 +103,13 @@ describe('LegacyOffersPlanGenerator', () => {
         classification: 'NEEDS_FINANCIAL_REVIEW',
         scopedEligibility: 'SCOPED_FINANCIAL_RESOLVED',
         action: 'create',
-        reasons: expect.arrayContaining([
-          'scoped-financial-resolved',
-          'paid-payment-status',
-        ]),
       }),
+    );
+    expect(plan.records[0]?.reasons).toEqual(
+      expect.arrayContaining([
+        'scoped-financial-resolved',
+        'paid-payment-status',
+      ]),
     );
     expect(plan.counts.creates.placements).toBe(1);
   });
@@ -195,13 +197,15 @@ describe('LegacyOffersPlanGenerator', () => {
         classification: 'NEEDS_FINANCIAL_REVIEW',
         scopedEligibility: 'SCOPED_FINANCIAL_RESOLVED',
         action: 'create',
-        reasons: expect.arrayContaining([
-          'claims-present',
-          'endorsements-present',
-          'suspicious-expiry-date',
-          'material-facultative-offer-vs-placed-share-delta',
-        ]),
       }),
+    );
+    expect(plan.records[0]?.reasons).toEqual(
+      expect.arrayContaining([
+        'claims-present',
+        'endorsements-present',
+        'suspicious-expiry-date',
+        'material-facultative-offer-vs-placed-share-delta',
+      ]),
     );
   });
 });
