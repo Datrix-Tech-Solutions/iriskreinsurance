@@ -31,11 +31,7 @@ export function ClaimCedantSettlementPanel({
   );
 
   if (!finalLossAmount) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-        100% Claim Amount not recorded, edit claim to add the claim amount.
-      </div>
-    );
+    return null;
   }
 
   const actualClaim = parseFloat(finalLossAmount);
