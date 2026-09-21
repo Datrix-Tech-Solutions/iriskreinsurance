@@ -97,6 +97,8 @@ describe('PlacementFinancialPositionService', () => {
         originalObligation: 100000,
         endorsementAdjustments: 0,
         currentObligation: 100000,
+        mandatoryDeductions: 0,
+        effectiveSettlementCredit: 0,
         received: 0,
         outstanding: 100000,
         position: 'RECEIVABLE',
@@ -139,7 +141,9 @@ describe('PlacementFinancialPositionService', () => {
     expect(result.cedant).toMatchObject({
       originalObligation: 26520,
       currentObligation: 26520,
-      outstanding: 26520,
+      mandatoryDeductions: 2340,
+      effectiveSettlementCredit: 2340,
+      outstanding: 24180,
     });
     expect(result.reinsurers).toContainEqual(
       expect.objectContaining({
@@ -193,6 +197,87 @@ describe('PlacementFinancialPositionService', () => {
       netSettled: 70000,
       outstanding: 30000,
       position: 'RECEIVABLE',
+    });
+  });
+
+  it('credits mandatory deductions toward cedant settlement without inflating cash received', async () => {
+    tx.placementClosing.findMany.mockResolvedValue([
+      {
+        ...originalClosingA,
+        grossPremium: new Prisma.Decimal('5241.60'),
+        commissionAmount: new Prisma.Decimal('1310.40'),
+        netPremium: new Prisma.Decimal('3669.12'),
+      },
+    ]);
+    tx.placementPayment.findMany.mockResolvedValue([
+      {
+        id: 'payment-active',
+        counterpartyId: 'cedant-1',
+        type: PlacementPaymentType.PREMIUM_RECEIVED,
+        amount: new Prisma.Decimal('3669.12'),
+        currency: 'GHS',
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
+        reversalOfPaymentId: null,
+      },
+    ]);
+
+    const result = await service.getFinancialPosition(
+      tenantId,
+      placementId,
+      asOfDate,
+    );
+
+    expect(result.cedant).toMatchObject({
+      currentObligation: 3931.2,
+      received: 3669.12,
+      netSettled: 3669.12,
+      mandatoryDeductions: 262.08,
+      effectiveSettlementCredit: 3931.2,
+      outstanding: 0,
+      position: 'SETTLED',
+    });
+  });
+
+  it('credits combined historical mandatory deductions toward cedant settlement', async () => {
+    tx.placementClosing.findMany.mockResolvedValue([
+      {
+        ...originalClosingA,
+        grossPremium: new Prisma.Decimal('39413.25'),
+        commissionAmount: new Prisma.Decimal('9459.18'),
+        netPremium: new Prisma.Decimal('28574.60625'),
+      },
+      {
+        ...originalClosingB,
+        grossPremium: new Prisma.Decimal('7882.65'),
+        commissionAmount: new Prisma.Decimal('1891.836'),
+        netPremium: new Prisma.Decimal('5184.418905'),
+      },
+    ]);
+    tx.placementPayment.findMany.mockResolvedValue([
+      {
+        id: 'payment-active',
+        counterpartyId: 'cedant-1',
+        type: PlacementPaymentType.PREMIUM_RECEIVED,
+        amount: new Prisma.Decimal('33759.03'),
+        currency: 'GHS',
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
+        reversalOfPaymentId: null,
+      },
+    ]);
+
+    const result = await service.getFinancialPosition(
+      tenantId,
+      placementId,
+      asOfDate,
+    );
+
+    expect(result.cedant).toMatchObject({
+      currentObligation: 35944.88,
+      received: 33759.03,
+      mandatoryDeductions: 2185.85,
+      effectiveSettlementCredit: 35944.88,
+      outstanding: 0,
+      position: 'SETTLED',
     });
   });
 
@@ -384,8 +469,8 @@ describe('PlacementFinancialPositionService', () => {
       endorsementAdjustments: -15000,
       currentObligation: 85000,
       netSettled: 100000,
-      outstanding: -15000,
-      position: 'CREDIT_BALANCE',
+      outstanding: 0,
+      position: 'SETTLED',
     });
   });
 

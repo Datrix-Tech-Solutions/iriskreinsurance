@@ -37,7 +37,7 @@ describe('LegacyFinancialPlanner', () => {
         }),
         expect.objectContaining({
           kind: 'REINSURER_DISBURSEMENT',
-          amount: '550.00',
+          amount: '700.00',
           legacyParticipantId: '2001',
           participantId: 'participant-1',
           closingId: 'closing-1',
@@ -46,6 +46,30 @@ describe('LegacyFinancialPlanner', () => {
         }),
       ]),
     );
+  });
+
+  it('does not subtract commission, brokerage, WHT, or NIC from reinsurer paid fac premium', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '1000.00',
+      paidCommission: '100.00',
+      brokeragePaid: '50.00',
+      paidWht: '25.00',
+      paidNic: '10.00',
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+      participantByLegacyId: new Map([
+        ['2001', { participantId: 'participant-1', closingId: 'closing-1' }],
+      ]),
+    });
+
+    expect(
+      plan.records.find((record) => record.kind === 'REINSURER_DISBURSEMENT'),
+    ).toMatchObject({ amount: '1000.00' });
   });
 
   it('plans only evidenced partial amounts for PARTPAYMENT', () => {
@@ -70,7 +94,7 @@ describe('LegacyFinancialPlanner', () => {
     ).toMatchObject({ amount: '125.25' });
     expect(
       plan.records.find((record) => record.kind === 'REINSURER_DISBURSEMENT'),
-    ).toMatchObject({ amount: '100.00' });
+    ).toMatchObject({ amount: '125.25' });
   });
 
   it('creates no financial records for UNPAID even when zero fields are present', () => {
@@ -88,6 +112,52 @@ describe('LegacyFinancialPlanner', () => {
     });
 
     expect(plan.records).toHaveLength(0);
+  });
+
+  it('creates no financial records for an explicitly excluded hard-rejected offer', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '700.00',
+      paidCommission: '100.00',
+      brokeragePaid: '50.00',
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+      participantByLegacyId: new Map([
+        ['2001', { participantId: 'participant-1', closingId: 'closing-1' }],
+      ]),
+      excludedOfferIds: new Set(['1001']),
+    });
+
+    expect(plan.records).toHaveLength(0);
+    expect(plan.counts.premiumReceipts.create).toBe(0);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(0);
+    expect(plan.blockedOffers).toEqual([]);
+  });
+
+  it('continues planning financial records for non-excluded evidenced offers', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '700.00',
+      paidCommission: '100.00',
+      brokeragePaid: '50.00',
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+      participantByLegacyId: new Map([
+        ['2001', { participantId: 'participant-1', closingId: 'closing-1' }],
+      ]),
+      excludedOfferIds: new Set(['9999']),
+    });
+
+    expect(plan.counts.premiumReceipts.create).toBe(1);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(1);
   });
 
   it('skips already mapped financial records on rerun', () => {
@@ -189,14 +259,14 @@ describe('LegacyFinancialPlanner', () => {
       (record) => record.kind === 'REINSURER_DISBURSEMENT',
     );
     expect(disbursement).toMatchObject({
-      amount: '550.00',
+      amount: '700.00',
       legacyParticipantId: '2001',
     });
     expect(disbursement?.provenance.contributingRows).toEqual([
       expect.objectContaining({
         sourceReinsurerRow: 2,
         matchClass: 'EXACT',
-        computedAmount: '550.00',
+        computedAmount: '700.00',
       }),
     ]);
   });
@@ -246,17 +316,17 @@ describe('LegacyFinancialPlanner', () => {
     expect(disbursements[0]).toMatchObject({
       entityType: 'offer_participant_disbursement',
       legacyId: '2001',
-      amount: '750.00',
+      amount: '1000.00',
       reference: 'LEGACY-IRISK-DISBURSEMENT-2001',
     });
     expect(disbursements[0]?.provenance.contributingRows).toEqual([
       expect.objectContaining({
         sourceReinsurerRow: 1,
-        computedAmount: '550.00',
+        computedAmount: '700.00',
       }),
       expect.objectContaining({
         sourceReinsurerRow: 2,
-        computedAmount: '200.00',
+        computedAmount: '300.00',
       }),
     ]);
   });
@@ -288,7 +358,7 @@ describe('LegacyFinancialPlanner', () => {
     expect(plan.counts.reinsurerDisbursements.create).toBe(1);
     expect(
       plan.records.find((record) => record.kind === 'REINSURER_DISBURSEMENT'),
-    ).toMatchObject({ amount: '550.00' });
+    ).toMatchObject({ amount: '700.00' });
     expect(plan.warnings).toEqual([
       'Duplicate manager reinsurer row ignored for offer 1001 source row 1 reinsurer row 2',
     ]);
@@ -300,6 +370,8 @@ function makeFixture(input: {
   paidFacPremium: string;
   paidCommission: string;
   brokeragePaid: string;
+  paidWht?: string;
+  paidNic?: string;
   participantMatchClass?: string;
   placements?: Array<Record<string, unknown>>;
   participantRows?: Array<Record<string, unknown>>;
@@ -322,6 +394,8 @@ function makeFixture(input: {
               paidFacPremium: input.paidFacPremium,
               paidCommission: input.paidCommission,
               brokeragePaid: input.brokeragePaid,
+              paidWht: input.paidWht,
+              paidNic: input.paidNic,
             }),
           ],
         },
@@ -366,6 +440,8 @@ function placementRow(input: {
   paidFacPremium: string;
   paidCommission: string;
   brokeragePaid: string;
+  paidWht?: string;
+  paidNic?: string;
 }) {
   return {
     Reinsurer: input.reinsurer ?? 'Saha Re',
@@ -375,8 +451,8 @@ function placementRow(input: {
     'Paid fac premium': input.paidFacPremium,
     'Paid Commission': input.paidCommission,
     'Brokerage Paid': input.brokeragePaid,
-    'Paid WHT': '0',
-    'Paid NIC': '0',
+    'Paid WHT': input.paidWht ?? '0',
+    'Paid NIC': input.paidNic ?? '0',
   };
 }
 

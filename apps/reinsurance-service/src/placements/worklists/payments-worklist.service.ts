@@ -29,6 +29,8 @@ type PaymentWorklistRawRow = {
   acceptedParticipantCount: bigint | number | string;
   currency: string | null;
   paidAmount: Prisma.Decimal | string | number | null;
+  mandatoryDeductions: Prisma.Decimal | string | number | null;
+  effectiveSettlementCredit: Prisma.Decimal | string | number | null;
   outstandingAmount: Prisma.Decimal | string | number | null;
   currentObligation: Prisma.Decimal | string | number | null;
   latestConfirmedPaymentDate: Date | string | null;
@@ -112,6 +114,11 @@ export class ReinsurancePaymentsWorklistService {
           pc."placementId",
           pc."participantId" AS "snapshotKey",
           COALESCE(pc."grossPremium" - COALESCE(pc."commissionAmount", 0), pc."netPremium", 0) AS "cedantPremium",
+          GREATEST(
+            COALESCE(pc."grossPremium" - COALESCE(pc."commissionAmount", 0), pc."netPremium", 0)
+              - COALESCE(pc."netPremium", 0),
+            0
+          ) AS "mandatoryDeductions",
           0 AS "sourceRank",
           NULL::timestamp AS "effectiveDate",
           NULL::timestamp AS "endorsementCreatedAt",
@@ -128,6 +135,11 @@ export class ReinsurancePaymentsWorklistService {
           ec."placementId",
           COALESCE(ep."originalParticipantId", ec."endorsementParticipantId") AS "snapshotKey",
           COALESCE(ec."premiumSnapshot" - COALESCE(ec."commissionAmount", 0), ec."netPremium", 0) AS "cedantPremium",
+          GREATEST(
+            COALESCE(ec."premiumSnapshot" - COALESCE(ec."commissionAmount", 0), ec."netPremium", 0)
+              - COALESCE(ec."netPremium", 0),
+            0
+          ) AS "mandatoryDeductions",
           1 AS "sourceRank",
           e."effectiveDate" AS "effectiveDate",
           e."createdAt" AS "endorsementCreatedAt",
@@ -173,7 +185,8 @@ export class ReinsurancePaymentsWorklistService {
       obligations AS (
         SELECT
           "placementId",
-          SUM("cedantPremium") AS "currentObligation"
+          SUM("cedantPremium") AS "currentObligation",
+          SUM("mandatoryDeductions") AS "mandatoryDeductions"
         FROM effective_snapshots
         GROUP BY "placementId"
       ),
@@ -215,15 +228,22 @@ export class ReinsurancePaymentsWorklistService {
           COALESCE(ac."acceptedParticipantCount", 0) AS "acceptedParticipantCount",
           bp."currency",
           COALESCE(pt."paidAmount", 0) AS "paidAmount",
-          COALESCE(ob."currentObligation", 0) - COALESCE(pt."paidAmount", 0) AS "outstandingAmount",
+          COALESCE(ob."mandatoryDeductions", 0) AS "mandatoryDeductions",
+          COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0) AS "effectiveSettlementCredit",
+          GREATEST(
+            COALESCE(ob."currentObligation", 0)
+              - (COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0)),
+            0
+          ) AS "outstandingAmount",
           COALESCE(ob."currentObligation", 0) AS "currentObligation",
           pt."latestConfirmedPaymentDate",
           bp."status" AS "placementStatus",
           CASE
             WHEN COALESCE(ob."currentObligation", 0) > 0
-             AND COALESCE(ob."currentObligation", 0) - COALESCE(pt."paidAmount", 0) <= 0.0001
+             AND COALESCE(ob."currentObligation", 0)
+                   - (COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0)) <= 0.0001
               THEN 'Paid'
-            WHEN COALESCE(pt."paidAmount", 0) > 0
+            WHEN COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0) > 0.0001
               THEN 'Part Payment'
             WHEN COALESCE(pt."pendingAmount", 0) > 0.0001
               THEN 'Pending'
@@ -373,6 +393,12 @@ export class ReinsurancePaymentsWorklistService {
       acceptedParticipantCount: this.toInteger(row.acceptedParticipantCount),
       currency: row.currency,
       paidAmount: this.money.roundMoney(this.toMoneyNumber(row.paidAmount)),
+      mandatoryDeductions: this.money.roundMoney(
+        this.toMoneyNumber(row.mandatoryDeductions),
+      ),
+      effectiveSettlementCredit: this.money.roundMoney(
+        this.toMoneyNumber(row.effectiveSettlementCredit),
+      ),
       outstandingAmount,
       outstandingLabel: outstandingAmount < 0 ? 'credit' : 'outstanding',
       currentObligation: this.money.roundMoney(

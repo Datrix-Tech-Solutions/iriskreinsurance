@@ -38,6 +38,8 @@ describe('ReinsurancePaymentsWorklistService', () => {
         acceptedParticipantCount: 2n,
         currency: 'GHS',
         paidAmount: '60000.00',
+        mandatoryDeductions: '5000.00',
+        effectiveSettlementCredit: '65000.00',
         outstandingAmount: '40000.00',
         currentObligation: '100000.00',
         latestConfirmedPaymentDate: new Date('2026-08-20T12:00:00.000Z'),
@@ -77,6 +79,8 @@ describe('ReinsurancePaymentsWorklistService', () => {
         facultativeSumInsured: 800000,
         acceptedParticipantCount: 2,
         paidAmount: 60000,
+        mandatoryDeductions: 5000,
+        effectiveSettlementCredit: 65000,
         outstandingAmount: 40000,
         outstandingLabel: 'outstanding',
         currentObligation: 100000,
@@ -102,6 +106,27 @@ describe('ReinsurancePaymentsWorklistService', () => {
       items: [],
       meta: { page: 1, limit: 10, total: 0, totalPages: 0 },
     });
+  });
+
+  it('builds payment statuses from bank-confirmed cash plus mandatory deductions', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    await service.findPayments('tenant-1', {
+      page: 1,
+      limit: 10,
+      status: 'Paid',
+    });
+
+    const calls = prisma.$queryRaw.mock.calls as Array<[unknown]>;
+    const firstArg = calls[0]?.[0];
+    const sql = Array.isArray(firstArg)
+      ? firstArg.join('')
+      : ((firstArg as { sql?: string } | undefined)?.sql ?? '');
+    expect(sql).toContain('"mandatoryDeductions"');
+    expect(sql).toContain('"effectiveSettlementCredit"');
+    expect(sql).toContain(
+      'COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0)',
+    );
   });
 
   it('overlays effective endorsement terms for endorsed placements', async () => {

@@ -1,116 +1,168 @@
-import { useMemo } from 'react';
-import { useQueries } from '@tanstack/react-query';
-import { useFacultatives, fetchPlacementClosings, placementClosingsKey } from './useFacultatives';
-import { useCurrencies } from './useCurrencies';
-import { useRiskTypes } from './useRiskTypes';
-import {
-  CLOSING_STATUSES,
-  fetchPlacementFinancialPosition,
-  fetchPlacementPayments,
-  paymentsKey,
-  placementFinancialPositionKey,
-  totalEffectiveReinsurerDisbursement,
-} from './usePayments';
-import { Currency } from '@/types/reinsurance';
-import {
-  cedantPaymentStatusFromPosition,
-  CedantPaymentStatus,
-  pendingPremiumReceived,
-} from '@/lib/reinsurance/placementStatus';
-import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/lib/api';
+import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 
-function getRate(currencies: Currency[], isoCode: string | null): number {
-  if (!isoCode) return 1;
-  const c = currencies.find((x) => x.isoCode === isoCode);
-  return c?.exchangeRateToBase ? parseFloat(c.exchangeRateToBase) : 1;
-}
+const PREMIUMS_REPORT_BASE = '/operations/reinsurance/reports/premiums';
 
-function convertToTarget(
-  value: number,
-  sourceIso: string | null,
-  currencies: Currency[],
-  targetRate: number,
-): number {
-  const sourceRate = getRate(currencies, sourceIso);
-  return (value * sourceRate) / targetRate;
-}
-
-const num = (v: string | number | null | undefined): number | null =>
-  v == null ? null : typeof v === 'number' ? v : parseFloat(v);
+export type PremiumReportDateBasis =
+  | 'PLACEMENT_CREATED'
+  | 'INCEPTION_DATE'
+  | 'EXPIRY_DATE'
+  | 'CLOSING_CONFIRMED_AT'
+  | 'PAYMENT_DATE'
+  | 'BANK_CONFIRMED_AT';
 
 export interface PremiumsReportParams {
-  /** Restricts to placements whose inceptionDate (period of insurance start) falls in [startDate, endDate]. */
+  /** Restricts placements by the selected date basis. Defaults to inceptionDate. */
   startDate?: string;
   endDate?: string;
+  dateBasis?: PremiumReportDateBasis;
   riskTypeIds?: string[];
   currencies?: string[];
   paymentStatuses?: CedantPaymentStatus[];
   cedantIds?: string[];
-  /** Offer status — 'closed' keeps only CLOSED placements, 'open' everything else
-   *  (all business not yet closed). Omit for all. */
+  /** Offer status — 'closed' keeps only CLOSED placements, 'open' everything else. */
   offerStatus?: 'open' | 'closed';
+  page?: number;
+  limit?: number;
+  sortBy?:
+    | 'policyNumber'
+    | 'cedantName'
+    | 'offerDate'
+    | 'dateClosed'
+    | 'inceptionDate'
+    | 'expiryDate'
+    | 'premium'
+    | 'grossPremium'
+    | 'premiumReceived'
+    | 'outstanding'
+    | 'paymentStatus';
+  sortOrder?: 'asc' | 'desc';
 }
 
-/**
- * One reinsurer's confirmed closing on the placement. The report explodes a
- * placement into one row per entry of this list for both the Cedants and
- * Reinsurer scopes — everything past the shared placement fields (Fac Premium,
- * commission, net premium) is inherently per-reinsurer.
- */
 export interface PremiumReinsurerBreakdown {
   reinsurerId: string;
   reinsurerName: string;
-  /** The confirmed closing this row comes from. */
   closingId: string;
-  /** Signed line % locked in at closing (falls back to the negotiated share %). */
   sharePercent: number | null;
-  /** This reinsurer's gross premium share — "Fac Premium". */
   grossPremium: number | null;
   commissionPercent: number | null;
   commissionAmount: number | null;
-  /** Brokerage on this reinsurer's share, snapshotted at closing. */
   brokerageAmount: number | null;
-  /** Gross premium net of commission — what iRisk owes this reinsurer. */
   netPremium: number | null;
-  /** Bank-confirmed REINSURER_DISBURSEMENT paid to this reinsurer so far. */
   paidAmount: number;
-  /** When this reinsurer's line was confirmed/closed. */
+  outstandingAmount: number | null;
   closedAt: string | null;
 }
 
 export interface PremiumReportRow {
   id: string;
+  placementId: string;
+  reference: string | null;
   policyNumber: string;
   title: string;
+  cedantId: string;
   cedantName: string;
-  /** Risk type / class of business. */
+  riskClassId: string | null;
+  riskClassName: string | null;
+  riskTypeId: string | null;
   policyType: string | null;
-  /** When the facultative offer was created. */
+  status: string;
   offerDate: string | null;
-  /** Force-closed date, else the latest confirmed reinsurer closing. */
   closedAt: string | null;
   inceptionDate: string | null;
   expiryDate: string | null;
   currency: string | null;
-  /** 100% sum insured on the offer. */
   sumInsured: number | null;
-  /** 100% premium on the offer. */
   premium: number | null;
-  /** Offer % ceded to reinsurers — "Fac Share" at the placement level. */
   facultativeOfferPercent: number | null;
   due: number;
   paid: number;
+  mandatoryDeductions: number;
+  effectiveSettlementCredit: number;
   outstanding: number;
   pending: number;
   paymentStatus: CedantPaymentStatus;
-  /** Per-reinsurer participation; empty until at least one line is confirmed. */
   reinsurers: PremiumReinsurerBreakdown[];
 }
 
+export interface PremiumsReportCurrencyTotals {
+  currency: string;
+  placementCount: number;
+  participantCount: number;
+  sumInsured: number;
+  grossPremium: number;
+  commission: number;
+  brokerage: number;
+  cedantCurrentObligation: number;
+  premiumReceived: number;
+  mandatoryDeductions: number;
+  effectiveSettlementCredit: number;
+  cedantOutstanding: number;
+  cedantPending: number;
+  reinsurerPayable: number;
+  reinsurerDisbursed: number;
+  reinsurerOutstanding: number;
+}
+
 export interface PremiumsReportSummary {
+  placementCount: number;
+  participantCount: number;
+  totalsByCurrency: PremiumsReportCurrencyTotals[];
+  /** Backwards-compatible first-currency summary for older report surfaces. */
   totalCollected: number;
   outstanding: number;
   currencySymbol: string;
+}
+
+export interface PremiumsReportMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+interface PremiumsReportResponse {
+  items: PremiumReportRow[];
+  summary: Omit<PremiumsReportSummary, 'totalCollected' | 'outstanding' | 'currencySymbol'>;
+  meta: PremiumsReportMeta;
+}
+
+function normalizeReportParams(params: PremiumsReportParams = {}) {
+  const placementStatus =
+    params.offerStatus === 'closed'
+      ? ['CLOSED']
+      : params.offerStatus === 'open'
+        ? ['DRAFT', 'PLACED', 'PARTIALLY_PLACED', 'CLOSING']
+        : undefined;
+
+  return {
+    page: params.page ?? 1,
+    limit: params.limit ?? 50,
+    dateBasis: params.dateBasis ?? 'INCEPTION_DATE',
+    ...(params.startDate ? { dateFrom: params.startDate } : {}),
+    ...(params.endDate ? { dateTo: params.endDate } : {}),
+    ...(params.riskTypeIds?.length ? { riskTypeId: params.riskTypeIds.join(',') } : {}),
+    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
+    ...(params.paymentStatuses?.length ? { paymentStatus: params.paymentStatuses.join(',') } : {}),
+    ...(params.cedantIds?.length ? { cedantId: params.cedantIds.join(',') } : {}),
+    ...(placementStatus ? { placementStatus: placementStatus.join(',') } : {}),
+    ...(params.sortBy ? { sortBy: params.sortBy } : {}),
+    ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
+  };
+}
+
+export const premiumsReportKey = (params: PremiumsReportParams = {}) =>
+  ['reinsurance', 'reports', 'premiums', normalizeReportParams(params)] as const;
+
+function normalizeSummary(summary: PremiumsReportResponse['summary']): PremiumsReportSummary {
+  const firstCurrency = summary.totalsByCurrency[0];
+  return {
+    ...summary,
+    totalCollected: firstCurrency?.premiumReceived ?? 0,
+    outstanding: firstCurrency?.cedantOutstanding ?? 0,
+    currencySymbol: firstCurrency?.currency ?? '',
+  };
 }
 
 export function usePremiumsReport(
@@ -119,169 +171,44 @@ export function usePremiumsReport(
 ): {
   rows: PremiumReportRow[];
   summary: PremiumsReportSummary;
+  meta: PremiumsReportMeta;
   isLoading: boolean;
 } {
-  const enabled = options.enabled ?? true;
-  const { data: placements = [], isLoading: loadingPlacements } = useFacultatives();
-  const { data: currencies = [], isLoading: loadingCurrencies } = useCurrencies();
-  const { data: riskTypes = [] } = useRiskTypes();
-
-  const riskTypeName = useMemo(() => {
-    const map = new Map(riskTypes.map((rt) => [rt.id, rt.name]));
-    return (id: string | null, fallback: string | null) =>
-      (id ? map.get(id) : null) ?? fallback ?? null;
-  }, [riskTypes]);
-
-  const closingRows = useMemo(
-    () => (enabled ? placements.filter((p) => CLOSING_STATUSES.includes(p.status)) : []),
-    [placements, enabled],
-  );
-
-  const filtered = useMemo(() => {
-    const from = params.startDate ? new Date(params.startDate) : null;
-    const to = params.endDate ? new Date(params.endDate) : null;
-    if (to) to.setHours(23, 59, 59, 999);
-    const cedantIds = params.cedantIds?.length ? new Set(params.cedantIds) : null;
-    const riskTypeIds = params.riskTypeIds?.length ? new Set(params.riskTypeIds) : null;
-    const currencies = params.currencies?.length ? new Set(params.currencies) : null;
-
-    return closingRows.filter((p) => {
-      if (from || to) {
-        if (!p.inceptionDate) return false;
-        const inception = new Date(p.inceptionDate);
-        if (from && inception < from) return false;
-        if (to && inception > to) return false;
-      }
-      if (riskTypeIds && (!p.riskTypeId || !riskTypeIds.has(p.riskTypeId))) return false;
-      if (currencies && (!p.currency || !currencies.has(p.currency))) return false;
-      if (cedantIds && !cedantIds.has(p.cedant.id)) return false;
-      if (params.offerStatus === 'closed' && p.status !== 'CLOSED') return false;
-      if (params.offerStatus === 'open' && p.status === 'CLOSED') return false;
-      return true;
-    });
-  }, [
-    closingRows,
-    params.startDate,
-    params.endDate,
-    params.riskTypeIds,
-    params.currencies,
-    params.cedantIds,
-    params.offerStatus,
-  ]);
-
-  const positionQueries = useQueries({
-    queries: filtered.map((p) => ({
-      queryKey: placementFinancialPositionKey(p.id),
-      queryFn: () => fetchPlacementFinancialPosition(p.id),
-      enabled,
-    })),
-  });
-  const paymentQueries = useQueries({
-    queries: filtered.map((p) => ({
-      queryKey: paymentsKey(p.id),
-      queryFn: () => fetchPlacementPayments(p.id),
-      enabled,
-    })),
-  });
-  const closingQueries = useQueries({
-    queries: filtered.map((p) => ({
-      queryKey: placementClosingsKey(p.id),
-      queryFn: () => fetchPlacementClosings(p.id),
-      enabled,
-    })),
+  const normalizedParams = normalizeReportParams(params);
+  const result = useQuery({
+    queryKey: premiumsReportKey(params),
+    queryFn: async () => {
+      const res = await api.get<PremiumsReportResponse>(PREMIUMS_REPORT_BASE, {
+        params: normalizedParams,
+      });
+      return res.data;
+    },
+    enabled: options.enabled ?? true,
   });
 
-  // Summary totals roll up into the base currency — the currency selector is a
-  // row filter now, not a conversion target.
-  const targetIso = useMemo(
-    () => currencies.find((c) => c.isBaseCurrency)?.isoCode ?? '',
-    [currencies],
-  );
-  const targetRate = getRate(currencies, targetIso);
+  return {
+    rows: result.data?.items ?? [],
+    summary: normalizeSummary(
+      result.data?.summary ?? {
+        placementCount: 0,
+        participantCount: 0,
+        totalsByCurrency: [],
+      },
+    ),
+    meta: result.data?.meta ?? {
+      page: params.page ?? 1,
+      limit: params.limit ?? 50,
+      total: 0,
+      totalPages: 0,
+    },
+    isLoading: result.isLoading,
+  };
+}
 
-  const allRows = useMemo<PremiumReportRow[]>(() => {
-    return filtered.map((p, i) => {
-      const position = positionQueries[i]?.data;
-      const payments = paymentQueries[i]?.data ?? [];
-      const closings = closingQueries[i]?.data ?? [];
-      const due = position?.cedant.currentObligation ?? 0;
-      const paid = position?.cedant.netSettled ?? 0;
-      const outstanding = position?.cedant.outstanding ?? 0;
-      const pending = pendingPremiumReceived(payments);
-
-      const confirmedClosings = closings.filter((c) => c.status === 'CONFIRMED');
-      const lastConfirmedAt = confirmedClosings.reduce<string | null>(
-        (latest, c) =>
-          c.confirmedAt && (!latest || c.confirmedAt > latest) ? c.confirmedAt : latest,
-        null,
-      );
-
-      const reinsurers: PremiumReinsurerBreakdown[] = confirmedClosings.map((c) => ({
-        reinsurerId: c.participant.counterpartyId,
-        reinsurerName: c.participant.counterparty.name,
-        closingId: c.id,
-        sharePercent: num(c.signedLinePercent) ?? num(c.sharePercent),
-        grossPremium: num(c.grossPremium),
-        commissionPercent: num(c.commissionPercent),
-        commissionAmount: num(c.commissionAmount),
-        brokerageAmount: num(c.brokerageAmount),
-        netPremium: num(c.netPremium),
-        paidAmount: totalEffectiveReinsurerDisbursement(payments, c.participant.counterpartyId),
-        closedAt: c.confirmedAt ?? null,
-      }));
-
-      return {
-        id: p.id,
-        policyNumber: displayPolicyNumber(p.policyNumber),
-        title: p.title,
-        cedantName: p.cedant.name,
-        policyType: riskTypeName(p.riskTypeId, p.classOfBusiness),
-        offerDate: p.createdAt,
-        closedAt: p.forceClosedAt ?? lastConfirmedAt,
-        inceptionDate: p.inceptionDate,
-        expiryDate: p.expiryDate,
-        currency: position?.currency ?? p.currency,
-        sumInsured: p.sumInsured,
-        premium: p.premium,
-        facultativeOfferPercent: p.facultativeOffer,
-        due,
-        paid,
-        outstanding,
-        pending,
-        paymentStatus: cedantPaymentStatusFromPosition(due, paid, outstanding, pending),
-        reinsurers,
-      };
-    });
-  }, [filtered, positionQueries, paymentQueries, closingQueries, riskTypeName]);
-
-  const rows = useMemo(() => {
-    const paymentStatuses = params.paymentStatuses?.length
-      ? new Set(params.paymentStatuses)
-      : null;
-    return paymentStatuses ? allRows.filter((r) => paymentStatuses.has(r.paymentStatus)) : allRows;
-  }, [allRows, params.paymentStatuses]);
-
-  const summary = useMemo<PremiumsReportSummary>(() => {
-    const targetCurrency = currencies.find((c) => c.isoCode === targetIso);
-    return {
-      totalCollected: rows.reduce(
-        (sum, r) => sum + convertToTarget(r.paid, r.currency, currencies, targetRate),
-        0,
-      ),
-      outstanding: rows.reduce(
-        (sum, r) => sum + convertToTarget(r.outstanding, r.currency, currencies, targetRate),
-        0,
-      ),
-      currencySymbol: targetCurrency?.symbol ?? targetIso,
-    };
-  }, [rows, currencies, targetIso, targetRate]);
-
-  const isLoading =
-    loadingPlacements ||
-    loadingCurrencies ||
-    positionQueries.some((q) => q.isLoading) ||
-    paymentQueries.some((q) => q.isLoading) ||
-    closingQueries.some((q) => q.isLoading);
-
-  return { rows, summary, isLoading };
+export async function downloadPremiumsReportCsv(params: PremiumsReportParams): Promise<Blob> {
+  const res = await api.get<Blob>(`${PREMIUMS_REPORT_BASE}/export.csv`, {
+    params: normalizeReportParams({ ...params, page: undefined, limit: undefined }),
+    responseType: 'blob',
+  });
+  return res.data;
 }

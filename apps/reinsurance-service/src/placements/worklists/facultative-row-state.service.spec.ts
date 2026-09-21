@@ -169,6 +169,41 @@ describe('ReinsuranceFacultativeRowStateService', () => {
     expect(result.items[0]).toMatchObject({ paymentStatus: 'Paid' });
   });
 
+  it('counts mandatory deductions toward placement-row payment status', async () => {
+    prisma.placementClosing.findMany.mockResolvedValue([
+      originalClosing(PLACEMENT_ID, 'participant-1', '5241.60', {
+        commissionAmount: '1310.40',
+        netPremium: '3669.12',
+      }),
+    ]);
+    prisma.placementPayment.findMany.mockResolvedValue([
+      payment(PLACEMENT_ID, PlacementPaymentType.PREMIUM_RECEIVED, '3669.12', {
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
+      }),
+    ]);
+
+    const result = await service.findRowState(TENANT_ID, {
+      placementIds: [PLACEMENT_ID],
+    });
+
+    expect(result.items[0]).toMatchObject({ paymentStatus: 'Paid' });
+  });
+
+  it('keeps deduction-only settlements as partly paid until cash is received', async () => {
+    prisma.placementClosing.findMany.mockResolvedValue([
+      originalClosing(PLACEMENT_ID, 'participant-1', '5241.60', {
+        commissionAmount: '1310.40',
+        netPremium: '3669.12',
+      }),
+    ]);
+
+    const result = await service.findRowState(TENANT_ID, {
+      placementIds: [PLACEMENT_ID],
+    });
+
+    expect(result.items[0]).toMatchObject({ paymentStatus: 'Part Payment' });
+  });
+
   it('matches existing reversal behavior by ignoring reversal child rows for payment status', async () => {
     prisma.placementPayment.findMany.mockResolvedValue([
       payment(PLACEMENT_ID, PlacementPaymentType.PREMIUM_RECEIVED, '100.00', {
@@ -428,14 +463,18 @@ function originalClosing(
   placementId: string,
   participantId: string,
   grossPremium: string,
+  overrides: Partial<{
+    commissionAmount: string;
+    netPremium: string;
+  }> = {},
 ) {
   return {
     id: `closing-${participantId}`,
     placementId,
     participantId,
     grossPremium,
-    commissionAmount: '0.00',
-    netPremium: grossPremium,
+    commissionAmount: overrides.commissionAmount ?? '0.00',
+    netPremium: overrides.netPremium ?? grossPremium,
     createdAt: new Date('2026-08-01T12:00:00.000Z'),
   };
 }

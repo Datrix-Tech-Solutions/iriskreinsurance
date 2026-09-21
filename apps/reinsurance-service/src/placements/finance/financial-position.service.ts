@@ -28,6 +28,7 @@ type EffectiveSnapshot = {
   closingId: string;
   netPremium: number;
   cedantPremium: number;
+  mandatoryDeductions: number;
   currency: string | null;
 };
 
@@ -99,6 +100,11 @@ export class PlacementFinancialPositionService {
             closing.commissionAmount,
             closing.netPremium,
           ),
+          mandatoryDeductions: this.mandatoryDeductionsAmount(
+            closing.grossPremium,
+            closing.commissionAmount,
+            closing.netPremium,
+          ),
           currency,
         };
         currentSnapshots.push(snapshot);
@@ -125,6 +131,11 @@ export class PlacementFinancialPositionService {
           closingId: closing.id,
           netPremium: this.money.toNumber(closing.netPremium),
           cedantPremium: this.cedantReceivableAmount(
+            closing.premiumSnapshot,
+            closing.commissionAmount,
+            closing.netPremium,
+          ),
+          mandatoryDeductions: this.mandatoryDeductionsAmount(
             closing.premiumSnapshot,
             closing.commissionAmount,
             closing.netPremium,
@@ -252,9 +263,21 @@ export class PlacementFinancialPositionService {
       const currentObligation = this.round(
         originalObligation + endorsementAdjustments,
       );
+      const mandatoryDeductions = this.round(
+        currentSnapshots.reduce(
+          (total, snapshot) => total + snapshot.mandatoryDeductions,
+          0,
+        ),
+      );
       const cedantSettlement = this.calculateSettlement(payments, {
         type: PlacementPaymentType.PREMIUM_RECEIVED,
       });
+      const effectiveSettlementCredit = this.round(
+        cedantSettlement.netSettled + mandatoryDeductions,
+      );
+      const cedantOutstanding = this.maxZero(
+        currentObligation - effectiveSettlementCredit,
+      );
 
       return {
         placementId,
@@ -265,18 +288,15 @@ export class PlacementFinancialPositionService {
           originalObligation,
           endorsementAdjustments,
           currentObligation,
+          mandatoryDeductions,
+          effectiveSettlementCredit,
           received: cedantSettlement.netSettled,
           refunded: 0,
           grossRecorded: cedantSettlement.grossRecorded,
           reversed: cedantSettlement.reversed,
           netSettled: cedantSettlement.netSettled,
-          outstanding: this.round(
-            currentObligation - cedantSettlement.netSettled,
-          ),
-          position: this.positionFor(
-            currentObligation - cedantSettlement.netSettled,
-            'cedant',
-          ),
+          outstanding: cedantOutstanding,
+          position: this.positionFor(cedantOutstanding, 'cedant'),
         },
         reinsurers: [...reinsurers.values()]
           .map((reinsurer) => {
@@ -549,9 +569,9 @@ export class PlacementFinancialPositionService {
   }
 
   /**
-   * Cedant premium receipts settle the same amount billed by the placement
-   * debit note: gross premium less cedant commission. Brokerage is a separate
-   * broker/reinsurer-side deduction and must not reduce the cedant receivable.
+   * Cedant contractual receivable remains gross premium less cedant commission.
+   * Mandatory deductions are credited separately for settlement status while
+   * confirmed premium receipts remain actual cash received.
    * Fall back to netPremium for historic snapshots that predate gross/commission
    * fields so existing tenant history remains readable.
    */
@@ -566,6 +586,25 @@ export class PlacementFinancialPositionService {
     return this.round(
       this.money.toNumber(grossPremium) - this.money.toNumber(commissionAmount),
     );
+  }
+
+  private mandatoryDeductionsAmount(
+    grossPremium: Prisma.Decimal | number | string | null | undefined,
+    commissionAmount: Prisma.Decimal | number | string | null | undefined,
+    netPremium: Prisma.Decimal | number | string | null | undefined,
+  ) {
+    if (grossPremium === null || grossPremium === undefined) {
+      return 0;
+    }
+    return this.maxZero(
+      this.cedantReceivableAmount(grossPremium, commissionAmount, netPremium) -
+        this.money.toNumber(netPremium),
+    );
+  }
+
+  private maxZero(value: number): number {
+    const rounded = this.round(value);
+    return rounded <= 0.0001 ? 0 : rounded;
   }
 
   private positionFor(

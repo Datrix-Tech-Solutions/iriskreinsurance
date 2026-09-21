@@ -89,6 +89,20 @@ export class PaymentWorklistRowDto {
   @ApiProperty({ example: 75000 })
   paidAmount!: number;
 
+  @ApiProperty({
+    example: 5000,
+    description:
+      'Confirmed-closing mandatory deductions credited toward cedant settlement but not counted as cash paid.',
+  })
+  mandatoryDeductions!: number;
+
+  @ApiProperty({
+    example: 80000,
+    description:
+      'Paid cash plus mandatory deductions used for payment status and true outstanding balance.',
+  })
+  effectiveSettlementCredit!: number;
+
   @ApiProperty({ example: 25000 })
   outstandingAmount!: number;
 

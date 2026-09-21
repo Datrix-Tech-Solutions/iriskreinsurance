@@ -26,6 +26,7 @@ type SnapshotCandidate = {
   placementId: string;
   snapshotKey: string;
   cedantPremium: number;
+  mandatoryDeductions: number;
   sourceRank: 0 | 1;
   effectiveDate: Date | null;
   endorsementCreatedAt: Date | null;
@@ -167,12 +168,17 @@ export class ReinsuranceFacultativeRowStateService {
         }),
       ]);
 
-    const currentObligationByPlacement = this.currentObligations([
+    const currentFinancialsByPlacement = this.currentFinancials([
       ...originalClosings.map(
         (closing): SnapshotCandidate => ({
           placementId: closing.placementId,
           snapshotKey: closing.participantId,
           cedantPremium: this.cedantReceivableAmount(
+            closing.grossPremium,
+            closing.commissionAmount,
+            closing.netPremium,
+          ),
+          mandatoryDeductions: this.mandatoryDeductionsAmount(
             closing.grossPremium,
             closing.commissionAmount,
             closing.netPremium,
@@ -192,6 +198,11 @@ export class ReinsuranceFacultativeRowStateService {
             closing.endorsementParticipant.originalParticipantId ??
             closing.endorsementParticipantId,
           cedantPremium: this.cedantReceivableAmount(
+            closing.premiumSnapshot,
+            closing.commissionAmount,
+            closing.netPremium,
+          ),
+          mandatoryDeductions: this.mandatoryDeductionsAmount(
             closing.premiumSnapshot,
             closing.commissionAmount,
             closing.netPremium,
@@ -257,15 +268,20 @@ export class ReinsuranceFacultativeRowStateService {
       items: requestedPlacementIds
         .filter((placementId) => tenantPlacementIdSet.has(placementId))
         .map((placementId) => {
-          const currentObligation =
-            currentObligationByPlacement.get(placementId) ?? 0;
+          const currentFinancials = currentFinancialsByPlacement.get(
+            placementId,
+          ) ?? {
+            currentObligation: 0,
+            mandatoryDeductions: 0,
+          };
           const totals = paymentTotals.get(placementId) ?? {
             paidAmount: 0,
             pendingAmount: 0,
             hasRecordedPayment: false,
           };
           const paymentStatus = this.paymentStatus({
-            currentObligation,
+            currentObligation: currentFinancials.currentObligation,
+            mandatoryDeductions: currentFinancials.mandatoryDeductions,
             paidAmount: totals.paidAmount,
             pendingAmount: totals.pendingAmount,
           });
@@ -299,7 +315,7 @@ export class ReinsuranceFacultativeRowStateService {
     };
   }
 
-  private currentObligations(candidates: SnapshotCandidate[]) {
+  private currentFinancials(candidates: SnapshotCandidate[]) {
     const selectedByPlacementAndKey = new Map<string, SnapshotCandidate>();
     for (const candidate of candidates) {
       const key = `${candidate.placementId}:${candidate.snapshotKey}`;
@@ -309,14 +325,22 @@ export class ReinsuranceFacultativeRowStateService {
       }
     }
 
-    const totals = new Map<string, number>();
+    const totals = new Map<
+      string,
+      { currentObligation: number; mandatoryDeductions: number }
+    >();
     for (const snapshot of selectedByPlacementAndKey.values()) {
-      totals.set(
-        snapshot.placementId,
-        this.round(
-          (totals.get(snapshot.placementId) ?? 0) + snapshot.cedantPremium,
-        ),
+      const current = totals.get(snapshot.placementId) ?? {
+        currentObligation: 0,
+        mandatoryDeductions: 0,
+      };
+      current.currentObligation = this.round(
+        current.currentObligation + snapshot.cedantPremium,
       );
+      current.mandatoryDeductions = this.round(
+        current.mandatoryDeductions + snapshot.mandatoryDeductions,
+      );
+      totals.set(snapshot.placementId, current);
     }
     return totals;
   }
@@ -360,12 +384,18 @@ export class ReinsuranceFacultativeRowStateService {
 
   private paymentStatus(input: {
     currentObligation: number;
+    mandatoryDeductions: number;
     paidAmount: number;
     pendingAmount: number;
   }): FacultativeRowPaymentStatus {
-    const outstanding = this.round(input.currentObligation - input.paidAmount);
+    const effectiveSettlementCredit = this.round(
+      input.paidAmount + input.mandatoryDeductions,
+    );
+    const outstanding = this.round(
+      input.currentObligation - effectiveSettlementCredit,
+    );
     if (input.currentObligation > 0 && outstanding <= 0.0001) return 'Paid';
-    if (input.paidAmount > 0) return 'Part Payment';
+    if (effectiveSettlementCredit > 0.0001) return 'Part Payment';
     if (input.pendingAmount > 0.0001) return 'Pending';
     return 'Outstanding';
   }
@@ -411,6 +441,19 @@ export class ReinsuranceFacultativeRowStateService {
     return this.round(
       this.money.toNumber(grossPremium) - this.money.toNumber(commissionAmount),
     );
+  }
+
+  private mandatoryDeductionsAmount(
+    grossPremium: Prisma.Decimal | number | string | null | undefined,
+    commissionAmount: Prisma.Decimal | number | string | null | undefined,
+    netPremium: Prisma.Decimal | number | string | null | undefined,
+  ) {
+    if (grossPremium === null || grossPremium === undefined) return 0;
+    const deductions =
+      this.cedantReceivableAmount(grossPremium, commissionAmount, netPremium) -
+      this.money.toNumber(netPremium);
+    const rounded = this.round(deductions);
+    return rounded <= 0.0001 ? 0 : rounded;
   }
 
   private round(value: number): number {

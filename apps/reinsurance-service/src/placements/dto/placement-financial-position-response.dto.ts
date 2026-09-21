@@ -45,6 +45,20 @@ export class PlacementCedantFinancialPositionDto {
   @ApiProperty({ example: 120000 })
   currentObligation!: number;
 
+  @ApiProperty({
+    example: 5000,
+    description:
+      'Confirmed-closing mandatory deductions that reduce true cedant outstanding without being cash received.',
+  })
+  mandatoryDeductions!: number;
+
+  @ApiProperty({
+    example: 75000,
+    description:
+      'Bank-confirmed premium cash plus applicable mandatory deductions used for cedant settlement status.',
+  })
+  effectiveSettlementCredit!: number;
+
   @ApiProperty({ example: 70000 })
   received!: number;
 

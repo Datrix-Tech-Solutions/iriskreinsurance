@@ -163,6 +163,7 @@ export class LegacyFinancialPlanner {
     options: LegacyFinancialSourceOptions;
     normalizedOffers: NormalizedLegacyOffer[];
     placementByOfferId: Map<string, string | undefined>;
+    excludedOfferIds?: Set<string>;
     participantByLegacyId?: Map<
       string,
       { participantId: string; closingId: string }
@@ -185,6 +186,7 @@ export class LegacyFinancialPlanner {
     );
 
     for (const offer of input.normalizedOffers) {
+      if (input.excludedOfferIds?.has(offer.offerId)) continue;
       const crosswalk = offerRows.get(offer.offerId);
       if (!crosswalk) {
         warnings.push(
@@ -220,8 +222,8 @@ export class LegacyFinancialPlanner {
       const disbursementGroups = new Map<string, DisbursementGroup>();
       const duplicateFingerprints = new Set<string>();
       for (const placement of row.reinsurance_placements ?? []) {
-        const paidNet = paidNetReinsurerAmount(placement);
-        if (!paidNet.gt(0) || paymentStatus === 'UNPAID') continue;
+        const paidFacPremium = paidFacPremiumAmount(placement);
+        if (!paidFacPremium.gt(0) || paymentStatus === 'UNPAID') continue;
 
         const sourceReinsurerRow =
           (row.reinsurance_placements?.indexOf(placement) ?? -1) + 1;
@@ -262,7 +264,7 @@ export class LegacyFinancialPlanner {
           crosswalk,
           participantMatch,
           placement,
-          amount: paidNet.toFixed(2),
+          amount: paidFacPremium.toFixed(2),
           sourceReinsurerRow,
         });
         const existingGroup = disbursementGroups.get(groupKey);
@@ -275,7 +277,7 @@ export class LegacyFinancialPlanner {
             );
             continue;
           }
-          existingGroup.amount = existingGroup.amount.add(paidNet);
+          existingGroup.amount = existingGroup.amount.add(paidFacPremium);
           existingGroup.contributingRows.push(contributingRow);
           continue;
         }
@@ -288,7 +290,7 @@ export class LegacyFinancialPlanner {
           participantId: linked?.participantId,
           closingId: linked?.closingId,
           currency,
-          amount: paidNet,
+          amount: paidFacPremium,
           effectiveDate: participantMatch.closedDate,
           paymentStatus: clean(placement['Payment Status']),
           contributingRows: [contributingRow],
@@ -403,7 +405,7 @@ function reinsurerDisbursementRecord(
     legacyOfferId: input.offer.offerId,
     legacyParticipantId,
     action: 'create',
-    reason: 'positive-aggregated-paid-net-reinsurer-components',
+    reason: 'positive-aggregated-paid-fac-premium',
     amount,
     currency: input.currency,
     effectiveDate: input.crosswalk.closedDate,
@@ -527,12 +529,29 @@ function contributingDisbursementRow(input: {
   };
 }
 
-function paidNetReinsurerAmount(row: Record<string, unknown>) {
-  return money(row['Paid fac premium'])
-    .subtract(money(row['Paid Commission']))
-    .subtract(money(row['Brokerage Paid']))
-    .subtract(money(row['Paid WHT']))
-    .subtract(money(row['Paid NIC']));
+function paidFacPremiumAmount(row: Record<string, unknown>) {
+  return money(row['Paid fac premium']);
+}
+
+export function previousLegacyReinsurerDisbursementAmount(input: {
+  paidFacPremium: unknown;
+  paidCommission?: unknown;
+  brokeragePaid?: unknown;
+  paidWht?: unknown;
+  paidNic?: unknown;
+}) {
+  return money(input.paidFacPremium)
+    .subtract(money(input.paidCommission))
+    .subtract(money(input.brokeragePaid))
+    .subtract(money(input.paidWht))
+    .subtract(money(input.paidNic))
+    .toFixed(2);
+}
+
+export function correctedLegacyReinsurerDisbursementAmount(input: {
+  paidFacPremium: unknown;
+}) {
+  return money(input.paidFacPremium).toFixed(2);
 }
 
 function summarize(records: LegacyFinancialPlanRecord[]) {
@@ -593,14 +612,14 @@ function financialFieldPolicy(): LegacyFinancialFieldPolicy[] {
       reason: 'Observed as cumulative/report accumulator in joined files.',
     },
     {
-      sourceField:
-        'Paid fac premium - Paid Commission - Brokerage Paid - Paid WHT - Paid NIC',
+      sourceField: 'Paid fac premium',
       scope: 'reinsurance_placements',
-      meaning: 'Component-evidenced net amount paid to/for reinsurer.',
+      meaning:
+        'Manager-approved historical amount disbursed to/for the reinsurer. Paid commission, brokerage, WHT and NIC remain provenance/evidence fields and are not subtracted again.',
       canonicalTarget: 'PlacementPayment REINSURER_DISBURSEMENT amount',
       safeToImport: true,
       reason:
-        'Uses positive paid component fields and excludes ambiguous participant matches.',
+        'Uses positive participant-level paid fac premium evidence and excludes ambiguous participant matches.',
     },
     {
       sourceField: 'Date Closed',

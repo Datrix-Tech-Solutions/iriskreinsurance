@@ -1513,6 +1513,8 @@ export interface PlacementCedantFinancialPosition {
   originalObligation: number;
   endorsementAdjustments: number;
   currentObligation: number;
+  mandatoryDeductions: number;
+  effectiveSettlementCredit: number;
   received: number;
   refunded: number;
   grossRecorded: number;

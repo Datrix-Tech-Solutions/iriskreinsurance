@@ -14,9 +14,9 @@ import {
   useRiskTypeOptions,
   useCurrencyOptions,
   usePremiumsReport,
-  useReportPagination,
 } from '@/hooks';
 import {
+  downloadPremiumsReportCsv,
   PremiumReportRow,
   PremiumReinsurerBreakdown,
   PremiumsReportParams,
@@ -55,6 +55,8 @@ const SCOPE_OPTIONS: { value: PremiumsReportScope; label: string }[] = [
   { value: 'cedant', label: 'Cedants' },
   { value: 'reinsurer', label: 'Reinsurer' },
 ];
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
 
 /* ── formatting ── */
 
@@ -111,6 +113,12 @@ interface PremiumReportDisplayRow {
   commissionAmount: number | null;
   netPremium: number | null;
   paidAmount: number | null;
+  cedantDue: number;
+  cedantPaid: number;
+  mandatoryDeductions: number;
+  effectiveSettlementCredit: number;
+  cedantOutstanding: number;
+  paymentStatus: CedantPaymentStatus;
 }
 
 function flattenRow(
@@ -141,6 +149,12 @@ function flattenRow(
     commissionAmount: reinsurer?.commissionAmount ?? null,
     netPremium: reinsurer?.netPremium ?? null,
     paidAmount: reinsurer?.paidAmount ?? null,
+    cedantDue: r.due,
+    cedantPaid: r.paid,
+    mandatoryDeductions: r.mandatoryDeductions,
+    effectiveSettlementCredit: r.effectiveSettlementCredit,
+    cedantOutstanding: r.outstanding,
+    paymentStatus: r.paymentStatus,
   };
 }
 
@@ -249,6 +263,37 @@ const MIDDLE_COLUMNS: ReportColumn[] = [
 
 const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
   {
+    key: 'cedantPremiumDue',
+    label: 'Cedant Premium Due',
+    width: '140px',
+    className: 'text-right',
+    render: (row) => fmtAmount(row.cedantDue, row.currency),
+    csv: (row) => row.cedantDue,
+  },
+  {
+    key: 'cedantPremiumPaid',
+    label: 'Cedant Premium Paid',
+    width: '140px',
+    className: 'text-right',
+    render: (row) => fmtAmount(row.cedantPaid, row.currency),
+    csv: (row) => row.cedantPaid,
+  },
+  {
+    key: 'cedantOutstanding',
+    label: 'Cedant Outstanding',
+    width: '150px',
+    className: 'text-right',
+    render: (row) => fmtAmount(row.cedantOutstanding, row.currency),
+    csv: (row) => row.cedantOutstanding,
+  },
+  {
+    key: 'paymentStatus',
+    label: 'Payment Status',
+    width: '110px',
+    render: (row) => row.paymentStatus,
+    csv: (row) => row.paymentStatus,
+  },
+  {
     key: 'netPremiumDueReinsurer',
     label: 'Net Premium Due Reinsurer',
     width: '140px',
@@ -330,6 +375,8 @@ export function PremiumsReportTable() {
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<PremiumsReportParams | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
@@ -347,11 +394,13 @@ export function PremiumsReportTable() {
     setPage(1);
   };
 
-  const { rows, isLoading } = usePremiumsReport(reportParams ?? {}, {
+  const { rows, isLoading, meta } = usePremiumsReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
   const handleRunFilter = () => {
+    const nextPage = 1;
+    setPage(nextPage);
     setReportParams({
       startDate,
       endDate,
@@ -363,8 +412,9 @@ export function PremiumsReportTable() {
           ? (paymentStatuses as CedantPaymentStatus[])
           : undefined,
       cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
+      page: nextPage,
+      limit: pageSize,
     });
-    setPage(1);
   };
 
   const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
@@ -385,21 +435,53 @@ export function PremiumsReportTable() {
         const net = row.netPremium ?? 0;
         const paid = row.paidAmount ?? 0;
         const key =
-          paid <= 0.01
-            ? 'outstanding'
-            : net > 0.01 && paid >= net - 0.01
-              ? 'paid'
-              : 'part';
+          paid <= 0.01 ? 'outstanding' : net > 0.01 && paid >= net - 0.01 ? 'paid' : 'part';
         return selected.has(key);
       });
     }
     return flat;
   }, [rows, scope, reinsurerIds, settlements]);
 
-  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } =
-    useReportPagination(displayRows);
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+    setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
+  };
 
-  const handleExport = () => {
+  const rowsPerPageControl =
+    reportParams && meta.total > 10 ? (
+      <label className="flex items-center gap-1.5 text-sm text-gray-500">
+        Rows
+        <select
+          value={String(pageSize)}
+          onChange={(e) => {
+            const nextPageSize = Number(e.target.value);
+            setPageSize(nextPageSize);
+            setPage(1);
+            setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
+          }}
+          className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
+        >
+          {PAGE_SIZE_OPTIONS.map((opt) => (
+            <option key={String(opt)} value={String(opt)}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
+
+  const handleExport = async () => {
+    if (reportParams && scope === 'cedant') {
+      const blob = await downloadPremiumsReportCsv(reportParams);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `premiums-report-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     const headers = columns.map((c) => c.label);
     const data = displayRows.map((row) => columns.map((c) => c.csv?.(row) ?? ''));
     exportToCsv(`premiums-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
@@ -410,7 +492,7 @@ export function PremiumsReportTable() {
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={pagedRows}
+          data={displayRows}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
@@ -550,8 +632,8 @@ export function PremiumsReportTable() {
               : 'Select a period and click Run Filter to generate the report'
           }
           currentPage={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
+          totalPages={Math.max(1, meta.totalPages)}
+          onPageChange={handlePageChange}
           noInternalScroll
         />
       </div>

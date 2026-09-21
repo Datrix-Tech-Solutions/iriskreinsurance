@@ -457,6 +457,7 @@ async function buildHistoricalFinancialPlan(input: {
     options: financialOptions,
     normalizedOffers: input.normalizedOffers,
     placementByOfferId,
+    excludedOfferIds: financialWriteExcludedOfferIds(input.plan),
     participantByLegacyId,
     existingMaps: maps.filter((map) =>
       financialLegacyMapEntityTypes().includes(map.entityType),
@@ -476,8 +477,40 @@ function buildSourceHistoricalFinancialPlan(input: {
     normalizedOffers: input.normalizedOffers,
     placementByOfferId: new Map(),
     participantByLegacyId: new Map(),
+    excludedOfferIds: hardRejectedOfferIds(input.plan),
     existingMaps: [],
   });
+}
+
+function hardRejectedOfferIds(
+  plan: ReturnType<LegacyOffersPlanGenerator['build']>,
+) {
+  return new Set(
+    plan.records
+      .filter(
+        (record) =>
+          record.scopedEligibility === 'DATA_MISMATCH' ||
+          record.action === 'reject' ||
+          record.action === 'conflict',
+      )
+      .map((record) => record.offerId),
+  );
+}
+
+function financialWriteExcludedOfferIds(
+  plan: ReturnType<LegacyOffersPlanGenerator['build']>,
+) {
+  return new Set(
+    plan.records
+      .filter(
+        (record) =>
+          record.scopedEligibility === 'DATA_MISMATCH' ||
+          record.action === 'reject' ||
+          record.action === 'review' ||
+          record.action === 'conflict',
+      )
+      .map((record) => record.offerId),
+  );
 }
 
 function scopedFinancialResolvedOfferIdsFor(
@@ -502,10 +535,14 @@ function scopedEligibilitySummary(
   plan: ReturnType<LegacyOffersPlanGenerator['build']>,
   financials?: LegacyFinancialPlan,
 ) {
-  const financialUnresolvedIds =
-    financials?.blockedOffers
-      .map((offer) => offer.legacyOfferId)
-      .sort((left, right) => Number(left) - Number(right)) ?? [];
+  const financialUnresolvedIds = [
+    ...new Set([
+      ...plan.records
+        .filter((record) => record.scopedEligibility === 'FINANCIAL_UNRESOLVED')
+        .map((record) => record.offerId),
+      ...(financials?.blockedOffers.map((offer) => offer.legacyOfferId) ?? []),
+    ]),
+  ].sort((left, right) => Number(left) - Number(right));
   const dataMismatchIds = plan.records
     .filter((record) => record.classification === 'DATA_MISMATCH')
     .map((record) => record.offerId)

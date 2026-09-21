@@ -70,12 +70,12 @@ export function pendingPremiumReceived(payments: PlacementPayment[]): number {
 
 export function cedantPaymentStatusFromPosition(
   due: number,
-  paid: number,
+  paidOrEffectiveSettlement: number,
   outstanding: number,
   pendingReceived: number,
 ): CedantPaymentStatus {
   if (due > 0 && outstanding <= 0.0001) return 'Paid';
-  if (paid > 0) return 'Part Payment';
+  if (paidOrEffectiveSettlement > 0) return 'Part Payment';
   if (pendingReceived > 0.0001) return 'Pending';
   return 'Outstanding';
 }
