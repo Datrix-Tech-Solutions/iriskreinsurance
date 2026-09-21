@@ -127,9 +127,10 @@ export function ClockBanner({
             </Button>
             <Button
               size="sm"
+              disabled={location.status !== 'ready'}
               onClick={() => {
                 setConfirmClockIn(false);
-                onClockIn(location.status === 'ready' ? (location.label ?? undefined) : undefined);
+                onClockIn(location.label ?? undefined);
                 location.reset();
               }}
               className="bg-brand text-white hover:bg-brand-gradient-end"
@@ -152,9 +153,18 @@ export function ClockBanner({
           </p>
         )}
         {location.status === 'error' && (
-          <p className="mt-2 text-xs text-gray-400">
-            Location unavailable — you can still clock in.
-          </p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs text-red-500">
+              Location unavailable — enable location access to clock in.
+            </p>
+            <button
+              type="button"
+              onClick={() => location.capture()}
+              className="shrink-0 text-xs font-medium text-brand hover:underline"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </Modal>
 
