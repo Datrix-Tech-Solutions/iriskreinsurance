@@ -67,6 +67,10 @@ interface DataTableProps<T extends { id: string | number }> {
   totalPages: number;
   onPageChange: (page: number) => void;
   noInternalScroll?: boolean;
+  /** Overrides the header row's default text-xs sizing (e.g. for denser tables). */
+  headerClassName?: string;
+  /** Overrides the body row's default text-sm sizing (e.g. for denser tables). */
+  rowClassName?: string;
 }
 
 function ThreeDotMenu({ actions }: { actions: RowAction[] }) {
@@ -206,6 +210,8 @@ export function DataTable<T extends { id: string | number }>({
   totalPages,
   onPageChange,
   noInternalScroll = false,
+  headerClassName,
+  rowClassName,
 }: DataTableProps<T>) {
   const hasToolbar = !!(
     onSearch ||
@@ -354,7 +360,10 @@ export function DataTable<T extends { id: string | number }>({
                 )}
               />
               <div
-                className="relative grid gap-x-4 text-xs font-semibold text-(--table-header-text,var(--module-btn-bg,var(--color-brand))) uppercase tracking-wide px-6 py-3"
+                className={cn(
+                  'relative grid gap-x-4 text-xs font-semibold text-(--table-header-text,var(--module-btn-bg,var(--color-brand))) uppercase tracking-wide px-6 py-3',
+                  headerClassName,
+                )}
                 style={{
                   gridTemplateColumns: [
                     ...columns.map((c) => c.width ?? '1fr'),
@@ -423,7 +432,10 @@ export function DataTable<T extends { id: string | number }>({
                       )}
                     />
                     <div
-                      className="relative grid gap-x-4 px-6 py-3 items-center text-sm text-gray-800"
+                      className={cn(
+                        'relative grid gap-x-4 px-6 py-3 items-center text-sm text-gray-800',
+                        rowClassName,
+                      )}
                       style={{
                         gridTemplateColumns: [
                           ...columns.map((c) => c.width ?? '1fr'),

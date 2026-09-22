@@ -66,12 +66,11 @@ const PAYMENT_STATUS_CLASS: Record<PaymentWorklistRow['paymentStatus'], string> 
   Paid: 'text-xs text-green-600 font-medium',
 };
 
-// "Unpaid" here is the Part Payment payment status — something has been paid but a balance
-// remains. Pending (recorded, not yet bank-confirmed) has no dedicated button and shows up
+// Pending (recorded, not yet bank-confirmed) has no dedicated button and shows up
 // under "All" only, alongside Placed/Closed lifecycle states.
 const STATUS_FILTER_OPTIONS: { value: PaymentWorklistStatusFilter; label: string }[] = [
   { value: 'Paid', label: 'Paid' },
-  { value: 'Part Payment', label: 'Unpaid' },
+  { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Outstanding', label: 'Outstanding' },
 ];
 

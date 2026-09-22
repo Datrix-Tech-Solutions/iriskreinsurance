@@ -185,7 +185,7 @@ const BASE_COLUMNS: ReportColumn[] = [
   {
     key: 'businessName',
     label: 'Business Name',
-    width: '130px',
+    width: '110px',
     render: (row) =>
       row.businessName ? (
         <span className="text-gray-700">{row.businessName}</span>
@@ -197,14 +197,14 @@ const BASE_COLUMNS: ReportColumn[] = [
   {
     key: 'cedantName',
     label: 'Cedant',
-    width: '130px',
+    width: '110px',
     render: (row) => <span className="text-gray-700">{row.cedantName}</span>,
     csv: (row) => row.cedantName,
   },
   {
     key: 'policyType',
     label: 'Policy Type',
-    width: '120px',
+    width: '100px',
     render: (row) => row.policyType ?? <Muted>—</Muted>,
     csv: (row) => row.policyType ?? '',
   },
@@ -212,48 +212,54 @@ const BASE_COLUMNS: ReportColumn[] = [
     key: 'policyNumber',
     label: 'Policy Number',
     width: '130px',
-    render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
+    render: (row) => (
+      <EndorsedReferencePill
+        id={row.placementId}
+        reference={row.policyNumber}
+        textClassName="text-[10px]"
+      />
+    ),
     csv: (row) => row.policyNumber,
   },
   {
     key: 'claimType',
     label: 'Claim Type',
-    width: '120px',
+    width: '100px',
     render: (row) => row.claimType ?? <Muted>—</Muted>,
     csv: (row) => row.claimType ?? '',
   },
   {
     key: 'claimNumber',
     label: 'Claim Number',
-    width: '100px',
+    width: '90px',
     render: (row) => <span className="font-medium text-gray-900">{row.claimNumber}</span>,
     csv: (row) => row.claimNumber,
   },
   {
     key: 'periodOfInsurance',
     label: 'Period of Insurance',
-    width: '150px',
+    width: '130px',
     render: (row) => fmtPeriod(row.periodStart, row.periodEnd),
     csv: (row) => fmtPeriod(row.periodStart, row.periodEnd),
   },
   {
     key: 'dateOfLoss',
     label: 'Date of Loss',
-    width: '90px',
+    width: '70px',
     render: (row) => fmtDate(row.occurrenceDate),
     csv: (row) => fmtDate(row.occurrenceDate),
   },
   {
     key: 'currency',
     label: 'Currency',
-    width: '50px',
+    width: '40px',
     render: (row) => row.currency,
     csv: (row) => row.currency,
   },
   {
     key: 'claimAmount',
     label: 'Claim Amount',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.claimAmount, row.currency),
     csv: (row) => row.claimAmount,
@@ -264,7 +270,7 @@ const IRISK_COLUMNS: ReportColumn[] = [
   {
     key: 'iriskSharePct',
     label: 'iRisk Share %',
-    width: '70px',
+    width: '60px',
     className: 'text-right',
     render: (row) => fmtPct(row.iriskSharePercent),
     csv: (row) => row.iriskSharePercent ?? '',
@@ -272,7 +278,7 @@ const IRISK_COLUMNS: ReportColumn[] = [
   {
     key: 'iriskShareAmount',
     label: 'iRisk Share Amount',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.iriskShareAmount, row.currency),
     csv: (row) => row.iriskShareAmount ?? '',
@@ -280,7 +286,7 @@ const IRISK_COLUMNS: ReportColumn[] = [
   {
     key: 'iriskSharePaid',
     label: 'iRisk Share Paid',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.iriskSharePaid, row.currency),
     csv: (row) => row.iriskSharePaid ?? '',
@@ -288,7 +294,7 @@ const IRISK_COLUMNS: ReportColumn[] = [
   {
     key: 'iriskShareOutstanding',
     label: 'iRisk Share Outstanding',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.iriskShareOutstanding, row.currency),
     csv: (row) => row.iriskShareOutstanding ?? '',
@@ -303,7 +309,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerName',
       label: `${p} Name`,
-      width: '130px',
+      width: '110px',
       render: (row) =>
         row.reinsurerName ? (
           <span className="text-gray-700">{row.reinsurerName}</span>
@@ -315,7 +321,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerSharePct',
       label: `${p} % Share`,
-      width: '120px',
+      width: '100px',
       className: 'text-right',
       render: (row) => fmtPct(row.reinsurerSharePercent),
       csv: (row) => row.reinsurerSharePercent ?? '',
@@ -323,7 +329,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerShareAmount',
       label: `${p} Share (Amount)`,
-      width: '130px',
+      width: '110px',
       className: 'text-right',
       render: (row) => fmtAmount(row.reinsurerShareAmount, row.currency),
       csv: (row) => row.reinsurerShareAmount ?? '',
@@ -331,7 +337,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerAmountPaid',
       label: `${p} Amount Paid`,
-      width: '130px',
+      width: '110px',
       className: 'text-right',
       render: (row) => fmtAmount(row.reinsurerPaidAmount, row.currency),
       csv: (row) => row.reinsurerPaidAmount ?? '',
@@ -339,7 +345,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerAmountOutstanding',
       label: `${p} Amount Outstanding`,
-      width: '150px',
+      width: '130px',
       className: 'text-right',
       render: (row) => fmtAmount(row.reinsurerOutstandingAmount, row.currency),
       csv: (row) => row.reinsurerOutstandingAmount ?? '',
@@ -350,7 +356,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
 const AGING_COLUMN: ReportColumn = {
   key: 'agingDays',
   label: 'Aging (days)',
-  width: '50px',
+  width: '40px',
   className: 'text-right',
   render: (row) => <span className="text-gray-700">{fmtInt(row.agingDays)}</span>,
   csv: (row) => row.agingDays ?? '',
@@ -361,7 +367,7 @@ const AGING_COLUMN: ReportColumn = {
 const DOL_DOP_COLUMN: ReportColumn = {
   key: 'dolDop',
   label: 'DoL:DoP',
-  width: '50px',
+  width: '40px',
   className: 'text-right',
   render: (row) => <span className="text-gray-700">{fmtInt(row.dolDop)}</span>,
   csv: (row) => row.dolDop ?? '',
@@ -487,6 +493,8 @@ export function ClaimsReportTable() {
         <DataTable
           columns={columns}
           data={pagedRows}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(

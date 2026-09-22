@@ -173,7 +173,13 @@ const POLICY_NUMBER_COLUMN: ReportColumn = {
   key: 'policyNumber',
   label: 'Policy Number',
   width: '130px',
-  render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
+  render: (row) => (
+    <EndorsedReferencePill
+      id={row.placementId}
+      reference={row.policyNumber}
+      textClassName="text-[10px]"
+    />
+  ),
   csv: (row) => row.policyNumber,
 };
 
@@ -203,7 +209,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'policyType',
     label: 'Policy Type',
-    width: '120px',
+    width: '100px',
     render: (row) => row.policyType ?? <Muted>—</Muted>,
     csv: (row) => row.policyType ?? '',
   },
@@ -217,21 +223,21 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'periodOfInsurance',
     label: 'Period of Insurance',
-    width: '190px',
+    width: '150px',
     render: (row) => fmtPeriod(row.inceptionDate, row.expiryDate),
     csv: (row) => fmtPeriod(row.inceptionDate, row.expiryDate),
   },
   {
     key: 'currency',
     label: 'Currency',
-    width: '80px',
+    width: '60px',
     render: (row) => row.currency ?? '—',
     csv: (row) => row.currency ?? '',
   },
   {
     key: 'sumInsured100',
     label: '100% S.I',
-    width: '140px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.sumInsured, row.currency),
     csv: (row) => row.sumInsured ?? '',
@@ -239,7 +245,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'premium100',
     label: '100% Premium',
-    width: '140px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.premium, row.currency),
     csv: (row) => row.premium ?? '',
@@ -247,7 +253,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'facPremium',
     label: 'Fac Premium',
-    width: '140px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.grossPremium, row.currency),
     csv: (row) => row.grossPremium ?? '',
@@ -255,7 +261,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'exchangeRate',
     label: 'Exchange Rate',
-    width: '110px',
+    width: '90px',
     className: 'text-right',
     render: (row) => fmtRate(row.exchangeRate),
     csv: (row) => row.exchangeRate ?? '',
@@ -263,7 +269,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'brokerageAmount',
     label: 'Full Brokerage Amount',
-    width: '160px',
+    width: '130px',
     className: 'text-right',
     render: (row) => fmtAmount(row.brokerageAmount, row.currency),
     csv: (row) => row.brokerageAmount ?? '',
@@ -271,7 +277,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   {
     key: 'brokeragePaid',
     label: 'Brokerage Paid',
-    width: '140px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.brokeragePaid, row.currency),
     csv: (row) => row.brokeragePaid ?? '',
@@ -283,7 +289,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'wht',
     label: 'WHT',
-    width: '120px',
+    width: '100px',
     className: 'text-right',
     render: (row) => fmtAmount(row.withholdingTax, row.currency),
     csv: (row) => row.withholdingTax ?? '',
@@ -291,7 +297,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'whtPaid',
     label: 'WHT Paid',
-    width: '120px',
+    width: '100px',
     className: 'text-right',
     render: (row) => fmtAmount(row.withholdingTaxPaid, row.currency),
     csv: (row) => row.withholdingTaxPaid ?? '',
@@ -299,7 +305,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'nicLevy',
     label: 'NIC Levy',
-    width: '120px',
+    width: '100px',
     className: 'text-right',
     render: (row) => fmtAmount(row.nicLevy, row.currency),
     csv: (row) => row.nicLevy ?? '',
@@ -307,7 +313,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'nicLevyPaid',
     label: 'NIC Levy Paid',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.nicLevyPaid, row.currency),
     csv: (row) => row.nicLevyPaid ?? '',
@@ -402,6 +408,8 @@ export function BrokerageReportTable() {
         <DataTable
           columns={columns}
           data={pagedRows}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
