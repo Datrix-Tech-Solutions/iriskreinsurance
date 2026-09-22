@@ -75,6 +75,7 @@ describe('LegacyFinancialPlanner', () => {
   it('plans only evidenced partial amounts for PARTPAYMENT', () => {
     const fixture = makeFixture({
       paymentStatus: 'PARTPAYMENT',
+      currency: 'USD',
       paidFacPremium: '125.25',
       paidCommission: '25.25',
       brokeragePaid: '0',
@@ -91,10 +92,10 @@ describe('LegacyFinancialPlanner', () => {
 
     expect(
       plan.records.find((record) => record.kind === 'PREMIUM_RECEIPT'),
-    ).toMatchObject({ amount: '125.25' });
+    ).toMatchObject({ amount: '125.25', currency: 'USD' });
     expect(
       plan.records.find((record) => record.kind === 'REINSURER_DISBURSEMENT'),
-    ).toMatchObject({ amount: '125.25' });
+    ).toMatchObject({ amount: '125.25', currency: 'USD' });
   });
 
   it('creates no financial records for UNPAID even when zero fields are present', () => {
@@ -220,6 +221,256 @@ describe('LegacyFinancialPlanner', () => {
     ]);
   });
 
+  it('ignores sibling positive rows when deterministic participant rows reconcile to the offer receipt', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '300.00',
+      paidCommission: '0',
+      brokeragePaid: '0',
+      placements: [
+        placementRow({
+          reinsurer: 'Selected Re',
+          paidFacPremium: '300.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+        placementRow({
+          reinsurer: 'Sibling Re',
+          paidFacPremium: '200.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+      ],
+      participantRows: [
+        participantCrosswalk({
+          sourceReinsurerRow: 1,
+          matchClass: 'HIGH_CONFIDENCE',
+        }),
+        participantCrosswalk({
+          sourceReinsurerRow: 2,
+          matchClass: 'AMBIGUOUS',
+          legacyParticipantId: null,
+        }),
+      ],
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+      participantByLegacyId: new Map([
+        ['2001', { participantId: 'participant-1', closingId: 'closing-1' }],
+      ]),
+    });
+
+    expect(plan.blockedOffers).toEqual([]);
+    expect(plan.counts.premiumReceipts.create).toBe(1);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(1);
+    expect(plan.warnings).toEqual([
+      'Ignored 1 unmatched manager reinsurer row(s) for offer 1001; deterministic participant rows reconcile to offer-level Paid fac premium.',
+    ]);
+    expect(
+      plan.records.filter((record) => record.kind === 'REINSURER_DISBURSEMENT'),
+    ).toEqual([
+      expect.objectContaining({
+        amount: '300.00',
+        legacyParticipantId: '2001',
+      }),
+    ]);
+  });
+
+  it('blocks unresolved positive rows when deterministic rows do not explain the receipt amount', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '500.00',
+      paidCommission: '0',
+      brokeragePaid: '0',
+      placements: [
+        placementRow({
+          reinsurer: 'Selected Re',
+          paidFacPremium: '300.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+        placementRow({
+          reinsurer: 'Unresolved Re',
+          paidFacPremium: '200.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+      ],
+      participantRows: [
+        participantCrosswalk({ sourceReinsurerRow: 1, matchClass: 'EXACT' }),
+        participantCrosswalk({
+          sourceReinsurerRow: 2,
+          matchClass: 'REVIEW',
+          legacyParticipantId: null,
+        }),
+      ],
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+    });
+
+    expect(plan.counts.premiumReceipts.create).toBe(0);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(0);
+    expect(plan.blockedOffers).toEqual([
+      {
+        legacyOfferId: '1001',
+        reasons: ['non-deterministic-participant-disbursement:Unresolved Re'],
+      },
+    ]);
+  });
+
+  it('blocks a positive row with a conflicting non-null participant identity', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '300.00',
+      paidCommission: '0',
+      brokeragePaid: '0',
+      placements: [
+        placementRow({
+          reinsurer: 'Selected Re',
+          paidFacPremium: '300.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+        placementRow({
+          reinsurer: 'Other Offer Re',
+          paidFacPremium: '200.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+      ],
+      participantRows: [
+        participantCrosswalk({ sourceReinsurerRow: 1, matchClass: 'EXACT' }),
+        participantCrosswalk({
+          sourceReinsurerRow: 2,
+          matchClass: 'EXACT',
+          legacyOfferId: '9999',
+          legacyParticipantId: '2999',
+        }),
+      ],
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+    });
+
+    expect(plan.counts.premiumReceipts.create).toBe(0);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(0);
+    expect(plan.blockedOffers).toEqual([
+      {
+        legacyOfferId: '1001',
+        reasons: ['conflicting-participant-disbursement:Other Offer Re'],
+      },
+    ]);
+  });
+
+  it('blocks duplicate participant mappings for one source reinsurer row', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '300.00',
+      paidCommission: '0',
+      brokeragePaid: '0',
+      placements: [
+        placementRow({
+          reinsurer: 'Selected Re',
+          paidFacPremium: '300.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+      ],
+      participantRows: [
+        participantCrosswalk({
+          sourceReinsurerRow: 1,
+          matchClass: 'EXACT',
+          legacyParticipantId: '2001',
+        }),
+        participantCrosswalk({
+          sourceReinsurerRow: 1,
+          matchClass: 'EXACT',
+          legacyParticipantId: '2999',
+        }),
+      ],
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+    });
+
+    expect(plan.counts.premiumReceipts.create).toBe(0);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(0);
+    expect(plan.blockedOffers).toEqual([
+      {
+        legacyOfferId: '1001',
+        reasons: ['duplicate-participant-disbursement-mapping:Selected Re'],
+      },
+    ]);
+  });
+
+  it('blocks deterministic participant rows when their paid sum differs from the offer receipt', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '500.00',
+      paidCommission: '0',
+      brokeragePaid: '0',
+      placements: [
+        placementRow({
+          reinsurer: 'First Re',
+          paidFacPremium: '300.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+        placementRow({
+          reinsurer: 'Second Re',
+          paidFacPremium: '100.00',
+          paidCommission: '0',
+          brokeragePaid: '0',
+        }),
+      ],
+      participantRows: [
+        participantCrosswalk({
+          sourceReinsurerRow: 1,
+          matchClass: 'EXACT',
+          legacyParticipantId: '2001',
+        }),
+        participantCrosswalk({
+          sourceReinsurerRow: 2,
+          matchClass: 'EXACT',
+          legacyParticipantId: '2002',
+        }),
+      ],
+    });
+
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [
+        {
+          ...offer(),
+          participants: [{ participantId: '2001' }, { participantId: '2002' }],
+        } as NormalizedLegacyOffer,
+      ],
+      placementByOfferId: new Map([['1001', 'placement-1']]),
+    });
+
+    expect(plan.counts.premiumReceipts.create).toBe(0);
+    expect(plan.counts.reinsurerDisbursements.create).toBe(0);
+    expect(plan.blockedOffers).toEqual([
+      {
+        legacyOfferId: '1001',
+        reasons: ['participant-disbursement-sum-mismatch'],
+      },
+    ]);
+  });
+
   it('resolves participant evidence by source reinsurer row instead of first same-name crosswalk row', () => {
     const fixture = makeFixture({
       paymentStatus: 'PAID',
@@ -274,7 +525,7 @@ describe('LegacyFinancialPlanner', () => {
   it('aggregates multiple accepted manager rows into one participant disbursement', () => {
     const fixture = makeFixture({
       paymentStatus: 'PAID',
-      paidFacPremium: '700.00',
+      paidFacPremium: '1000.00',
       paidCommission: '0',
       brokeragePaid: '0',
       placements: [
@@ -367,6 +618,7 @@ describe('LegacyFinancialPlanner', () => {
 
 function makeFixture(input: {
   paymentStatus: string;
+  currency?: string;
   paidFacPremium: string;
   paidCommission: string;
   brokeragePaid: string;
@@ -385,7 +637,7 @@ function makeFixture(input: {
       policies: [
         {
           'Policy #': 'POL-1',
-          Currency: 'GHS',
+          Currency: input.currency ?? 'GHS',
           'Date Closed': '15-01-2026',
           'Payment Status': input.paymentStatus,
           'Paid fac premium': input.paidFacPremium,
@@ -460,7 +712,8 @@ function participantCrosswalk(input: {
   sourceReinsurerRow: number;
   matchClass: string;
   reinsurer?: string;
-  legacyParticipantId?: string;
+  legacyOfferId?: string;
+  legacyParticipantId?: string | null;
 }) {
   return {
     sourceFile: 'joined_jan_2026.json',
@@ -470,8 +723,11 @@ function participantCrosswalk(input: {
     closedDate: '2026-01-15',
     policyNumber: 'POL-1',
     reinsurer: input.reinsurer ?? 'Saha Re',
-    legacyOfferId: '1001',
-    legacyParticipantId: input.legacyParticipantId ?? '2001',
+    legacyOfferId: input.legacyOfferId ?? '1001',
+    legacyParticipantId:
+      input.legacyParticipantId === undefined
+        ? '2001'
+        : input.legacyParticipantId,
     matchClass: input.matchClass,
   };
 }

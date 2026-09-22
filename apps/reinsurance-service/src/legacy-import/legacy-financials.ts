@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  LEGACY_TOLERANCES,
   LEGACY_SOURCE_SYSTEM,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
@@ -134,6 +135,10 @@ type DisbursementGroup = {
   contributingRows: LegacyFinancialContributingRow[];
 };
 
+type UnresolvedPaidPlacementRow = {
+  reason: string;
+};
+
 export class LegacyFinancialSourceReader {
   read(options: LegacyFinancialSourceOptions) {
     const offers = readJson<CrosswalkRow[]>(options.offerCrosswalkFile);
@@ -181,9 +186,8 @@ export class LegacyFinancialPlanner {
     const records: LegacyFinancialPlanRecord[] = [];
     const warnings: string[] = [];
     const blockedOffers = new Map<string, Set<string>>();
-    const participantRows = participantRowsBySourceIdentity(
-      source.participantCrosswalk,
-    );
+    const { participantRows, duplicateParticipantIdentities } =
+      participantRowsBySourceIdentity(source.participantCrosswalk);
 
     for (const offer of input.normalizedOffers) {
       if (input.excludedOfferIds?.has(offer.offerId)) continue;
@@ -221,26 +225,48 @@ export class LegacyFinancialPlanner {
 
       const disbursementGroups = new Map<string, DisbursementGroup>();
       const duplicateFingerprints = new Set<string>();
+      const unresolvedPaidRows: UnresolvedPaidPlacementRow[] = [];
+      let deterministicPaidAmount = money(0);
       for (const placement of row.reinsurance_placements ?? []) {
         const paidFacPremium = paidFacPremiumAmount(placement);
         if (!paidFacPremium.gt(0) || paymentStatus === 'UNPAID') continue;
 
         const sourceReinsurerRow =
           (row.reinsurance_placements?.indexOf(placement) ?? -1) + 1;
-        const participantMatch = participantRows.get(
-          participantSourceIdentity(crosswalk, sourceReinsurerRow),
+        const sourceIdentity = participantSourceIdentity(
+          crosswalk,
+          sourceReinsurerRow,
         );
+        const reinsurer = clean(placement.Reinsurer);
+        if (duplicateParticipantIdentities.has(sourceIdentity)) {
+          addBlockedReason(
+            blockedOffers,
+            offer.offerId,
+            `duplicate-participant-disbursement-mapping:${reinsurer}`,
+          );
+          continue;
+        }
+        const participantMatch = participantRows.get(sourceIdentity);
+        if (
+          participantMatch?.legacyParticipantId &&
+          participantMatch.legacyOfferId !== offer.offerId
+        ) {
+          addBlockedReason(
+            blockedOffers,
+            offer.offerId,
+            `conflicting-participant-disbursement:${reinsurer}`,
+          );
+          continue;
+        }
         if (
           !participantMatch ||
           participantMatch.legacyOfferId !== offer.offerId ||
           !participantMatch?.legacyParticipantId ||
           !['EXACT', 'HIGH_CONFIDENCE'].includes(participantMatch.matchClass)
         ) {
-          addBlockedReason(
-            blockedOffers,
-            offer.offerId,
-            `non-deterministic-participant-disbursement:${clean(placement.Reinsurer)}`,
-          );
+          unresolvedPaidRows.push({
+            reason: `non-deterministic-participant-disbursement:${reinsurer}`,
+          });
           continue;
         }
         const fingerprint = disbursementSourceFingerprint({
@@ -279,6 +305,7 @@ export class LegacyFinancialPlanner {
           }
           existingGroup.amount = existingGroup.amount.add(paidFacPremium);
           existingGroup.contributingRows.push(contributingRow);
+          deterministicPaidAmount = deterministicPaidAmount.add(paidFacPremium);
           continue;
         }
         const linked = input.participantByLegacyId?.get(legacyParticipantId);
@@ -295,6 +322,29 @@ export class LegacyFinancialPlanner {
           paymentStatus: clean(placement['Payment Status']),
           contributingRows: [contributingRow],
         });
+        deterministicPaidAmount = deterministicPaidAmount.add(paidFacPremium);
+      }
+
+      if (!blockedOffers.has(offer.offerId)) {
+        const reconcilesToOfferPaid = moneyWithinTolerance(
+          deterministicPaidAmount,
+          paidFacPremium,
+        );
+        if (!reconcilesToOfferPaid && unresolvedPaidRows.length > 0) {
+          for (const unresolved of unresolvedPaidRows) {
+            addBlockedReason(blockedOffers, offer.offerId, unresolved.reason);
+          }
+        } else if (!reconcilesToOfferPaid) {
+          addBlockedReason(
+            blockedOffers,
+            offer.offerId,
+            'participant-disbursement-sum-mismatch',
+          );
+        } else if (unresolvedPaidRows.length > 0) {
+          warnings.push(
+            `Ignored ${unresolvedPaidRows.length} unmatched manager reinsurer row(s) for offer ${offer.offerId}; deterministic participant rows reconcile to offer-level Paid fac premium.`,
+          );
+        }
       }
 
       for (const group of disbursementGroups.values()) {
@@ -464,12 +514,18 @@ function acceptedRowsByOffer(rows: CrosswalkRow[]) {
 }
 
 function participantRowsBySourceIdentity(rows: CrosswalkRow[]) {
-  const byIdentity = new Map<string, CrosswalkRow>();
+  const participantRows = new Map<string, CrosswalkRow>();
+  const duplicateParticipantIdentities = new Set<string>();
   for (const row of rows) {
     if (!row.sourceReinsurerRow) continue;
-    byIdentity.set(participantSourceIdentity(row, row.sourceReinsurerRow), row);
+    const identity = participantSourceIdentity(row, row.sourceReinsurerRow);
+    if (participantRows.has(identity)) {
+      duplicateParticipantIdentities.add(identity);
+      continue;
+    }
+    participantRows.set(identity, row);
   }
-  return byIdentity;
+  return { participantRows, duplicateParticipantIdentities };
 }
 
 function participantSourceIdentity(
@@ -531,6 +587,10 @@ function contributingDisbursementRow(input: {
 
 function paidFacPremiumAmount(row: Record<string, unknown>) {
   return money(row['Paid fac premium']);
+}
+
+function moneyWithinTolerance(left: Money, right: Money) {
+  return !left.subtract(right).abs().gt(Number(LEGACY_TOLERANCES.money));
 }
 
 export function previousLegacyReinsurerDisbursementAmount(input: {
@@ -665,6 +725,9 @@ class Money {
   }
   add(other: Money) {
     return new Money(this.cents + other.cents);
+  }
+  abs() {
+    return new Money(this.cents < 0 ? -this.cents : this.cents);
   }
   gt(value: number) {
     return this.cents > BigInt(Math.round(value * 100));
