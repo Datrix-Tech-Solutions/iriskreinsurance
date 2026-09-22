@@ -118,6 +118,8 @@ export function ReinsurersReportTable() {
         <DataTable
           columns={columns}
           data={pagedRows}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           toolbarTrailing={rowsPerPageControl}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
