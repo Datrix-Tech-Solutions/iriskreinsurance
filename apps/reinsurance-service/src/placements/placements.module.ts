@@ -34,8 +34,13 @@ import { PlacementsService } from './placements.service';
 import { ReinsuranceDashboardController } from './dashboard/dashboard.controller';
 import { ReinsuranceDashboardService } from './dashboard/dashboard.service';
 import { ReinsuranceMoneyHelper } from './reinsurance-money.helper';
+import { BrokerageReportService } from './reports/brokerage-report.service';
+import { CedantsReportService } from './reports/cedants-report.service';
+import { ClaimsReportService } from './reports/claims-report.service';
+import { FacultativeReportService } from './reports/facultative-report.service';
 import { ReinsuranceReportsController } from './reports/reinsurance-reports.controller';
 import { PremiumsReportService } from './reports/premiums-report.service';
+import { ReinsurersReportService } from './reports/reinsurers-report.service';
 import { S3DocumentStorageService } from './documents/storage/s3-document-storage.service';
 import { TenantDocumentProfileClient } from './documents/tenant-document-profile.client';
 import { ReinsuranceClaimRowStateService } from './worklists/claim-row-state.service';
@@ -60,6 +65,11 @@ import { ReinsuranceWorklistsController } from './worklists/reinsurance-worklist
     PlacementsService,
     ReinsuranceDashboardService,
     PremiumsReportService,
+    CedantsReportService,
+    ReinsurersReportService,
+    FacultativeReportService,
+    BrokerageReportService,
+    ClaimsReportService,
     ReinsuranceClaimRowStateService,
     ReinsuranceClaimsWorklistService,
     ReinsuranceFacultativeRowStateService,

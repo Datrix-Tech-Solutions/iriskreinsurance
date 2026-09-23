@@ -122,6 +122,27 @@ export interface PremiumsReportMeta {
   totalPages: number;
 }
 
+export interface PremiumsStatsCurrencyAmount {
+  code: string;
+  amount: number;
+}
+
+export interface PremiumsStatsTopCedant {
+  cedantId: string;
+  name: string;
+  count: number;
+  premiumByCurrency: PremiumsStatsCurrencyAmount[];
+}
+
+export interface PremiumsStats {
+  dueByCurrency: PremiumsStatsCurrencyAmount[];
+  paidByCurrency: PremiumsStatsCurrencyAmount[];
+  outstandingByCurrency: PremiumsStatsCurrencyAmount[];
+  brokerageEarnedByCurrency: PremiumsStatsCurrencyAmount[];
+  collectionRate: number;
+  topCedantsByPaidOffers: PremiumsStatsTopCedant[];
+}
+
 interface PremiumsReportResponse {
   items: PremiumReportRow[];
   summary: Omit<PremiumsReportSummary, 'totalCollected' | 'outstanding' | 'currencySymbol'>;
@@ -154,6 +175,9 @@ function normalizeReportParams(params: PremiumsReportParams = {}) {
 
 export const premiumsReportKey = (params: PremiumsReportParams = {}) =>
   ['reinsurance', 'reports', 'premiums', normalizeReportParams(params)] as const;
+
+export const premiumsStatsKey = (params: { since: string; until?: string }) =>
+  ['reinsurance', 'reports', 'premiums', 'stats', params] as const;
 
 function normalizeSummary(summary: PremiumsReportResponse['summary']): PremiumsReportSummary {
   const firstCurrency = summary.totalsByCurrency[0];
@@ -211,4 +235,23 @@ export async function downloadPremiumsReportCsv(params: PremiumsReportParams): P
     responseType: 'blob',
   });
   return res.data;
+}
+
+export function usePremiumsStats(
+  params: { since: string; until?: string },
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: premiumsStatsKey(params),
+    queryFn: async () => {
+      const res = await api.get<PremiumsStats>(`${PREMIUMS_REPORT_BASE}/stats`, {
+        params: {
+          since: params.since,
+          ...(params.until ? { until: params.until } : {}),
+        },
+      });
+      return res.data;
+    },
+    enabled: options.enabled ?? true,
+  });
 }

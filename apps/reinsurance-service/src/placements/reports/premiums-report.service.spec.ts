@@ -330,6 +330,9 @@ describe('PremiumsReportService', () => {
       reinsurerDisbursed: 2622.75,
       reinsurerOutstanding: 526.1,
     });
+    expect(sql).toContain('"PlacementEndorsementClosing" ec');
+    expect(sql).toContain('e."status" = \'CLOSED\'');
+    expect(sql).toContain('ROW_NUMBER() OVER');
     expect(sql).not.toContain('PlacementPaymentAllocation');
     expect(sql).not.toContain('PlacementNote');
     expect(sql).not.toContain('ReinsuranceAccountingOutbox');
@@ -359,6 +362,108 @@ describe('PremiumsReportService', () => {
     expect(sql).toContain('"effectiveSettlementCredit"');
     expect(sql).toContain('"bankConfirmedAt"');
     expect(sql).toContain('"paymentStatus" IN');
+  });
+
+  it('summarizes Premiums stats in one tenant-scoped aggregate query', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([
+      {
+        placementId: 'placement-paid',
+        cedantId: 'cedant-1',
+        cedantName: 'Acme Insurance',
+        currency: 'GHS',
+        premium: '1200.00',
+        currentObligation: '1000.00',
+        currentMandatoryDeductions: '100.00',
+        currentPaid: '900.00',
+        currentOutstanding: '0.00',
+        startObligation: '1000.00',
+        startMandatoryDeductions: '100.00',
+        startPaid: '0.00',
+        endObligation: '1000.00',
+        endMandatoryDeductions: '100.00',
+        endPaid: '900.00',
+        endBrokerage: '50.00',
+        paidInPeriod: '900.00',
+      },
+      {
+        placementId: 'placement-partial',
+        cedantId: 'cedant-2',
+        cedantName: 'Best Insurance',
+        currency: 'USD',
+        premium: '700.00',
+        currentObligation: '500.00',
+        currentMandatoryDeductions: '0.00',
+        currentPaid: '100.00',
+        currentOutstanding: '400.00',
+        startObligation: '500.00',
+        startMandatoryDeductions: '0.00',
+        startPaid: '0.00',
+        endObligation: '500.00',
+        endMandatoryDeductions: '0.00',
+        endPaid: '100.00',
+        endBrokerage: '20.00',
+        paidInPeriod: '100.00',
+      },
+    ]);
+
+    const result = await service.findPremiumStats('tenant-1', {
+      since: '2026-09-01T00:00:00.000Z',
+      until: '2026-09-30T23:59:59.999Z',
+    });
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(result.dueByCurrency).toEqual([
+      { code: 'GHS', amount: 1000 },
+      { code: 'USD', amount: 500 },
+    ]);
+    expect(result.paidByCurrency).toEqual([
+      { code: 'GHS', amount: 900 },
+      { code: 'USD', amount: 100 },
+    ]);
+    expect(result.outstandingByCurrency).toEqual([
+      { code: 'USD', amount: 400 },
+    ]);
+    expect(result.brokerageEarnedByCurrency).toEqual([
+      { code: 'GHS', amount: 45 },
+      { code: 'USD', amount: 4 },
+    ]);
+    expect(result.collectionRate).toBe(71.43);
+    expect(result.topCedantsByPaidOffers).toEqual([
+      {
+        cedantId: 'cedant-1',
+        name: 'Acme Insurance',
+        count: 1,
+        premiumByCurrency: [{ code: 'GHS', amount: 1200 }],
+      },
+    ]);
+
+    const firstQuery = prisma.$queryRaw.mock.calls[0]?.[0] as
+      | { sql?: string }
+      | undefined;
+    const sql = firstQuery?.sql ?? '';
+    expect(sql).toContain('WHERE p."tenantId" =');
+    expect(sql).toContain('"status" IN (');
+    expect(sql).toContain('PARTIALLY_PLACED');
+    expect(sql).toContain('PlacementEndorsementClosing');
+    expect(sql).toContain('BANK_CONFIRMED');
+  });
+
+  it('returns empty Premiums stats without mixing currencies or fabricating totals', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
+
+    const result = await service.findPremiumStats('tenant-1', {
+      since: '2026-09-01T00:00:00.000Z',
+      until: '2026-09-30T23:59:59.999Z',
+    });
+
+    expect(result).toEqual({
+      dueByCurrency: [],
+      paidByCurrency: [],
+      outstandingByCurrency: [],
+      brokerageEarnedByCurrency: [],
+      collectionRate: 0,
+      topCedantsByPaidOffers: [],
+    });
   });
 
   it('exports the full filtered CSV through the server-side report query', async () => {

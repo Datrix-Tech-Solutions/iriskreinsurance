@@ -14,16 +14,14 @@ import {
   useRiskTypeOptions,
   useCurrencyOptions,
   useBrokerageReport,
-  useReportPagination,
 } from '@/hooks';
 import {
   BrokerageReportRow,
-  BrokerageReinsurerRow,
   BrokerageReportParams,
+  downloadBrokerageReportCsv,
 } from '@/hooks/reinsurance/useBrokerageReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
-import { exportToCsv } from '@/lib/exportCsv';
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
@@ -74,107 +72,16 @@ function fmtRate(value: number | null): string {
   return value == null ? '—' : value.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
-/* ── display row ──
- * One row per confirmed reinsurer closing (shared placement cells repeated).
- * Brokerage / WHT / NIC come from the reinsurer's credit note; the "*Paid"
- * figures are those amounts pro-rated by how much premium has been collected. */
-interface BrokerageReportDisplayRow {
-  id: string;
-  placementId: string;
-  policyNumber: string;
-  title: string;
-  cedantName: string;
-  policyType: string | null;
-  inceptionDate: string | null;
-  expiryDate: string | null;
-  currency: string | null;
-  sumInsured: number | null;
-  premium: number | null;
-  exchangeRate: number | null;
-  reinsurerId: string | null;
-  reinsurerName: string | null;
-  grossPremium: number | null;
-  brokerageAmount: number | null;
-  brokeragePaid: number | null;
-  withholdingTax: number | null;
-  withholdingTaxPaid: number | null;
-  nicLevy: number | null;
-  nicLevyPaid: number | null;
-}
-
-function flattenRow(
-  r: BrokerageReportRow,
-  reinsurer: BrokerageReinsurerRow | null,
-): BrokerageReportDisplayRow {
-  return {
-    id: reinsurer ? `${r.id}:${reinsurer.reinsurerId}` : r.id,
-    placementId: r.id,
-    policyNumber: r.policyNumber,
-    title: r.title,
-    cedantName: r.cedantName,
-    policyType: r.policyType,
-    inceptionDate: r.inceptionDate,
-    expiryDate: r.expiryDate,
-    currency: r.currency,
-    sumInsured: r.sumInsured,
-    premium: r.premium,
-    exchangeRate: r.exchangeRate,
-    reinsurerId: reinsurer?.reinsurerId ?? null,
-    reinsurerName: reinsurer?.reinsurerName ?? null,
-    grossPremium: reinsurer?.grossPremium ?? null,
-    brokerageAmount: reinsurer?.brokerageAmount ?? null,
-    brokeragePaid: reinsurer?.brokeragePaid ?? null,
-    withholdingTax: reinsurer?.withholdingTax ?? null,
-    withholdingTaxPaid: reinsurer?.withholdingTaxPaid ?? null,
-    nicLevy: reinsurer?.nicLevy ?? null,
-    nicLevyPaid: reinsurer?.nicLevyPaid ?? null,
-  };
-}
-
-/** Cedant scope: one row per placement, with the per-reinsurer fac premium /
- *  brokerage figures summed across every accepted reinsurer. */
-function aggregateRow(r: BrokerageReportRow): BrokerageReportDisplayRow {
-  const sum = (pick: (re: BrokerageReinsurerRow) => number | null): number | null =>
-    r.reinsurers.length
-      ? r.reinsurers.reduce((total, re) => total + (pick(re) ?? 0), 0)
-      : null;
-
-  return {
-    id: r.id,
-    placementId: r.id,
-    policyNumber: r.policyNumber,
-    title: r.title,
-    cedantName: r.cedantName,
-    policyType: r.policyType,
-    inceptionDate: r.inceptionDate,
-    expiryDate: r.expiryDate,
-    currency: r.currency,
-    sumInsured: r.sumInsured,
-    premium: r.premium,
-    exchangeRate: r.exchangeRate,
-    reinsurerId: null,
-    reinsurerName: null,
-    grossPremium: sum((re) => re.grossPremium),
-    brokerageAmount: sum((re) => re.brokerageAmount),
-    brokeragePaid: sum((re) => re.brokeragePaid),
-    withholdingTax: null,
-    withholdingTaxPaid: null,
-    nicLevy: null,
-    nicLevyPaid: null,
-  };
-}
-
 /* ── columns ── */
-type ReportColumn = Column<BrokerageReportDisplayRow> & {
-  csv?: (row: BrokerageReportDisplayRow) => string | number;
-};
+type ReportColumn = Column<BrokerageReportRow>;
 
 const POLICY_NUMBER_COLUMN: ReportColumn = {
   key: 'policyNumber',
   label: 'Policy Number',
   width: '130px',
-  render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
-  csv: (row) => row.policyNumber,
+  render: (row) => (
+    <EndorsedReferencePill id={row.placementId} reference={row.policyNumber ?? row.placementId} />
+  ),
 };
 
 const REINSURER_NAME_COLUMN: ReportColumn = {
@@ -187,7 +94,6 @@ const REINSURER_NAME_COLUMN: ReportColumn = {
     ) : (
       <Muted>—</Muted>
     ),
-  csv: (row) => row.reinsurerName ?? '',
 };
 
 // Placement-level cells plus the fac-premium / brokerage figures — shared by both
@@ -198,35 +104,30 @@ const SHARED_COLUMNS: ReportColumn[] = [
     label: 'Insured',
     width: 'minmax(140px, 1fr)',
     render: (row) => <span className="text-gray-700">{row.title}</span>,
-    csv: (row) => row.title,
   },
   {
     key: 'policyType',
     label: 'Policy Type',
     width: '120px',
     render: (row) => row.policyType ?? <Muted>—</Muted>,
-    csv: (row) => row.policyType ?? '',
   },
   {
     key: 'cedantName',
     label: 'Cedants',
     width: 'minmax(120px, 1fr)',
     render: (row) => <span className="text-gray-700">{row.cedantName}</span>,
-    csv: (row) => row.cedantName,
   },
   {
     key: 'periodOfInsurance',
     label: 'Period of Insurance',
     width: '190px',
     render: (row) => fmtPeriod(row.inceptionDate, row.expiryDate),
-    csv: (row) => fmtPeriod(row.inceptionDate, row.expiryDate),
   },
   {
     key: 'currency',
     label: 'Currency',
     width: '80px',
     render: (row) => row.currency ?? '—',
-    csv: (row) => row.currency ?? '',
   },
   {
     key: 'sumInsured100',
@@ -234,7 +135,6 @@ const SHARED_COLUMNS: ReportColumn[] = [
     width: '140px',
     className: 'text-right',
     render: (row) => fmtAmount(row.sumInsured, row.currency),
-    csv: (row) => row.sumInsured ?? '',
   },
   {
     key: 'premium100',
@@ -242,7 +142,6 @@ const SHARED_COLUMNS: ReportColumn[] = [
     width: '140px',
     className: 'text-right',
     render: (row) => fmtAmount(row.premium, row.currency),
-    csv: (row) => row.premium ?? '',
   },
   {
     key: 'facPremium',
@@ -250,7 +149,6 @@ const SHARED_COLUMNS: ReportColumn[] = [
     width: '140px',
     className: 'text-right',
     render: (row) => fmtAmount(row.grossPremium, row.currency),
-    csv: (row) => row.grossPremium ?? '',
   },
   {
     key: 'exchangeRate',
@@ -258,7 +156,6 @@ const SHARED_COLUMNS: ReportColumn[] = [
     width: '110px',
     className: 'text-right',
     render: (row) => fmtRate(row.exchangeRate),
-    csv: (row) => row.exchangeRate ?? '',
   },
   {
     key: 'brokerageAmount',
@@ -266,15 +163,13 @@ const SHARED_COLUMNS: ReportColumn[] = [
     width: '160px',
     className: 'text-right',
     render: (row) => fmtAmount(row.brokerageAmount, row.currency),
-    csv: (row) => row.brokerageAmount ?? '',
   },
   {
     key: 'brokeragePaid',
-    label: 'Brokerage Paid',
+    label: 'Brokerage Realized',
     width: '140px',
     className: 'text-right',
     render: (row) => fmtAmount(row.brokeragePaid, row.currency),
-    csv: (row) => row.brokeragePaid ?? '',
   },
 ];
 
@@ -286,15 +181,13 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
     width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.withholdingTax, row.currency),
-    csv: (row) => row.withholdingTax ?? '',
   },
   {
     key: 'whtPaid',
-    label: 'WHT Paid',
+    label: 'WHT Realized',
     width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.withholdingTaxPaid, row.currency),
-    csv: (row) => row.withholdingTaxPaid ?? '',
   },
   {
     key: 'nicLevy',
@@ -302,15 +195,13 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
     width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.nicLevy, row.currency),
-    csv: (row) => row.nicLevy ?? '',
   },
   {
     key: 'nicLevyPaid',
-    label: 'NIC Levy Paid',
+    label: 'NIC Levy Realized',
     width: '130px',
     className: 'text-right',
     render: (row) => fmtAmount(row.nicLevyPaid, row.currency),
-    csv: (row) => row.nicLevyPaid ?? '',
   },
 ];
 
@@ -338,6 +229,8 @@ export function BrokerageReportTable() {
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<BrokerageReportParams | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
@@ -351,49 +244,69 @@ export function BrokerageReportTable() {
     setPage(1);
   };
 
-  const { rows, isLoading } = useBrokerageReport(reportParams ?? {}, {
+  const { rows, meta, isLoading } = useBrokerageReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
   const handleRunFilter = () => {
+    const nextPage = 1;
+    setPage(nextPage);
     setReportParams({
       startDate,
       endDate,
+      page: nextPage,
+      limit: pageSize,
       riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
       currencies: currencies.length ? currencies : undefined,
       paymentStatuses: paymentStatuses.length
         ? (paymentStatuses as CedantPaymentStatus[])
         : undefined,
       cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
+      reinsurerIds: scope === 'reinsurer' && reinsurerIds.length ? reinsurerIds : undefined,
+      scope,
     });
-    setPage(1);
   };
 
   const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
 
-  // Cedants scope: one aggregated row per placement (brokerage summed across
-  // reinsurers). Reinsurer scope: one row per confirmed reinsurer closing,
-  // narrowed to the selected reinsurers.
-  const displayRows = useMemo<BrokerageReportDisplayRow[]>(() => {
-    if (scope === 'cedant') return rows.map(aggregateRow);
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+    if (!reportParams) return;
+    setReportParams({ ...reportParams, page: nextPage, limit: pageSize });
+  };
 
-    const flat = rows.flatMap((r) =>
-      r.reinsurers.length ? r.reinsurers.map((re) => flattenRow(r, re)) : [flattenRow(r, null)],
-    );
-    if (reinsurerIds.length) {
-      const selected = new Set(reinsurerIds);
-      return flat.filter((row) => row.reinsurerId != null && selected.has(row.reinsurerId));
-    }
-    return flat;
-  }, [rows, scope, reinsurerIds]);
+  const rowsPerPageControl = (
+    <select
+      value={pageSize}
+      onChange={(event) => {
+        const nextLimit = Number(event.target.value);
+        setPageSize(nextLimit);
+        setPage(1);
+        if (reportParams) {
+          setReportParams({ ...reportParams, page: 1, limit: nextLimit });
+        }
+      }}
+      className="h-8 rounded border border-gray-200 bg-white px-2 text-xs text-gray-600"
+      aria-label="Rows per page"
+    >
+      {[25, 50, 100, 200].map((size) => (
+        <option key={size} value={size}>
+          {size} rows
+        </option>
+      ))}
+    </select>
+  );
 
-  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } =
-    useReportPagination(displayRows);
-
-  const handleExport = () => {
-    const headers = columns.map((c) => c.label);
-    const data = displayRows.map((row) => columns.map((c) => c.csv?.(row) ?? ''));
-    exportToCsv(`brokerage-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
+  const handleExport = async () => {
+    if (!reportParams) return;
+    const csv = await downloadBrokerageReportCsv(reportParams);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `brokerage-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -401,12 +314,12 @@ export function BrokerageReportTable() {
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={pagedRows}
+          data={rows}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
-          onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
+          onExport={reportParams && rows.length > 0 ? handleExport : undefined}
           toolbarTrailing={rowsPerPageControl}
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the
@@ -510,8 +423,8 @@ export function BrokerageReportTable() {
               : 'Select a period and click Run Filter to generate the report'
           }
           currentPage={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
+          totalPages={meta.totalPages}
+          onPageChange={handlePageChange}
           noInternalScroll
         />
       </div>

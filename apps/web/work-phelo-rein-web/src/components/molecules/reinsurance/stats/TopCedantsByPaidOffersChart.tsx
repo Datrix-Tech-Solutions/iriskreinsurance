@@ -1,20 +1,16 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useTopCedantsByPaidOffers } from '@/hooks';
-import type { Facultative } from '@/types/reinsurance';
+import type { PremiumsStatsTopCedant } from '@/hooks';
 import {
   TopCedantsBarChart,
   type TopCedantRow,
 } from '@/components/molecules/reinsurance/stats/TopCedantsBarChart';
 
 interface TopCedantsByPaidOffersChartProps {
-  /** Closing-status placements to rank (same set the Premiums row's balances use). */
-  placements: Facultative[];
-  /** Window start — an offer counts once its cedant premium is settled in full within it. */
-  sinceIso: string;
-  /** Window end; omit to run up to now. */
-  untilIso?: string;
+  /** Server-ranked cedants whose offers became fully paid in the selected period. */
+  rows: PremiumsStatsTopCedant[];
+  isLoading?: boolean;
   /** Whether the window is a past calendar year (changes the empty-state wording). */
   isPastYear?: boolean;
   /** Overrides the card's default height (`h-72`). */
@@ -22,20 +18,19 @@ interface TopCedantsByPaidOffersChartProps {
 }
 
 export function TopCedantsByPaidOffersChart({
-  placements,
-  sinceIso,
-  untilIso,
+  rows: paidRows,
+  isLoading = false,
   isPastYear = false,
   className,
 }: TopCedantsByPaidOffersChartProps) {
-  const { rows: paidRows, isLoading } = useTopCedantsByPaidOffers(placements, sinceIso, untilIso);
-
   const rows = useMemo<TopCedantRow[]>(
     () =>
       paidRows.map((r) => ({
         name: r.name,
         count: r.count,
-        premiumByCurrency: r.premiumByCurrency,
+        premiumByCurrency: new Map(
+          r.premiumByCurrency.map((amount) => [amount.code, amount.amount]),
+        ),
       })),
     [paidRows],
   );

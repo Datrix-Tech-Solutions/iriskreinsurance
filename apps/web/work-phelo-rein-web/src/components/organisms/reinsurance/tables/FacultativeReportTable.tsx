@@ -15,9 +15,9 @@ import {
   useRiskClassOptions,
   useCurrencyOptions,
   useFacultativeReport,
-  useReportPagination,
 } from '@/hooks';
 import {
+  downloadFacultativeReportCsv,
   FacultativeReportRow,
   FacultativeReinsurerBreakdown,
   FacultativeReportParams,
@@ -28,7 +28,7 @@ import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
-import { exportToCsv } from '@/lib/exportCsv';
+import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
 
 const STATUS_OPTIONS = FACULTATIVE_STATUSES.map((s) => ({
   value: s,
@@ -52,6 +52,8 @@ const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = 
   { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Paid', label: 'Paid' },
 ];
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
 
 // Same scope filter as the Premiums report — a placement viewed from either the
 // cedant side (one row) or the reinsurer side (one row per accepted reinsurer).
@@ -226,7 +228,8 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
     key: 'insured',
     label: 'Insured',
     width: 'minmax(120px, 0.8fr)',
-    render: (row) => (row.title ? <span className="text-gray-700">{row.title}</span> : <Muted>—</Muted>),
+    render: (row) =>
+      row.title ? <span className="text-gray-700">{row.title}</span> : <Muted>—</Muted>,
     csv: (row) => row.title,
   },
   {
@@ -278,7 +281,8 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
     label: 'Fac. Share',
     width: '80px',
     className: 'text-right',
-    render: (row) => (row.facultativeOfferPercent != null ? `${row.facultativeOfferPercent}%` : '—'),
+    render: (row) =>
+      row.facultativeOfferPercent != null ? `${row.facultativeOfferPercent}%` : '—',
     csv: (row) => (row.facultativeOfferPercent != null ? `${row.facultativeOfferPercent}%` : ''),
   },
   rightAmount('facSumInsured', 'Fac Sum Insured', (row) => fac(row).facSumInsured),
@@ -298,8 +302,17 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
       return pct != null ? `${pct}%` : '';
     },
   },
-  rightAmount('cedantCommissionAmount', 'Cedant Commission', (row) => fac(row).cedantCommissionAmount),
-  rightAmount('netPremiumDueIrisk', 'Net Premium Due iRisk', (row) => fac(row).netPremiumDueIrisk, '150px'),
+  rightAmount(
+    'cedantCommissionAmount',
+    'Cedant Commission',
+    (row) => fac(row).cedantCommissionAmount,
+  ),
+  rightAmount(
+    'netPremiumDueIrisk',
+    'Net Premium Due iRisk',
+    (row) => fac(row).netPremiumDueIrisk,
+    '150px',
+  ),
   rightAmount(
     'netPremiumDueIriskPaid',
     'Net Premium Due iRisk Paid',
@@ -307,7 +320,7 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
     '160px',
   ),
   rightAmount('brokerage', 'Brokerage', (row) => fac(row).brokerage, '120px'),
-  rightAmount('brokeragePaid', 'Brokerage Paid', (row) => fac(row).brokeragePaid, '130px'),
+  rightAmount('brokeragePaid', 'Brokerage Realized', (row) => fac(row).brokeragePaid, '130px'),
   rightAmount(
     'netPremiumDueReinsurer',
     'Net Premium Due Reinsurer',
@@ -389,7 +402,12 @@ const REINSURER_SCOPE_COLUMNS: ReportColumn[] = [
   rightAmount('facPremium', 'Fac Premium', (row) => re(row)?.facPremium ?? null, '130px'),
   rightAmount('paidFacPremium', 'Paid Fac Premium', (row) => re(row)?.paidFacPremium ?? null),
   rightAmount('brokerage', 'Brokerage', (row) => re(row)?.brokerage ?? null, '120px'),
-  rightAmount('brokeragePaid', 'Brokerage Paid', (row) => re(row)?.brokeragePaid ?? null, '130px'),
+  rightAmount(
+    'brokeragePaid',
+    'Brokerage Realized',
+    (row) => re(row)?.brokeragePaid ?? null,
+    '130px',
+  ),
   rightAmount('wht', 'WHT', (row) => re(row)?.withholdingTax ?? null, '110px'),
   rightAmount('whtPaid', 'Paid WHT', (row) => re(row)?.withholdingTaxPaid ?? null, '110px'),
   rightAmount('nicLevy', 'NIC Levy', (row) => re(row)?.nicLevy ?? null, '110px'),
@@ -400,7 +418,12 @@ const REINSURER_SCOPE_COLUMNS: ReportColumn[] = [
     (row) => re(row)?.netPremiumDueReinsurer ?? null,
     '160px',
   ),
-  rightAmount('netPremiumPaid', 'Net Premium Paid', (row) => re(row)?.netPremiumPaid ?? null, '150px'),
+  rightAmount(
+    'netPremiumPaid',
+    'Net Premium Paid',
+    (row) => re(row)?.netPremiumPaid ?? null,
+    '150px',
+  ),
   OFFER_STATUS_COLUMN,
   PAYMENT_STATUS_COLUMN,
 ];
@@ -427,6 +450,8 @@ export function FacultativeReportTable() {
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<FacultativeReportParams | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
@@ -440,7 +465,7 @@ export function FacultativeReportTable() {
     setPage(1);
   };
 
-  const { rows, isLoading } = useFacultativeReport(reportParams ?? {}, {
+  const { rows, currencyTotals, isLoading, meta } = useFacultativeReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
@@ -453,10 +478,14 @@ export function FacultativeReportTable() {
       currencies: currencies.length ? currencies : undefined,
       statuses: statuses.length ? (statuses as FacultativeStatus[]) : undefined,
       cedantIds: scope === 'cedant' && cedantIds.length ? cedantIds : undefined,
+      reinsurerIds: scope === 'reinsurer' && reinsurerIds.length ? reinsurerIds : undefined,
       lifecycle: (lifecycle || undefined) as FacultativeReportLifecycle | undefined,
       paymentStatuses: paymentStatuses.length
         ? (paymentStatuses as CedantPaymentStatus[])
         : undefined,
+      scope,
+      page: 1,
+      limit: pageSize,
     });
     setPage(1);
   };
@@ -464,37 +493,60 @@ export function FacultativeReportTable() {
   const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
 
   // Cedants scope: one row per placement. Reinsurer scope: one row per accepted
-  // reinsurer — placements with no reinsurers are dropped — then narrow to the
-  // selected reinsurers.
+  // reinsurer. Reinsurer narrowing is done by the backend before pagination.
   const displayRows = useMemo<FacultativeReportDisplayRow[]>(() => {
     if (scope === 'cedant') return rows.map((r) => flattenRow(r, null));
 
-    const flat = rows.flatMap((r) => r.reinsurers.map((re) => flattenRow(r, re)));
-    if (reinsurerIds.length) {
-      const selected = new Set(reinsurerIds);
-      return flat.filter(
-        (row) => row.scopeReinsurer != null && selected.has(row.scopeReinsurer.reinsurerId),
-      );
-    }
-    return flat;
-  }, [rows, scope, reinsurerIds]);
+    return rows.flatMap((r) => r.reinsurers.map((re) => flattenRow(r, re)));
+  }, [rows, scope]);
 
-  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } =
-    useReportPagination(displayRows);
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+    setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
+  };
 
-  const handleExport = () => {
-    const headers = columns.map((c) => c.label);
-    const data = displayRows.map((row) => columns.map((c) => c.csv?.(row) ?? ''));
-    exportToCsv(`facultative-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
+  const rowsPerPageControl =
+    reportParams && meta.total > 10 ? (
+      <label className="flex items-center gap-1.5 text-sm text-gray-500">
+        Rows
+        <select
+          value={String(pageSize)}
+          onChange={(e) => {
+            const nextPageSize = Number(e.target.value);
+            setPageSize(nextPageSize);
+            setPage(1);
+            setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
+          }}
+          className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
+        >
+          {PAGE_SIZE_OPTIONS.map((opt) => (
+            <option key={String(opt)} value={String(opt)}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
+
+  const handleExport = async () => {
+    if (!reportParams) return;
+    const blob = await downloadFacultativeReportCsv(reportParams);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `facultative-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
+      {reportParams && <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />}
 
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={pagedRows}
+          data={displayRows}
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.id}`)
@@ -632,8 +684,8 @@ export function FacultativeReportTable() {
               : 'Select a date field, date range, and click Run Filter to generate the report'
           }
           currentPage={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
+          totalPages={Math.max(meta.totalPages, 1)}
+          onPageChange={handlePageChange}
           noInternalScroll
         />
       </div>

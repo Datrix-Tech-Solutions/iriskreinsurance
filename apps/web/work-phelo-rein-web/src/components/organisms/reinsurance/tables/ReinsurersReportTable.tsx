@@ -12,28 +12,49 @@ import {
   useRiskTypeOptions,
   useCurrencyOptions,
   useReinsurersReport,
-  useReportPagination,
 } from '@/hooks';
 import {
+  downloadReinsurersReportCsv,
+  ReinsurerCurrencyAmount,
   ReinsurerReportRow,
   ReinsurersReportParams,
 } from '@/hooks/reinsurance/useReinsurersReport';
 import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
-import { facultativeStatusLabel } from '@/lib/reinsurance/placementStatus';
+import { CedantPaymentStatus, facultativeStatusLabel } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 
+const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
+  { value: 'Outstanding', label: 'Outstanding' },
+  { value: 'Pending', label: 'Pending' },
+  { value: 'Part Payment', label: 'Part Payment' },
+  { value: 'Paid', label: 'Paid' },
+];
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
 
 const STATUS_OPTIONS = FACULTATIVE_STATUSES.map((s) => ({
   value: s,
   label: facultativeStatusLabel(s),
 }));
 
-function fmtAmount(value: number, symbol: string): string {
+function fmtCurrencyAmount(value: number, currency: string): string {
   const formatted = value.toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return symbol ? `${symbol} ${formatted}` : formatted;
+  return `${currency} ${formatted}`;
+}
+
+function CurrencyAmounts({ amounts }: { amounts: ReinsurerCurrencyAmount[] }) {
+  const visible = amounts.filter((item) => Math.abs(item.amount) > 0.0001);
+  if (!visible.length) return <span className="text-gray-400">—</span>;
+  return (
+    <div className="flex flex-col gap-0.5 text-right">
+      {visible.map((item) => (
+        <span key={item.currency}>{fmtCurrencyAmount(item.amount, item.currency)}</span>
+      ))}
+    </div>
+  );
 }
 
 export function ReinsurersReportTable() {
@@ -46,27 +67,36 @@ export function ReinsurersReportTable() {
   const [riskTypeIds, setRiskTypeIds] = useState<string[]>([]);
   const [currencies, setCurrencies] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<string[]>([]);
+  const [paymentStatuses, setPaymentStatuses] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
   const [reportParams, setReportParams] = useState<ReinsurersReportParams | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const { options: reinsurerOptions } = useReinsurerOptions();
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
   const { data: currencyOptions = [] } = useCurrencyOptions();
 
-  const { rows, summary, currencyTotals, isLoading } = useReinsurersReport(reportParams ?? {}, {
+  const { rows, currencyTotals, isLoading, meta } = useReinsurersReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
   const handleRunFilter = () => {
+    const nextPage = 1;
+    setPage(nextPage);
     setReportParams({
       startDate,
       endDate,
       riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
       currencies: currencies.length ? currencies : undefined,
       statuses: statuses.length ? (statuses as FacultativeStatus[]) : undefined,
+      paymentStatuses: paymentStatuses.length
+        ? (paymentStatuses as CedantPaymentStatus[])
+        : undefined,
       reinsurerIds: reinsurerIds.length ? reinsurerIds : undefined,
+      page: nextPage,
+      limit: pageSize,
     });
-    setPage(1);
   };
 
   const columns: Column<ReinsurerReportRow & { id: string }>[] = useMemo(
@@ -82,13 +112,13 @@ export function ReinsurersReportTable() {
         key: 'cededPremium',
         label: 'Ceded Premium',
         width: '150px',
-        render: (row) => fmtAmount(row.cededPremium, summary.currencySymbol),
+        render: (row) => <CurrencyAmounts amounts={row.cededPremiumByCurrency} />,
       },
       {
         key: 'outstanding',
         label: 'Outstanding',
         width: '150px',
-        render: (row) => fmtAmount(row.outstanding, summary.currencySymbol),
+        render: (row) => <CurrencyAmounts amounts={row.outstandingByCurrency} />,
       },
       {
         key: 'pending',
@@ -96,19 +126,57 @@ export function ReinsurersReportTable() {
         width: '150px',
         render: (row) =>
           row.pending > 0.0001 ? (
-            <span className="text-amber-600 font-medium">
-              {fmtAmount(row.pending, summary.currencySymbol)}
-            </span>
+            <div className="text-amber-600 font-medium">
+              <CurrencyAmounts amounts={row.pendingByCurrency} />
+            </div>
           ) : (
             <span className="text-gray-400">—</span>
           ),
       },
     ],
-    [summary.currencySymbol],
+    [],
   );
 
   const data = useMemo(() => rows.map((r) => ({ ...r, id: r.reinsurerId })), [rows]);
-  const { page, setPage, totalPages, pagedRows, rowsPerPageControl } = useReportPagination(data);
+
+  const handlePageChange = (nextPage: number) => {
+    setPage(nextPage);
+    setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
+  };
+
+  const rowsPerPageControl =
+    reportParams && meta.total > 10 ? (
+      <label className="flex items-center gap-1.5 text-sm text-gray-500">
+        Rows
+        <select
+          value={String(pageSize)}
+          onChange={(e) => {
+            const nextPageSize = Number(e.target.value);
+            setPageSize(nextPageSize);
+            setPage(1);
+            setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
+          }}
+          className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
+        >
+          {PAGE_SIZE_OPTIONS.map((opt) => (
+            <option key={String(opt)} value={String(opt)}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
+
+  const handleExport = async () => {
+    if (!reportParams) return;
+    const blob = await downloadReinsurersReportCsv(reportParams);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reinsurers-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
@@ -117,9 +185,10 @@ export function ReinsurersReportTable() {
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}
-          data={pagedRows}
+          data={data}
           toolbarTrailing={rowsPerPageControl}
           isLoading={reportParams !== null && isLoading}
+          onExport={reportParams && data.length > 0 ? handleExport : undefined}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/reinsurers/${row.reinsurerId}`)
           }
@@ -175,6 +244,19 @@ export function ReinsurersReportTable() {
                   onChange={setStatuses}
                 />
               </div>
+              <div className="w-36">
+                <MultiSelect
+                  size="sm"
+                  variant="inline"
+                  placeholder="Payments"
+                  options={PAYMENT_STATUS_OPTIONS}
+                  value={paymentStatuses}
+                  onChange={(next) => {
+                    setPaymentStatuses(next);
+                    setPage(1);
+                  }}
+                />
+              </div>
               <div className="w-44">
                 <MultiSelect
                   size="sm"
@@ -198,8 +280,8 @@ export function ReinsurersReportTable() {
               : 'Select a period and click Run Filter to generate the report'
           }
           currentPage={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
+          totalPages={Math.max(1, meta.totalPages)}
+          onPageChange={handlePageChange}
           noInternalScroll
         />
       </div>

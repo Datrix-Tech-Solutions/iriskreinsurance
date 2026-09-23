@@ -9,11 +9,17 @@ import {
   PremiumsReportResponseDto,
 } from './dto/premiums-report-response.dto';
 import {
+  PremiumsStatsCurrencyAmountDto,
+  PremiumsStatsResponseDto,
+  PremiumsStatsTopCedantDto,
+} from './dto/premiums-stats-response.dto';
+import {
   PremiumReportDateBasis,
   PremiumReportPaymentStatus,
   PremiumReportSortField,
   QueryPremiumsReportDto,
 } from './dto/query-premiums-report.dto';
+import { QueryPremiumsStatsDto } from './dto/query-premiums-stats.dto';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -81,6 +87,26 @@ type PremiumReportRawSummaryRow = {
   reinsurerPayable: SqlNumber;
   reinsurerDisbursed: SqlNumber;
   reinsurerOutstanding: SqlNumber;
+};
+
+type PremiumStatsRawRow = {
+  placementId: string;
+  cedantId: string;
+  cedantName: string;
+  currency: string | null;
+  premium: SqlNumber;
+  currentObligation: SqlNumber;
+  currentMandatoryDeductions: SqlNumber;
+  currentPaid: SqlNumber;
+  currentOutstanding: SqlNumber;
+  startObligation: SqlNumber;
+  startMandatoryDeductions: SqlNumber;
+  startPaid: SqlNumber;
+  endObligation: SqlNumber;
+  endMandatoryDeductions: SqlNumber;
+  endPaid: SqlNumber;
+  endBrokerage: SqlNumber;
+  paidInPeriod: SqlNumber;
 };
 
 type DateRange = {
@@ -163,6 +189,18 @@ export class PremiumsReportService {
       cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
+  }
+
+  async findPremiumStats(
+    tenantId: string,
+    query: QueryPremiumsStatsDto,
+  ): Promise<PremiumsStatsResponseDto> {
+    const { since, until } = this.premiumStatsWindow(query);
+    const rows = await this.prisma.$queryRaw<PremiumStatsRawRow[]>(
+      this.premiumStatsRowsQuery(tenantId, since, until),
+    );
+
+    return this.toPremiumStatsDto(rows);
   }
 
   private rowsQuery(
@@ -286,7 +324,7 @@ export class PremiumsReportService {
           ${searchPredicate}
           ${baseDatePredicate}
       ),
-      confirmed_closings AS (
+      snapshot_candidates AS (
         SELECT
           pc."id",
           pc."placementId",
@@ -301,7 +339,12 @@ export class PremiumsReportService {
           pc."netPremium",
           pc."confirmedAt",
           pp."counterpartyId" AS "reinsurerId",
-          cp."name" AS "reinsurerName"
+          cp."name" AS "reinsurerName",
+          0 AS "sourceRank",
+          NULL::timestamp AS "effectiveDate",
+          NULL::timestamp AS "endorsementCreatedAt",
+          NULL::text AS "endorsementId",
+          pc."createdAt"
         FROM "reinsurance"."PlacementClosing" pc
         JOIN base_placements bp ON bp."id" = pc."placementId"
         JOIN "reinsurance"."PlacementParticipant" pp
@@ -312,6 +355,66 @@ export class PremiumsReportService {
          AND cp."tenantId" = pp."tenantId"
         WHERE pc."tenantId" = ${tenantId}
           AND pc."status" = 'CONFIRMED'
+
+        UNION ALL
+
+        SELECT
+          ec."id",
+          ec."placementId",
+          COALESCE(
+            ep."originalParticipantId",
+            ec."endorsementParticipantId"
+          ) AS "participantId",
+          ec."tenantId",
+          ec."signedLinePercent",
+          ec."sharePercent",
+          ec."premiumSnapshot" AS "grossPremium",
+          ec."commissionPercent",
+          ec."commissionAmount",
+          ec."brokerageAmount",
+          ec."netPremium",
+          ec."confirmedAt",
+          ep."counterpartyId" AS "reinsurerId",
+          cp."name" AS "reinsurerName",
+          1 AS "sourceRank",
+          e."effectiveDate",
+          e."createdAt" AS "endorsementCreatedAt",
+          e."id" AS "endorsementId",
+          ec."createdAt"
+        FROM "reinsurance"."PlacementEndorsementClosing" ec
+        JOIN base_placements bp ON bp."id" = ec."placementId"
+        JOIN "reinsurance"."PlacementEndorsement" e
+          ON e."id" = ec."endorsementId"
+         AND e."tenantId" = ec."tenantId"
+        JOIN "reinsurance"."PlacementEndorsementParticipant" ep
+          ON ep."id" = ec."endorsementParticipantId"
+         AND ep."tenantId" = ec."tenantId"
+        JOIN "reinsurance"."Counterparty" cp
+          ON cp."id" = ep."counterpartyId"
+         AND cp."tenantId" = ep."tenantId"
+        WHERE ec."tenantId" = ${tenantId}
+          AND ec."status" = 'CONFIRMED'
+          AND e."status" = 'CLOSED'
+          AND e."effectiveDate" <= NOW()
+      ),
+      confirmed_closings AS (
+        SELECT *
+        FROM (
+          SELECT
+            sc.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY sc."placementId", sc."participantId"
+              ORDER BY
+                sc."sourceRank" DESC,
+                sc."effectiveDate" DESC NULLS LAST,
+                sc."endorsementCreatedAt" DESC NULLS LAST,
+                sc."endorsementId" DESC NULLS LAST,
+                sc."createdAt" DESC,
+                sc."id" DESC
+            ) AS rn
+          FROM snapshot_candidates sc
+        ) ranked
+        WHERE ranked.rn = 1
       ),
       closing_rollup AS (
         SELECT
@@ -457,6 +560,210 @@ export class PremiumsReportService {
     `;
   }
 
+  private premiumStatsRowsQuery(
+    tenantId: string,
+    since: Date,
+    until: Date,
+  ): Prisma.Sql {
+    return Prisma.sql`
+      WITH base_placements AS (
+        SELECT
+          p."id",
+          p."cedantId",
+          p."currency",
+          p."premium",
+          c."name" AS "cedantName"
+        FROM "reinsurance"."Placement" p
+        JOIN "reinsurance"."Counterparty" c
+          ON c."id" = p."cedantId"
+         AND c."tenantId" = p."tenantId"
+        WHERE p."tenantId" = ${tenantId}
+          AND p."archivedAt" IS NULL
+          AND p."status" IN (
+            'PARTIALLY_PLACED',
+            'PLACED',
+            'CLOSING',
+            'CLOSED',
+            'DECLINED',
+            'CANCELLED'
+          )
+      ),
+      as_of_windows AS (
+        SELECT 'start'::text AS "label", ${since} AS "asOf"
+        UNION ALL
+        SELECT 'end'::text AS "label", ${until} AS "asOf"
+        UNION ALL
+        SELECT 'current'::text AS "label", NOW() AS "asOf"
+      ),
+      snapshot_candidates AS (
+        SELECT
+          w."label",
+          pc."placementId",
+          pc."participantId" AS "snapshotKey",
+          COALESCE(
+            pc."grossPremium" - COALESCE(pc."commissionAmount", 0),
+            pc."netPremium",
+            0
+          ) AS "cedantPremium",
+          GREATEST(
+            COALESCE(
+              pc."grossPremium" - COALESCE(pc."commissionAmount", 0),
+              pc."netPremium",
+              0
+            ) - COALESCE(pc."netPremium", 0),
+            0
+          ) AS "mandatoryDeductions",
+          COALESCE(pc."brokerageAmount", 0) AS "brokerageAmount",
+          0 AS "sourceRank",
+          NULL::timestamp AS "effectiveDate",
+          NULL::timestamp AS "endorsementCreatedAt",
+          NULL::text AS "endorsementId",
+          pc."createdAt",
+          pc."id"
+        FROM "reinsurance"."PlacementClosing" pc
+        JOIN base_placements bp ON bp."id" = pc."placementId"
+        CROSS JOIN as_of_windows w
+        WHERE pc."tenantId" = ${tenantId}
+          AND pc."status" = 'CONFIRMED'
+
+        UNION ALL
+
+        SELECT
+          w."label",
+          ec."placementId",
+          COALESCE(
+            ep."originalParticipantId",
+            ec."endorsementParticipantId"
+          ) AS "snapshotKey",
+          COALESCE(
+            ec."premiumSnapshot" - COALESCE(ec."commissionAmount", 0),
+            ec."netPremium",
+            0
+          ) AS "cedantPremium",
+          GREATEST(
+            COALESCE(
+              ec."premiumSnapshot" - COALESCE(ec."commissionAmount", 0),
+              ec."netPremium",
+              0
+            ) - COALESCE(ec."netPremium", 0),
+            0
+          ) AS "mandatoryDeductions",
+          COALESCE(ec."brokerageAmount", 0) AS "brokerageAmount",
+          1 AS "sourceRank",
+          e."effectiveDate",
+          e."createdAt" AS "endorsementCreatedAt",
+          e."id" AS "endorsementId",
+          ec."createdAt",
+          ec."id"
+        FROM "reinsurance"."PlacementEndorsementClosing" ec
+        JOIN base_placements bp ON bp."id" = ec."placementId"
+        JOIN "reinsurance"."PlacementEndorsement" e
+          ON e."id" = ec."endorsementId"
+         AND e."tenantId" = ec."tenantId"
+        JOIN "reinsurance"."PlacementEndorsementParticipant" ep
+          ON ep."id" = ec."endorsementParticipantId"
+         AND ep."tenantId" = ec."tenantId"
+        JOIN as_of_windows w ON e."effectiveDate" <= w."asOf"
+        WHERE ec."tenantId" = ${tenantId}
+          AND ec."status" = 'CONFIRMED'
+          AND e."status" = 'CLOSED'
+      ),
+      effective_snapshots AS (
+        SELECT *
+        FROM (
+          SELECT
+            sc.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY sc."label", sc."placementId", sc."snapshotKey"
+              ORDER BY
+                sc."sourceRank" DESC,
+                sc."effectiveDate" DESC NULLS LAST,
+                sc."endorsementCreatedAt" DESC NULLS LAST,
+                sc."endorsementId" DESC NULLS LAST,
+                sc."createdAt" DESC,
+                sc."id" DESC
+            ) AS rn
+          FROM snapshot_candidates sc
+        ) ranked
+        WHERE ranked.rn = 1
+      ),
+      obligations AS (
+        SELECT
+          "label",
+          "placementId",
+          SUM("cedantPremium") AS "currentObligation",
+          SUM("mandatoryDeductions") AS "mandatoryDeductions",
+          SUM("brokerageAmount") AS "brokerageAmount"
+        FROM effective_snapshots
+        GROUP BY "label", "placementId"
+      ),
+      obligation_pivot AS (
+        SELECT
+          "placementId",
+          SUM("currentObligation") FILTER (WHERE "label" = 'current') AS "currentObligation",
+          SUM("mandatoryDeductions") FILTER (WHERE "label" = 'current') AS "currentMandatoryDeductions",
+          SUM("currentObligation") FILTER (WHERE "label" = 'start') AS "startObligation",
+          SUM("mandatoryDeductions") FILTER (WHERE "label" = 'start') AS "startMandatoryDeductions",
+          SUM("currentObligation") FILTER (WHERE "label" = 'end') AS "endObligation",
+          SUM("mandatoryDeductions") FILTER (WHERE "label" = 'end') AS "endMandatoryDeductions",
+          SUM("brokerageAmount") FILTER (WHERE "label" = 'end') AS "endBrokerage"
+        FROM obligations
+        GROUP BY "placementId"
+      ),
+      payment_totals AS (
+        SELECT
+          pay."placementId",
+          SUM(pay."amount") FILTER (
+            WHERE pay."type" = 'PREMIUM_RECEIVED'
+              AND pay."status" = 'BANK_CONFIRMED'
+          ) AS "currentPaid",
+          SUM(pay."amount") FILTER (
+            WHERE pay."type" = 'PREMIUM_RECEIVED'
+              AND pay."status" = 'BANK_CONFIRMED'
+              AND pay."paymentDate" <= ${since}
+          ) AS "startPaid",
+          SUM(pay."amount") FILTER (
+            WHERE pay."type" = 'PREMIUM_RECEIVED'
+              AND pay."status" = 'BANK_CONFIRMED'
+              AND pay."paymentDate" <= ${until}
+          ) AS "endPaid"
+        FROM "reinsurance"."PlacementPayment" pay
+        JOIN base_placements bp ON bp."id" = pay."placementId"
+        WHERE pay."tenantId" = ${tenantId}
+          AND pay."reversalOfPaymentId" IS NULL
+        GROUP BY pay."placementId"
+      )
+      SELECT
+        bp."id" AS "placementId",
+        bp."cedantId",
+        bp."cedantName",
+        bp."currency",
+        COALESCE(bp."premium", 0) AS "premium",
+        COALESCE(op."currentObligation", 0) AS "currentObligation",
+        COALESCE(op."currentMandatoryDeductions", 0) AS "currentMandatoryDeductions",
+        GREATEST(
+          COALESCE(op."currentObligation", 0)
+            - (
+              COALESCE(pt."currentPaid", 0)
+              + COALESCE(op."currentMandatoryDeductions", 0)
+            ),
+          0
+        ) AS "currentOutstanding",
+        COALESCE(pt."currentPaid", 0) AS "currentPaid",
+        COALESCE(op."startObligation", 0) AS "startObligation",
+        COALESCE(op."startMandatoryDeductions", 0) AS "startMandatoryDeductions",
+        COALESCE(pt."startPaid", 0) AS "startPaid",
+        COALESCE(op."endObligation", 0) AS "endObligation",
+        COALESCE(op."endMandatoryDeductions", 0) AS "endMandatoryDeductions",
+        COALESCE(pt."endPaid", 0) AS "endPaid",
+        COALESCE(op."endBrokerage", 0) AS "endBrokerage",
+        GREATEST(COALESCE(pt."endPaid", 0) - COALESCE(pt."startPaid", 0), 0) AS "paidInPeriod"
+      FROM base_placements bp
+      LEFT JOIN obligation_pivot op ON op."placementId" = bp."id"
+      LEFT JOIN payment_totals pt ON pt."placementId" = bp."id"
+    `;
+  }
+
   private baseDatePredicate(
     dateBasis: PremiumReportDateBasis,
     dateRange: DateRange,
@@ -586,6 +893,19 @@ export class PremiumsReportService {
     return new Date(value);
   }
 
+  private premiumStatsWindow(query: QueryPremiumsStatsDto): {
+    since: Date;
+    until: Date;
+  } {
+    const now = new Date();
+    const since =
+      query.since !== undefined
+        ? new Date(query.since)
+        : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const until = query.until !== undefined ? new Date(query.until) : now;
+    return { since, until };
+  }
+
   private toRowDto(row: PremiumReportRawRow): PremiumReportRowDto {
     const due = this.toMoneyNumber(row.due);
     const paid = this.toMoneyNumber(row.paid);
@@ -670,6 +990,146 @@ export class PremiumsReportService {
       reinsurerDisbursed: this.toMoneyNumber(row.reinsurerDisbursed),
       reinsurerOutstanding: this.toMoneyNumber(row.reinsurerOutstanding),
     };
+  }
+
+  private toPremiumStatsDto(
+    rows: PremiumStatsRawRow[],
+  ): PremiumsStatsResponseDto {
+    const dueByCurrency = new Map<string, number>();
+    const paidByCurrency = new Map<string, number>();
+    const outstandingByCurrency = new Map<string, number>();
+    const brokerageEarnedByCurrency = new Map<string, number>();
+    const topCedants = new Map<
+      string,
+      {
+        cedantId: string;
+        name: string;
+        count: number;
+        premiumByCurrency: Map<string, number>;
+      }
+    >();
+    let periodPaid = 0;
+    let periodCollectible = 0;
+
+    for (const row of rows) {
+      const currency = row.currency ?? 'UNKNOWN';
+      const currentObligation = this.toMoneyNumber(row.currentObligation);
+      const currentOutstanding = this.toMoneyNumber(row.currentOutstanding);
+      const startObligation = this.toMoneyNumber(row.startObligation);
+      const startMandatoryDeductions = this.toMoneyNumber(
+        row.startMandatoryDeductions,
+      );
+      const startPaid = this.toMoneyNumber(row.startPaid);
+      const endObligation = this.toMoneyNumber(row.endObligation);
+      const endMandatoryDeductions = this.toMoneyNumber(
+        row.endMandatoryDeductions,
+      );
+      const endPaid = this.toMoneyNumber(row.endPaid);
+      const paidInPeriod = this.toMoneyNumber(row.paidInPeriod);
+      const endBrokerage = this.toMoneyNumber(row.endBrokerage);
+      const premium = this.toMoneyNumber(row.premium);
+      const startOutstanding = Math.max(
+        startObligation - (startPaid + startMandatoryDeductions),
+        0,
+      );
+      const endOutstanding = Math.max(
+        endObligation - (endPaid + endMandatoryDeductions),
+        0,
+      );
+      const newlyDue = Math.max(endObligation - startObligation, 0);
+      const brokerageEarned =
+        endObligation > 0.0001
+          ? endBrokerage * Math.min(1, paidInPeriod / endObligation)
+          : 0;
+
+      this.addCurrencyAmount(dueByCurrency, currency, currentObligation);
+      this.addCurrencyAmount(
+        outstandingByCurrency,
+        currency,
+        currentOutstanding,
+      );
+      this.addCurrencyAmount(paidByCurrency, currency, paidInPeriod);
+      this.addCurrencyAmount(
+        brokerageEarnedByCurrency,
+        currency,
+        brokerageEarned,
+      );
+      periodPaid += paidInPeriod;
+      periodCollectible += startOutstanding + newlyDue;
+
+      const paidByEnd = endObligation > 0.0001 && endOutstanding <= 0.0001;
+      const paidByStart =
+        startObligation > 0.0001 && startOutstanding <= 0.0001;
+      if (paidByEnd && !paidByStart) {
+        const entry = topCedants.get(row.cedantId) ?? {
+          cedantId: row.cedantId,
+          name: row.cedantName,
+          count: 0,
+          premiumByCurrency: new Map<string, number>(),
+        };
+        entry.count += 1;
+        this.addCurrencyAmount(entry.premiumByCurrency, currency, premium);
+        topCedants.set(row.cedantId, entry);
+      }
+    }
+
+    return {
+      dueByCurrency: this.toCurrencyAmountList(dueByCurrency),
+      paidByCurrency: this.toCurrencyAmountList(paidByCurrency),
+      outstandingByCurrency: this.toCurrencyAmountList(outstandingByCurrency),
+      brokerageEarnedByCurrency: this.toCurrencyAmountList(
+        brokerageEarnedByCurrency,
+      ),
+      collectionRate:
+        periodCollectible > 0.0001
+          ? this.money.roundMoney(
+              Math.min(100, (periodPaid / periodCollectible) * 100),
+            )
+          : 0,
+      topCedantsByPaidOffers: this.toTopCedantsList(topCedants),
+    };
+  }
+
+  private addCurrencyAmount(
+    map: Map<string, number>,
+    currency: string,
+    amount: number,
+  ): void {
+    if (Math.abs(amount) <= 0.0001) return;
+    map.set(currency, this.money.roundMoney((map.get(currency) ?? 0) + amount));
+  }
+
+  private toCurrencyAmountList(
+    map: Map<string, number>,
+  ): PremiumsStatsCurrencyAmountDto[] {
+    return [...map.entries()]
+      .map(([code, amount]) => ({
+        code,
+        amount: this.money.roundMoney(amount),
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }
+
+  private toTopCedantsList(
+    map: Map<
+      string,
+      {
+        cedantId: string;
+        name: string;
+        count: number;
+        premiumByCurrency: Map<string, number>;
+      }
+    >,
+  ): PremiumsStatsTopCedantDto[] {
+    return [...map.values()]
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+      .slice(0, 5)
+      .map((row) => ({
+        cedantId: row.cedantId,
+        name: row.name,
+        count: row.count,
+        premiumByCurrency: this.toCurrencyAmountList(row.premiumByCurrency),
+      }));
   }
 
   private parseReinsurers(value: unknown): PremiumReportReinsurerDto[] {
