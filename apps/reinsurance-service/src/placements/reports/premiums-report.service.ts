@@ -20,6 +20,7 @@ import {
   QueryPremiumsReportDto,
 } from './dto/query-premiums-report.dto';
 import { QueryPremiumsStatsDto } from './dto/query-premiums-stats.dto';
+import { csvToExcelHtml, formatExportDate } from './report-excel-export';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -189,6 +190,14 @@ export class PremiumsReportService {
       cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
+  }
+
+  async exportPremiumsExcel(
+    tenantId: string,
+    query: QueryPremiumsReportDto,
+  ): Promise<string> {
+    const csv = await this.exportPremiumsCsv(tenantId, query);
+    return csvToExcelHtml(csv, 'Premiums Report');
   }
 
   async findPremiumStats(
@@ -1163,10 +1172,10 @@ export class PremiumsReportService {
         dto.title,
         dto.policyType ?? '',
         dto.cedantName,
-        dto.offerDate ?? '',
-        reinsurer?.closedAt ?? dto.closedAt ?? '',
-        dto.inceptionDate ?? '',
-        dto.expiryDate ?? '',
+        formatExportDate(dto.offerDate),
+        formatExportDate(reinsurer?.closedAt ?? dto.closedAt),
+        formatExportDate(dto.inceptionDate),
+        formatExportDate(dto.expiryDate),
         dto.currency ?? '',
         this.csvNumber(dto.sumInsured),
         this.csvNumber(dto.premium),

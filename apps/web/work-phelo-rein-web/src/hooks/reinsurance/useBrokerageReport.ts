@@ -154,3 +154,11 @@ export async function downloadBrokerageReportCsv(params: BrokerageReportParams):
   });
   return res.data;
 }
+
+export async function downloadBrokerageReportExcel(params: BrokerageReportParams): Promise<Blob> {
+  const res = await api.get<Blob>(`${BROKERAGE_REPORT_BASE}/export.xls`, {
+    params: normalizeReportParams(params),
+    responseType: 'blob',
+  });
+  return res.data;
+}

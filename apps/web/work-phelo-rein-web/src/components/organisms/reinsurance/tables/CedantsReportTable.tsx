@@ -18,10 +18,12 @@ import {
   CedantReportRow,
   CedantsReportParams,
   downloadCedantsReportCsv,
+  downloadCedantsReportExcel,
 } from '@/hooks/reinsurance/useCedantsReport';
 import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { CedantPaymentStatus, facultativeStatusLabel } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
@@ -170,12 +172,13 @@ export function CedantsReportTable() {
   const handleExport = async () => {
     if (!reportParams) return;
     const blob = await downloadCedantsReportCsv(reportParams);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `cedants-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadReportBlob(blob, datedReportFilename('cedants-report', 'csv'));
+  };
+
+  const handleExportExcel = async () => {
+    if (!reportParams) return;
+    const blob = await downloadCedantsReportExcel(reportParams);
+    downloadReportBlob(blob, datedReportFilename('cedants-report', 'xls'));
   };
 
   return (
@@ -190,7 +193,14 @@ export function CedantsReportTable() {
           rowClassName="text-[10px]"
           toolbarTrailing={rowsPerPageControl}
           isLoading={reportParams !== null && isLoading}
-          onExport={reportParams && data.length > 0 ? handleExport : undefined}
+          exportOptions={
+            reportParams && data.length > 0
+              ? [
+                  { label: 'CSV', onClick: handleExport },
+                  { label: 'Excel', onClick: handleExportExcel },
+                ]
+              : undefined
+          }
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/cedants/${row.cedantId}`)
           }

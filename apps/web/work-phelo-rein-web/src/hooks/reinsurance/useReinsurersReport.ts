@@ -176,3 +176,11 @@ export async function downloadReinsurersReportCsv(params: ReinsurersReportParams
   });
   return res.data;
 }
+
+export async function downloadReinsurersReportExcel(params: ReinsurersReportParams): Promise<Blob> {
+  const res = await api.get<Blob>(`${REINSURERS_REPORT_BASE}/export.xls`, {
+    params: normalizeReinsurersReportParams({ ...params, page: undefined, limit: undefined }),
+    responseType: 'blob',
+  });
+  return res.data;
+}

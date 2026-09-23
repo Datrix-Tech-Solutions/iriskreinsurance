@@ -19,9 +19,15 @@ import {
   BrokerageReportRow,
   BrokerageReportParams,
   downloadBrokerageReportCsv,
+  downloadBrokerageReportExcel,
 } from '@/hooks/reinsurance/useBrokerageReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import {
+  datedReportFilename,
+  downloadReportBlob,
+  downloadReportText,
+} from '@/lib/reinsurance/downloadReportExport';
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
@@ -170,7 +176,7 @@ const SHARED_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'brokeragePaid',
-    label: 'Brokerage Realized',
+    label: 'Brokerage Paid',
     width: '140px',
     className: 'text-right',
     render: (row) => fmtAmount(row.brokeragePaid, row.currency),
@@ -188,7 +194,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'whtPaid',
-    label: 'WHT Realized',
+    label: 'WHT Paid',
     width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.withholdingTaxPaid, row.currency),
@@ -202,7 +208,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'nicLevyPaid',
-    label: 'NIC Levy Realized',
+    label: 'NIC Levy Paid',
     width: '130px',
     className: 'text-right',
     render: (row) => fmtAmount(row.nicLevyPaid, row.currency),
@@ -304,13 +310,17 @@ export function BrokerageReportTable() {
   const handleExport = async () => {
     if (!reportParams) return;
     const csv = await downloadBrokerageReportCsv(reportParams);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `brokerage-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadReportText(
+      csv,
+      datedReportFilename('brokerage-report', 'csv'),
+      'text/csv;charset=utf-8',
+    );
+  };
+
+  const handleExportExcel = async () => {
+    if (!reportParams) return;
+    const blob = await downloadBrokerageReportExcel(reportParams);
+    downloadReportBlob(blob, datedReportFilename('brokerage-report', 'xls'));
   };
 
   return (
@@ -325,7 +335,14 @@ export function BrokerageReportTable() {
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
-          onExport={reportParams && rows.length > 0 ? handleExport : undefined}
+          exportOptions={
+            reportParams && rows.length > 0
+              ? [
+                  { label: 'CSV', onClick: handleExport },
+                  { label: 'Excel', onClick: handleExportExcel },
+                ]
+              : undefined
+          }
           toolbarTrailing={rowsPerPageControl}
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the

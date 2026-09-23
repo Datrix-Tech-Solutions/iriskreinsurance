@@ -12,6 +12,7 @@ import {
   CedantsReportSortField,
   QueryCedantsReportDto,
 } from './dto/query-cedants-report.dto';
+import { csvToExcelHtml } from './report-excel-export';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -109,6 +110,14 @@ export class CedantsReportService {
       (cells) => cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
+  }
+
+  async exportCedantsExcel(
+    tenantId: string,
+    query: QueryCedantsReportDto,
+  ): Promise<string> {
+    const csv = await this.exportCedantsCsv(tenantId, query);
+    return csvToExcelHtml(csv, 'Cedants Report');
   }
 
   private rowsQuery(

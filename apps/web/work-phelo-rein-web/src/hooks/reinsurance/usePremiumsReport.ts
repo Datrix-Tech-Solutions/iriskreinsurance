@@ -237,6 +237,14 @@ export async function downloadPremiumsReportCsv(params: PremiumsReportParams): P
   return res.data;
 }
 
+export async function downloadPremiumsReportExcel(params: PremiumsReportParams): Promise<Blob> {
+  const res = await api.get<Blob>(`${PREMIUMS_REPORT_BASE}/export.xls`, {
+    params: normalizeReportParams({ ...params, page: undefined, limit: undefined }),
+    responseType: 'blob',
+  });
+  return res.data;
+}
+
 export function usePremiumsStats(
   params: { since: string; until?: string },
   options: { enabled?: boolean } = {},

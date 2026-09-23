@@ -508,7 +508,10 @@ describe('PremiumsReportService', () => {
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(csv).toContain('Policy Number,Reinsurer,Insured');
-    expect(csv).toContain('POL-001,,Xpress Group');
+    expect(csv).toContain(
+      'POL-001,,Xpress Group,Motor Comprehensive,Acme Insurance,2026-09-08,2026-09-08',
+    );
+    expect(csv).not.toContain('2026-09-08T08:50:34.000Z');
     expect(csv).toContain(',20000,20000,0,20000,0,Paid');
   });
 });

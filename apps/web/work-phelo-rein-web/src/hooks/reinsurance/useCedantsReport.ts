@@ -172,3 +172,11 @@ export async function downloadCedantsReportCsv(params: CedantsReportParams): Pro
   });
   return res.data;
 }
+
+export async function downloadCedantsReportExcel(params: CedantsReportParams): Promise<Blob> {
+  const res = await api.get<Blob>(`${CEDANTS_REPORT_BASE}/export.xls`, {
+    params: normalizeCedantsReportParams({ ...params, page: undefined, limit: undefined }),
+    responseType: 'blob',
+  });
+  return res.data;
+}

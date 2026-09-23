@@ -13,6 +13,7 @@ import {
   FacultativeReportScope,
   QueryFacultativeReportDto,
 } from './dto/query-facultative-report.dto';
+import { csvToExcelHtml, formatExportDate } from './report-excel-export';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -132,10 +133,11 @@ export class FacultativeReportService {
     const rows = await this.prisma.$queryRaw<FacultativeReportRawRow[]>(
       this.rowsQuery(tenantId, query, 50_000, 0),
     );
+    const scope = query.scope ?? 'cedant';
     const header = [
       'Policy Number',
       'Insurer',
-      'Reinsurer',
+      ...(scope === 'reinsurer' ? ['Reinsurer'] : []),
       'Insured',
       'Risk Class',
       'Offer Date',
@@ -152,7 +154,7 @@ export class FacultativeReportService {
       'Cedant Commission %',
       'Cedant Commission',
       'Brokerage',
-      'Brokerage Realized',
+      'Brokerage Paid',
       'WHT',
       'Paid WHT',
       'NIC Levy',
@@ -164,11 +166,18 @@ export class FacultativeReportService {
       'Offer Status',
       'Payment Status',
     ];
-    const lines = [
-      header,
-      ...this.toCsvRows(rows, query.scope ?? 'cedant'),
-    ].map((cells) => cells.map((cell) => this.csvEscape(cell)).join(','));
+    const lines = [header, ...this.toCsvRows(rows, scope)].map((cells) =>
+      cells.map((cell) => this.csvEscape(cell)).join(','),
+    );
     return `${lines.join('\n')}\n`;
+  }
+
+  async exportFacultativeExcel(
+    tenantId: string,
+    query: QueryFacultativeReportDto,
+  ): Promise<string> {
+    const csv = await this.exportFacultativeCsv(tenantId, query);
+    return csvToExcelHtml(csv, 'Facultative Report');
   }
 
   private rowsQuery(
@@ -932,13 +941,13 @@ export class FacultativeReportService {
       return reinsurers.map((reinsurer) => [
         dto.policyNumber ?? dto.reference,
         dto.cedantName,
-        reinsurer?.reinsurerName ?? '',
+        ...(scope === 'reinsurer' ? [reinsurer?.reinsurerName ?? ''] : []),
         dto.title,
         dto.riskClassName ?? '',
-        dto.offerDate ?? '',
-        reinsurer?.closedAt ?? dto.closedAt ?? '',
-        dto.inceptionDate ?? '',
-        dto.expiryDate ?? '',
+        formatExportDate(dto.offerDate),
+        formatExportDate(reinsurer?.closedAt ?? dto.closedAt),
+        formatExportDate(dto.inceptionDate),
+        formatExportDate(dto.expiryDate),
         dto.currency ?? '',
         this.csvNumber(dto.sumInsured),
         this.csvNumber(dto.premium),

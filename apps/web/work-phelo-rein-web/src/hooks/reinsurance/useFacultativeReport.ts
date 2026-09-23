@@ -226,3 +226,13 @@ export async function downloadFacultativeReportCsv(params: FacultativeReportPara
   });
   return res.data;
 }
+
+export async function downloadFacultativeReportExcel(
+  params: FacultativeReportParams,
+): Promise<Blob> {
+  const res = await api.get<Blob>(`${FACULTATIVE_REPORT_BASE}/export.xls`, {
+    params: normalizeFacultativeReportParams({ ...params, page: undefined, limit: undefined }),
+    responseType: 'blob',
+  });
+  return res.data;
+}

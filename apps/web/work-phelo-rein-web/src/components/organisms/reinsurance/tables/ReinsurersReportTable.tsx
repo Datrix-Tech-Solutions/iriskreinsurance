@@ -14,6 +14,7 @@ import {
   useReinsurersReport,
 } from '@/hooks';
 import {
+  downloadReinsurersReportExcel,
   downloadReinsurersReportCsv,
   ReinsurerCurrencyAmount,
   ReinsurerReportRow,
@@ -22,6 +23,7 @@ import {
 import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { CedantPaymentStatus, facultativeStatusLabel } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
@@ -170,12 +172,13 @@ export function ReinsurersReportTable() {
   const handleExport = async () => {
     if (!reportParams) return;
     const blob = await downloadReinsurersReportCsv(reportParams);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `reinsurers-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadReportBlob(blob, datedReportFilename('reinsurers-report', 'csv'));
+  };
+
+  const handleExportExcel = async () => {
+    if (!reportParams) return;
+    const blob = await downloadReinsurersReportExcel(reportParams);
+    downloadReportBlob(blob, datedReportFilename('reinsurers-report', 'xls'));
   };
 
   return (
@@ -190,7 +193,14 @@ export function ReinsurersReportTable() {
           rowClassName="text-[10px]"
           toolbarTrailing={rowsPerPageControl}
           isLoading={reportParams !== null && isLoading}
-          onExport={reportParams && data.length > 0 ? handleExport : undefined}
+          exportOptions={
+            reportParams && data.length > 0
+              ? [
+                  { label: 'CSV', onClick: handleExport },
+                  { label: 'Excel', onClick: handleExportExcel },
+                ]
+              : undefined
+          }
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/reinsurers/${row.reinsurerId}`)
           }

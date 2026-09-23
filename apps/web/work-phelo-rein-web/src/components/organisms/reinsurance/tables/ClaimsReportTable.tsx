@@ -19,8 +19,14 @@ import {
   ClaimsReportBucket,
   ClaimsReportParams,
   downloadClaimsReportCsv,
+  downloadClaimsReportExcel,
 } from '@/hooks/reinsurance/useClaimsReport';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import {
+  datedReportFilename,
+  downloadReportBlob,
+  downloadReportText,
+} from '@/lib/reinsurance/downloadReportExport';
 
 const BUCKET_OPTIONS: { value: ClaimsReportBucket; label: string }[] = [
   { value: 'notification', label: 'Notification' },
@@ -362,13 +368,13 @@ export function ClaimsReportTable() {
   const handleExport = async () => {
     if (!reportParams) return;
     const csv = await downloadClaimsReportCsv(reportParams);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `claims-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadReportText(csv, datedReportFilename('claims-report', 'csv'), 'text/csv;charset=utf-8');
+  };
+
+  const handleExportExcel = async () => {
+    if (!reportParams) return;
+    const blob = await downloadClaimsReportExcel(reportParams);
+    downloadReportBlob(blob, datedReportFilename('claims-report', 'xls'));
   };
 
   return (
@@ -385,7 +391,14 @@ export function ClaimsReportTable() {
               `/${tenantSlug}/operations/reinsurance/claims/${row.claimId}?placementId=${row.placementId}&tab=${row.bucket}`,
             )
           }
-          onExport={reportParams && rows.length > 0 ? handleExport : undefined}
+          exportOptions={
+            reportParams && rows.length > 0
+              ? [
+                  { label: 'CSV', onClick: handleExport },
+                  { label: 'Excel', onClick: handleExportExcel },
+                ]
+              : undefined
+          }
           toolbarTrailing={rowsPerPageControl}
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the

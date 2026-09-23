@@ -12,6 +12,7 @@ import {
   QueryReinsurersReportDto,
   ReinsurersReportSortField,
 } from './dto/query-reinsurers-report.dto';
+import { csvToExcelHtml } from './report-excel-export';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -116,6 +117,14 @@ export class ReinsurersReportService {
       (cells) => cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
+  }
+
+  async exportReinsurersExcel(
+    tenantId: string,
+    query: QueryReinsurersReportDto,
+  ): Promise<string> {
+    const csv = await this.exportReinsurersCsv(tenantId, query);
+    return csvToExcelHtml(csv, 'Reinsurers Report');
   }
 
   private rowsQuery(

@@ -13,6 +13,11 @@ import {
   ClaimsReportSortField,
   QueryClaimsReportDto,
 } from './dto/query-claims-report.dto';
+import {
+  csvToExcelHtml,
+  formatExportDate,
+  formatExportPeriod,
+} from './report-excel-export';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -142,6 +147,14 @@ export class ClaimsReportService {
       (cells) => cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
+  }
+
+  async exportClaimsExcel(
+    tenantId: string,
+    query: QueryClaimsReportDto,
+  ): Promise<string> {
+    const csv = await this.exportClaimsCsv(tenantId, query);
+    return csvToExcelHtml(csv, 'Claims Report');
   }
 
   private rowsQuery(
@@ -706,8 +719,8 @@ export class ClaimsReportService {
       dto.policyNumber,
       dto.claimType ?? '',
       dto.claimNumber,
-      this.formatPeriod(dto.periodStart, dto.periodEnd),
-      dto.occurrenceDate,
+      formatExportPeriod(dto.periodStart, dto.periodEnd),
+      formatExportDate(dto.occurrenceDate),
       dto.currency,
       this.csvNumber(dto.claimAmount),
       this.csvNumber(dto.iriskSharePercent),
@@ -722,11 +735,6 @@ export class ClaimsReportService {
       this.csvNumber(dto.agingDays),
       this.csvNumber(dto.dolDop),
     ];
-  }
-
-  private formatPeriod(start: string | null, end: string | null): string {
-    if (!start && !end) return '';
-    return `${start ?? ''} - ${end ?? ''}`;
   }
 
   private toIsoOrNull(value: Date | string | null): string | null {

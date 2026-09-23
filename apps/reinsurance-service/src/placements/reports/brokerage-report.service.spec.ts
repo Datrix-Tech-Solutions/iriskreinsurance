@@ -243,7 +243,11 @@ describe('BrokerageReportService', () => {
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(csv).toContain('Policy Number,Reinsurer,Insured');
-    expect(csv).toContain('POL-001,Best Re,Xpress Group,Motor Comprehensive');
+    expect(csv).toContain('Brokerage Paid,WHT,WHT Paid,NIC Levy,NIC Levy Paid');
+    expect(csv).not.toContain('Realized');
+    expect(csv).toContain(
+      'POL-001,Best Re,Xpress Group,Motor Comprehensive,Acme Insurance,2026-09-01 - 2027-08-31',
+    );
     expect(csv).toContain('Paid');
   });
 });

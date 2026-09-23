@@ -109,6 +109,25 @@ export class ReinsuranceReportsController {
     return this.premiumsReport.exportPremiumsCsv(request.user.tenantId, query);
   }
 
+  @Get('premiums/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="premiums-report.xls"')
+  @ApiOperation({
+    summary: 'Export Reinsurance premiums report Excel',
+    description:
+      'Exports the full filtered Premiums report result as an Excel-compatible workbook.',
+  })
+  exportPremiumsExcel(
+    @Query() query: QueryPremiumsReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.premiumsReport.exportPremiumsExcel(
+      request.user.tenantId,
+      query,
+    );
+  }
+
   @Get('cedants')
   @RequirePermissions(PlacementPermission.VIEW)
   @ApiOperation({
@@ -141,6 +160,22 @@ export class ReinsuranceReportsController {
     return this.cedantsReport.exportCedantsCsv(request.user.tenantId, query);
   }
 
+  @Get('cedants/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="cedants-report.xls"')
+  @ApiOperation({
+    summary: 'Export Reinsurance cedants report Excel',
+    description:
+      'Exports the full filtered Cedants report result as an Excel-compatible workbook.',
+  })
+  exportCedantsExcel(
+    @Query() query: QueryCedantsReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.cedantsReport.exportCedantsExcel(request.user.tenantId, query);
+  }
+
   @Get('reinsurers')
   @RequirePermissions(PlacementPermission.VIEW)
   @ApiOperation({
@@ -171,6 +206,25 @@ export class ReinsuranceReportsController {
     @Req() request: Request & { user: RequestUser },
   ) {
     return this.reinsurersReport.exportReinsurersCsv(
+      request.user.tenantId,
+      query,
+    );
+  }
+
+  @Get('reinsurers/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="reinsurers-report.xls"')
+  @ApiOperation({
+    summary: 'Export Reinsurance reinsurers report Excel',
+    description:
+      'Exports the full filtered Reinsurers report result as an Excel-compatible workbook.',
+  })
+  exportReinsurersExcel(
+    @Query() query: QueryReinsurersReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.reinsurersReport.exportReinsurersExcel(
       request.user.tenantId,
       query,
     );
@@ -214,6 +268,28 @@ export class ReinsuranceReportsController {
     );
   }
 
+  @Get('facultative/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="facultative-report.xls"',
+  )
+  @ApiOperation({
+    summary: 'Export Reinsurance facultative report Excel',
+    description:
+      'Exports the full filtered Facultative report result as an Excel-compatible workbook.',
+  })
+  exportFacultativeExcel(
+    @Query() query: QueryFacultativeReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.facultativeReport.exportFacultativeExcel(
+      request.user.tenantId,
+      query,
+    );
+  }
+
   @Get('brokerage')
   @RequirePermissions(PlacementPermission.VIEW)
   @ApiOperation({
@@ -249,6 +325,25 @@ export class ReinsuranceReportsController {
     );
   }
 
+  @Get('brokerage/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="brokerage-report.xls"')
+  @ApiOperation({
+    summary: 'Export Reinsurance brokerage report Excel',
+    description:
+      'Exports the full filtered Brokerage report result as an Excel-compatible workbook.',
+  })
+  exportBrokerageExcel(
+    @Query() query: QueryBrokerageReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.brokerageReport.exportBrokerageExcel(
+      request.user.tenantId,
+      query,
+    );
+  }
+
   @Get('claims')
   @RequirePermissions(PlacementPermission.VIEW)
   @ApiOperation({
@@ -279,5 +374,21 @@ export class ReinsuranceReportsController {
     @Req() request: Request & { user: RequestUser },
   ) {
     return this.claimsReport.exportClaimsCsv(request.user.tenantId, query);
+  }
+
+  @Get('claims/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="claims-report.xls"')
+  @ApiOperation({
+    summary: 'Export Reinsurance claims report Excel',
+    description:
+      'Exports the full filtered Claims report result as an Excel-compatible workbook.',
+  })
+  exportClaimsExcel(
+    @Query() query: QueryClaimsReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.claimsReport.exportClaimsExcel(request.user.tenantId, query);
   }
 }

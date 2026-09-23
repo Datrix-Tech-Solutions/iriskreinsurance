@@ -17,6 +17,7 @@ import {
   useFacultativeReport,
 } from '@/hooks';
 import {
+  downloadFacultativeReportExcel,
   downloadFacultativeReportCsv,
   FacultativeReportRow,
   FacultativeReinsurerBreakdown,
@@ -29,6 +30,7 @@ import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/p
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
+import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
 
 const STATUS_OPTIONS = FACULTATIVE_STATUSES.map((s) => ({
   value: s,
@@ -327,7 +329,7 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
     '140px',
   ),
   rightAmount('brokerage', 'Brokerage', (row) => fac(row).brokerage, '100px'),
-  rightAmount('brokeragePaid', 'Brokerage Realized', (row) => fac(row).brokeragePaid, '100px'),
+  rightAmount('brokeragePaid', 'Brokerage Paid', (row) => fac(row).brokeragePaid, '100px'),
   rightAmount(
     'netPremiumDueReinsurer',
     'Net Premium Due Reinsurer',
@@ -414,12 +416,7 @@ const REINSURER_SCOPE_COLUMNS: ReportColumn[] = [
     '100px',
   ),
   rightAmount('brokerage', 'Brokerage', (row) => re(row)?.brokerage ?? null, '100px'),
-  rightAmount(
-    'brokeragePaid',
-    'Brokerage Realized',
-    (row) => re(row)?.brokeragePaid ?? null,
-    '100px',
-  ),
+  rightAmount('brokeragePaid', 'Brokerage Paid', (row) => re(row)?.brokeragePaid ?? null, '100px'),
   rightAmount('wht', 'WHT', (row) => re(row)?.withholdingTax ?? null, '100px'),
   rightAmount('whtPaid', 'Paid WHT', (row) => re(row)?.withholdingTaxPaid ?? null, '100px'),
   rightAmount('nicLevy', 'NIC Levy', (row) => re(row)?.nicLevy ?? null, '100px'),
@@ -543,12 +540,13 @@ export function FacultativeReportTable() {
   const handleExport = async () => {
     if (!reportParams) return;
     const blob = await downloadFacultativeReportCsv(reportParams);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `facultative-report-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadReportBlob(blob, datedReportFilename('facultative-report', 'csv'));
+  };
+
+  const handleExportExcel = async () => {
+    if (!reportParams) return;
+    const blob = await downloadFacultativeReportExcel(reportParams);
+    downloadReportBlob(blob, datedReportFilename('facultative-report', 'xls'));
   };
 
   return (
@@ -565,7 +563,14 @@ export function FacultativeReportTable() {
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.placementId}`)
           }
-          onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
+          exportOptions={
+            reportParams && displayRows.length > 0
+              ? [
+                  { label: 'CSV', onClick: handleExport },
+                  { label: 'Excel', onClick: handleExportExcel },
+                ]
+              : undefined
+          }
           toolbarTrailing={rowsPerPageControl}
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the

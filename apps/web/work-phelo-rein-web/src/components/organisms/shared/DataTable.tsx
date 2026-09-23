@@ -37,6 +37,11 @@ interface DataTableProps<T extends { id: string | number }> {
   filterOptions?: { value: string; label: string }[];
   onFilter?: (value: string) => void;
   onExport?: () => void;
+  exportOptions?: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+  }[];
   /** Rendered in the toolbar immediately after the Export button — e.g. a rows-per-page select. */
   toolbarTrailing?: React.ReactNode;
   extraFilters?: React.ReactNode;
@@ -197,6 +202,7 @@ export function DataTable<T extends { id: string | number }>({
   filterOptions,
   onFilter,
   onExport,
+  exportOptions,
   toolbarTrailing,
   extraFilters,
   searchAfterFilters = false,
@@ -218,6 +224,7 @@ export function DataTable<T extends { id: string | number }>({
     extraFilters ||
     (filterOptions && onFilter) ||
     onExport ||
+    (exportOptions && exportOptions.length > 0) ||
     toolbarTrailing ||
     secondaryButton ||
     (secondaryButtons && secondaryButtons.length > 0) ||
@@ -277,14 +284,32 @@ export function DataTable<T extends { id: string | number }>({
 
             <div className="flex-1" />
 
-            {onExport && (
+            {exportOptions && exportOptions.length > 0 ? (
+              <div className="flex items-center gap-2">
+                {exportOptions.map((option) => (
+                  <Button
+                    key={option.label}
+                    variant="secondary"
+                    size="sm"
+                    onClick={option.onClick}
+                    disabled={option.disabled}
+                    className="group"
+                  >
+                    {option.label}
+                    <span className="inline-flex overflow-hidden w-0 group-hover:w-4 group-hover:ml-1.5 transition-[width,margin] duration-300 ease-out">
+                      <Icons.Upload className="w-4 h-4 shrink-0 -translate-x-4 group-hover:translate-x-0 transition-transform duration-300 ease-out" />
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            ) : onExport ? (
               <Button variant="secondary" size="sm" onClick={onExport} className="group">
                 Export
                 <span className="inline-flex overflow-hidden w-0 group-hover:w-4 group-hover:ml-1.5 transition-[width,margin] duration-300 ease-out">
                   <Icons.Upload className="w-4 h-4 shrink-0 -translate-x-4 group-hover:translate-x-0 transition-transform duration-300 ease-out" />
                 </span>
               </Button>
-            )}
+            ) : null}
 
             {toolbarTrailing}
 

@@ -208,6 +208,8 @@ describe('ClaimsReportService', () => {
     expect(csv).toContain(
       'Xpress Group,Acme Insurance,Marine Cargo,POL-001,Fire,CLM-001',
     );
+    expect(csv).toContain('2026-01-01 - 2026-12-31,2026-08-10');
+    expect(csv).not.toContain('2026-08-10T00:00:00.000Z');
     expect(csv).toContain('Best Re,50,6000,6000,0');
   });
 

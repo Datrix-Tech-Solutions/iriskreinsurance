@@ -16,6 +16,7 @@ import {
   usePremiumsReport,
 } from '@/hooks';
 import {
+  downloadPremiumsReportExcel,
   downloadPremiumsReportCsv,
   PremiumReportRow,
   PremiumReinsurerBreakdown,
@@ -24,6 +25,7 @@ import {
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
+import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
 
 // Cedant-side premium payment status (has the cedant paid iRisk?).
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
@@ -478,18 +480,19 @@ export function PremiumsReportTable() {
   const handleExport = async () => {
     if (reportParams && scope === 'cedant') {
       const blob = await downloadPremiumsReportCsv(reportParams);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `premiums-report-${new Date().toISOString().slice(0, 10)}.csv`;
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadReportBlob(blob, datedReportFilename('premiums-report', 'csv'));
       return;
     }
 
     const headers = columns.map((c) => c.label);
     const data = displayRows.map((row) => columns.map((c) => c.csv?.(row) ?? ''));
     exportToCsv(`premiums-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
+  };
+
+  const handleExportExcel = async () => {
+    if (!reportParams) return;
+    const blob = await downloadPremiumsReportExcel(reportParams);
+    downloadReportBlob(blob, datedReportFilename('premiums-report', 'xls'));
   };
 
   return (
@@ -504,7 +507,14 @@ export function PremiumsReportTable() {
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
-          onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
+          exportOptions={
+            reportParams && displayRows.length > 0
+              ? [
+                  { label: 'CSV', onClick: handleExport },
+                  { label: 'Excel', onClick: handleExportExcel },
+                ]
+              : undefined
+          }
           toolbarTrailing={rowsPerPageControl}
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the

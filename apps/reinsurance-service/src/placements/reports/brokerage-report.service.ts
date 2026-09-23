@@ -13,6 +13,7 @@ import {
   QueryBrokerageReportDto,
 } from './dto/query-brokerage-report.dto';
 import { PremiumReportDateBasis } from './dto/query-premiums-report.dto';
+import { csvToExcelHtml, formatExportPeriod } from './report-excel-export';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -120,17 +121,25 @@ export class BrokerageReportService {
       'Fac Premium',
       'Exchange Rate',
       'Full Brokerage Amount',
-      'Brokerage Realized',
+      'Brokerage Paid',
       'WHT',
-      'WHT Realized',
+      'WHT Paid',
       'NIC Levy',
-      'NIC Levy Realized',
+      'NIC Levy Paid',
       'Payment Status',
     ];
     const lines = [header, ...rows.map((row) => this.toCsvRow(row))].map(
       (cells) => cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
+  }
+
+  async exportBrokerageExcel(
+    tenantId: string,
+    query: QueryBrokerageReportDto,
+  ): Promise<string> {
+    const csv = await this.exportBrokerageCsv(tenantId, query);
+    return csvToExcelHtml(csv, 'Brokerage Report');
   }
 
   private rowsQuery(
@@ -751,7 +760,7 @@ export class BrokerageReportService {
       dto.title,
       dto.policyType ?? '',
       dto.cedantName,
-      this.formatPeriod(dto.inceptionDate, dto.expiryDate),
+      formatExportPeriod(dto.inceptionDate, dto.expiryDate),
       dto.currency ?? '',
       this.csvNumber(dto.sumInsured),
       this.csvNumber(dto.premium),
@@ -765,11 +774,6 @@ export class BrokerageReportService {
       this.csvNumber(dto.nicLevyPaid),
       dto.paymentStatus,
     ];
-  }
-
-  private formatPeriod(start: string | null, end: string | null): string {
-    if (!start && !end) return '';
-    return `${start ?? ''} - ${end ?? ''}`;
   }
 
   private toIsoOrNull(value: Date | string | null): string | null {

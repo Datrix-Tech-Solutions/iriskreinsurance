@@ -190,3 +190,11 @@ export async function downloadClaimsReportCsv(params: ClaimsReportParams): Promi
   });
   return res.data;
 }
+
+export async function downloadClaimsReportExcel(params: ClaimsReportParams): Promise<Blob> {
+  const res = await api.get<Blob>(`${CLAIMS_REPORT_BASE}/export.xls`, {
+    params: normalizeReportParams(params),
+    responseType: 'blob',
+  });
+  return res.data;
+}

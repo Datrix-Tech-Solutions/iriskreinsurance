@@ -276,8 +276,13 @@ describe('FacultativeReportService', () => {
     });
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
-    expect(csv).toContain('Policy Number,Insurer,Reinsurer,Insured');
-    expect(csv).toContain('POL-001,Acme Insurance,,Xpress Group,Motor');
+    expect(csv).toContain('Policy Number,Insurer,Insured');
+    expect(csv).not.toContain('Policy Number,Insurer,Reinsurer,Insured');
+    expect(csv).toContain(
+      'POL-001,Acme Insurance,Xpress Group,Motor,2026-09-08,2026-09-08,2026-09-01,2027-08-31',
+    );
+    expect(csv).toContain('Brokerage Paid');
+    expect(csv).not.toContain('Brokerage Realized');
     expect(csv).toContain('Paid');
   });
 
@@ -369,7 +374,9 @@ describe('FacultativeReportService', () => {
     expect(lines[0]).toContain(
       'Policy Number,Insurer,Reinsurer,Insured,Risk Class',
     );
-    expect(lines[1]).toContain('POL-001,Acme Insurance,Best Re,Xpress Group');
+    expect(lines[1]).toContain(
+      'POL-001,Acme Insurance,Best Re,Xpress Group,Motor,2026-09-08,2026-09-08,2026-09-01,2027-08-31',
+    );
     expect(lines[1]).toContain('1000000');
     expect(lines[1]).toContain('10000');
     expect(lines[2]).toContain('POL-001,Acme Insurance,Good Re,Xpress Group');
