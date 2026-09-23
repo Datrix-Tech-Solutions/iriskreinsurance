@@ -28,7 +28,6 @@ import { exportToCsv } from '@/lib/exportCsv';
 // Cedant-side premium payment status (has the cedant paid iRisk?).
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
-  { value: 'Pending', label: 'Pending' },
   { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Paid', label: 'Paid' },
 ];
@@ -168,7 +167,13 @@ const POLICY_NUMBER_COLUMN: ReportColumn = {
   key: 'policyNumber',
   label: 'Policy Number',
   width: '130px',
-  render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
+  render: (row) => (
+    <EndorsedReferencePill
+      id={row.placementId}
+      reference={row.policyNumber}
+      textClassName="text-[10px]"
+    />
+  ),
   csv: (row) => row.policyNumber,
 };
 
@@ -196,7 +201,7 @@ const MIDDLE_COLUMNS: ReportColumn[] = [
   {
     key: 'policyType',
     label: 'Policy Type',
-    width: '120px',
+    width: '100px',
     render: (row) => row.policyType ?? <Muted>—</Muted>,
     csv: (row) => row.policyType ?? '',
   },
@@ -210,35 +215,35 @@ const MIDDLE_COLUMNS: ReportColumn[] = [
   {
     key: 'offerDate',
     label: 'Offer Date',
-    width: '80px',
+    width: '60px',
     render: (row) => fmtDate(row.offerDate),
     csv: (row) => fmtDate(row.offerDate),
   },
   {
     key: 'dateClosed',
     label: 'Date Closed',
-    width: '90px',
+    width: '60px',
     render: (row) => fmtDate(row.closedAt),
     csv: (row) => fmtDate(row.closedAt),
   },
   {
     key: 'periodOfInsurance',
     label: 'Period of Insurance',
-    width: '160px',
+    width: '130px',
     render: (row) => fmtPeriod(row.inceptionDate, row.expiryDate),
     csv: (row) => fmtPeriod(row.inceptionDate, row.expiryDate),
   },
   {
     key: 'currency',
     label: 'Currency',
-    width: '60px',
+    width: '40px',
     render: (row) => row.currency ?? '—',
     csv: (row) => row.currency ?? '',
   },
   {
     key: 'sumInsured100',
     label: '100% S.I',
-    width: '130px',
+    width: '100px',
     className: 'text-right',
     render: (row) => fmtAmount(row.sumInsured, row.currency),
     csv: (row) => row.sumInsured ?? '',
@@ -246,7 +251,7 @@ const MIDDLE_COLUMNS: ReportColumn[] = [
   {
     key: 'premium100',
     label: '100% Premium',
-    width: '130px',
+    width: '100px',
     className: 'text-right',
     render: (row) => fmtAmount(row.premium, row.currency),
     csv: (row) => row.premium ?? '',
@@ -254,7 +259,7 @@ const MIDDLE_COLUMNS: ReportColumn[] = [
   {
     key: 'facShare',
     label: 'Fac Share',
-    width: '70px',
+    width: '60px',
     className: 'text-right',
     render: (row) => fmtPct(row.sharePercent),
     csv: (row) => row.sharePercent ?? '',
@@ -265,7 +270,7 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'cedantPremiumDue',
     label: 'Cedant Premium Due',
-    width: '140px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.cedantDue, row.currency),
     csv: (row) => row.cedantDue,
@@ -273,7 +278,7 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'cedantPremiumPaid',
     label: 'Cedant Premium Paid',
-    width: '140px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.cedantPaid, row.currency),
     csv: (row) => row.cedantPaid,
@@ -281,7 +286,7 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'cedantOutstanding',
     label: 'Cedant Outstanding',
-    width: '150px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.cedantOutstanding, row.currency),
     csv: (row) => row.cedantOutstanding,
@@ -289,14 +294,14 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'paymentStatus',
     label: 'Payment Status',
-    width: '110px',
+    width: '100px',
     render: (row) => row.paymentStatus,
     csv: (row) => row.paymentStatus,
   },
   {
     key: 'netPremiumDueReinsurer',
     label: 'Net Premium Due Reinsurer',
-    width: '140px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.netPremium, row.currency),
     csv: (row) => row.netPremium ?? '',
@@ -304,7 +309,7 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'netPremiumDueReinsurerPaid',
     label: 'Net Premium Due Reinsurer Paid',
-    width: '160px',
+    width: '150px',
     className: 'text-right',
     render: (row) => fmtAmount(row.paidAmount, row.currency),
     csv: (row) => row.paidAmount ?? '',
@@ -315,7 +320,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'facPremium',
     label: 'Fac Premium',
-    width: '140px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.grossPremium, row.currency),
     csv: (row) => row.grossPremium ?? '',
@@ -323,7 +328,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'commissionPct',
     label: "Insurer's Commission %",
-    width: '120px',
+    width: '100px',
     className: 'text-right',
     render: (row) => fmtPct(row.commissionPercent),
     csv: (row) => row.commissionPercent ?? '',
@@ -331,7 +336,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'commissionAmount',
     label: "Insurer's Commission Amount",
-    width: '140px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.commissionAmount, row.currency),
     csv: (row) => row.commissionAmount ?? '',
@@ -339,7 +344,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'netPremiumDueIriskRe',
     label: 'Net Premium Due iRisk Re',
-    width: '150px',
+    width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.netPremium, row.currency),
     csv: (row) => row.netPremium ?? '',
@@ -347,7 +352,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
     key: 'netPremiumDueIriskRePaid',
     label: 'Net Premium Due iRisk Re Paid',
-    width: '170px',
+    width: '150px',
     className: 'text-right',
     render: (row) => fmtAmount(row.paidAmount, row.currency),
     csv: (row) => row.paidAmount ?? '',
@@ -493,6 +498,8 @@ export function PremiumsReportTable() {
         <DataTable
           columns={columns}
           data={displayRows}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)

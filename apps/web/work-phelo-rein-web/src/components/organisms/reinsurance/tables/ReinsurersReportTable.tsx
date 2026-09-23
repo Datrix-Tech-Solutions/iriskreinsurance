@@ -186,6 +186,8 @@ export function ReinsurersReportTable() {
         <DataTable
           columns={columns}
           data={data}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           toolbarTrailing={rowsPerPageControl}
           isLoading={reportParams !== null && isLoading}
           onExport={reportParams && data.length > 0 ? handleExport : undefined}

@@ -93,7 +93,7 @@ const BASE_COLUMNS: ReportColumn[] = [
   {
     key: 'businessName',
     label: 'Business Name',
-    width: '130px',
+    width: '110px',
     render: (row) =>
       row.businessName ? (
         <span className="text-gray-700">{row.businessName}</span>
@@ -104,55 +104,61 @@ const BASE_COLUMNS: ReportColumn[] = [
   {
     key: 'cedantName',
     label: 'Cedant',
-    width: '130px',
+    width: '110px',
     render: (row) => <span className="text-gray-700">{row.cedantName}</span>,
   },
   {
     key: 'policyType',
     label: 'Policy Type',
-    width: '120px',
+    width: '100px',
     render: (row) => row.policyType ?? <Muted>—</Muted>,
   },
   {
     key: 'policyNumber',
     label: 'Policy Number',
     width: '130px',
-    render: (row) => <EndorsedReferencePill id={row.placementId} reference={row.policyNumber} />,
+    render: (row) => (
+      <EndorsedReferencePill
+        id={row.placementId}
+        reference={row.policyNumber}
+        textClassName="text-[10px]"
+      />
+    ),
   },
   {
     key: 'claimType',
     label: 'Claim Type',
-    width: '120px',
+    width: '100px',
     render: (row) => row.claimType ?? <Muted>—</Muted>,
   },
   {
     key: 'claimNumber',
     label: 'Claim Number',
-    width: '100px',
+    width: '90px',
     render: (row) => <span className="font-medium text-gray-900">{row.claimNumber}</span>,
   },
   {
     key: 'periodOfInsurance',
     label: 'Period of Insurance',
-    width: '150px',
+    width: '130px',
     render: (row) => fmtPeriod(row.periodStart, row.periodEnd),
   },
   {
     key: 'dateOfLoss',
     label: 'Date of Loss',
-    width: '90px',
+    width: '70px',
     render: (row) => fmtDate(row.occurrenceDate),
   },
   {
     key: 'currency',
     label: 'Currency',
-    width: '50px',
+    width: '40px',
     render: (row) => row.currency,
   },
   {
     key: 'claimAmount',
     label: 'Claim Amount',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.claimAmount, row.currency),
   },
@@ -162,28 +168,28 @@ const IRISK_COLUMNS: ReportColumn[] = [
   {
     key: 'iriskSharePct',
     label: 'iRisk Share %',
-    width: '70px',
+    width: '60px',
     className: 'text-right',
     render: (row) => fmtPct(row.iriskSharePercent),
   },
   {
     key: 'iriskShareAmount',
     label: 'iRisk Share Amount',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.iriskShareAmount, row.currency),
   },
   {
     key: 'iriskSharePaid',
     label: 'iRisk Share Paid',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.iriskSharePaid, row.currency),
   },
   {
     key: 'iriskShareOutstanding',
     label: 'iRisk Share Outstanding',
-    width: '130px',
+    width: '110px',
     className: 'text-right',
     render: (row) => fmtAmount(row.iriskShareOutstanding, row.currency),
   },
@@ -197,7 +203,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerName',
       label: `${p} Name`,
-      width: '130px',
+      width: '110px',
       render: (row) =>
         row.reinsurerName ? (
           <span className="text-gray-700">{row.reinsurerName}</span>
@@ -208,28 +214,28 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
     {
       key: 'reinsurerSharePct',
       label: `${p} % Share`,
-      width: '120px',
+      width: '100px',
       className: 'text-right',
       render: (row) => fmtPct(row.reinsurerSharePercent),
     },
     {
       key: 'reinsurerShareAmount',
       label: `${p} Share (Amount)`,
-      width: '130px',
+      width: '110px',
       className: 'text-right',
       render: (row) => fmtAmount(row.reinsurerShareAmount, row.currency),
     },
     {
       key: 'reinsurerAmountPaid',
       label: `${p} Amount Paid`,
-      width: '130px',
+      width: '110px',
       className: 'text-right',
       render: (row) => fmtAmount(row.reinsurerPaidAmount, row.currency),
     },
     {
       key: 'reinsurerAmountOutstanding',
       label: `${p} Amount Outstanding`,
-      width: '150px',
+      width: '130px',
       className: 'text-right',
       render: (row) => fmtAmount(row.reinsurerOutstandingAmount, row.currency),
     },
@@ -239,7 +245,7 @@ const reinsurerColumns = (plural: boolean): ReportColumn[] => {
 const AGING_COLUMN: ReportColumn = {
   key: 'agingDays',
   label: 'Aging (days)',
-  width: '50px',
+  width: '40px',
   className: 'text-right',
   render: (row) => <span className="text-gray-700">{fmtInt(row.agingDays)}</span>,
 };
@@ -249,7 +255,7 @@ const AGING_COLUMN: ReportColumn = {
 const DOL_DOP_COLUMN: ReportColumn = {
   key: 'dolDop',
   label: 'DoL:DoP',
-  width: '50px',
+  width: '40px',
   className: 'text-right',
   render: (row) => <span className="text-gray-700">{fmtInt(row.dolDop)}</span>,
 };
@@ -371,6 +377,8 @@ export function ClaimsReportTable() {
         <DataTable
           columns={columns}
           data={rows}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
             router.push(

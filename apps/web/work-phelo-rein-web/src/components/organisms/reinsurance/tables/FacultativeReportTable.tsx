@@ -109,7 +109,8 @@ const Muted = ({ children }: { children: React.ReactNode }) => (
  * One row per report row under Cedants scope; one row per accepted reinsurer
  * (shared placement cells repeated) under Reinsurer scope. */
 interface FacultativeReportDisplayRow extends FacultativeReportRow {
-  rowId: string;
+  /** The underlying placement id — `id` is overridden below to be unique per exploded row. */
+  placementId: string;
   /** The reinsurer this row was exploded for (Reinsurer scope); null under Cedants scope. */
   scopeReinsurer: FacultativeReinsurerBreakdown | null;
 }
@@ -120,7 +121,8 @@ function flattenRow(
 ): FacultativeReportDisplayRow {
   return {
     ...r,
-    rowId: reinsurer ? `${r.id}:${reinsurer.reinsurerId}` : r.id,
+    id: reinsurer ? `${r.id}:${reinsurer.reinsurerId}` : r.id,
+    placementId: r.id,
     scopeReinsurer: reinsurer,
   };
 }
@@ -136,7 +138,11 @@ const POLICY_NUMBER_COLUMN: ReportColumn = {
   label: 'Policy Number',
   width: '120px',
   render: (row) => (
-    <EndorsedReferencePill id={row.id} reference={displayPolicyNumber(row.policyNumber)} />
+    <EndorsedReferencePill
+      id={row.placementId}
+      reference={displayPolicyNumber(row.policyNumber)}
+      textClassName="text-[10px]"
+    />
   ),
   csv: (row) => displayPolicyNumber(row.policyNumber),
 };
@@ -144,7 +150,7 @@ const POLICY_NUMBER_COLUMN: ReportColumn = {
 const BUSINESS_NAME_COLUMN: ReportColumn = {
   key: 'business',
   label: 'Business Name',
-  width: '110px',
+  width: '90px',
   render: (row) => row.riskClassName ?? '—',
   csv: (row) => row.riskClassName ?? '',
 };
@@ -165,7 +171,7 @@ const dateCol = (
 ): ReportColumn => ({
   key,
   label,
-  width: '95px',
+  width: '70px',
   render: (row) => fmtDate(pick(row)),
   csv: (row) => fmtDate(pick(row)),
 });
@@ -181,7 +187,7 @@ const CURRENCY_COLUMN: ReportColumn = {
 const OFFER_STATUS_COLUMN: ReportColumn = {
   key: 'offerStatus',
   label: 'Offer Status',
-  width: '100px',
+  width: '90px',
   render: (row) => (
     <Badge label={facultativeStatusLabel(row.status)} variant={STATUS_VARIANT_MAP[row.status]} />
   ),
@@ -191,7 +197,7 @@ const OFFER_STATUS_COLUMN: ReportColumn = {
 const PAYMENT_STATUS_COLUMN: ReportColumn = {
   key: 'paymentStatus',
   label: 'Payment Status',
-  width: '120px',
+  width: '90px',
   render: (row) => (
     <Badge label={row.paymentStatus} variant={PAYMENT_STATUS_VARIANT_MAP[row.paymentStatus]} />
   ),
@@ -235,35 +241,35 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
   {
     key: 'business',
     label: 'Risk Type',
-    width: '110px',
+    width: '80px',
     render: (row) => row.riskClassName ?? '—',
     csv: (row) => row.riskClassName ?? '',
   },
   {
     key: 'offerDate',
     label: 'Offer Date',
-    width: '95px',
+    width: '70px',
     render: (row) => fmtDate(row.offerDate),
     csv: (row) => fmtDate(row.offerDate),
   },
   {
     key: 'closedAt',
     label: 'Date Closed',
-    width: '95px',
+    width: '70px',
     render: (row) => fmtDate(row.closedAt),
     csv: (row) => fmtDate(row.closedAt),
   },
   {
     key: 'startDate',
     label: 'Start Date',
-    width: '95px',
+    width: '70px',
     render: (row) => fmtDate(row.inceptionDate),
     csv: (row) => fmtDate(row.inceptionDate),
   },
   {
     key: 'endDate',
     label: 'End Date',
-    width: '95px',
+    width: '70px',
     render: (row) => fmtDate(row.expiryDate),
     csv: (row) => fmtDate(row.expiryDate),
   },
@@ -274,24 +280,24 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
     render: (row) => row.currency ?? '—',
     csv: (row) => row.currency ?? '',
   },
-  rightAmount('sumInsured100', '100% Sum Insured', (row) => row.sumInsured),
-  rightAmount('premium100', '100% Premium', (row) => row.premium, '130px'),
+  rightAmount('sumInsured100', '100% Sum Insured', (row) => row.sumInsured, '100px'),
+  rightAmount('premium100', '100% Premium', (row) => row.premium, '100px'),
   {
     key: 'facShare',
     label: 'Fac. Share',
-    width: '80px',
+    width: '60px',
     className: 'text-right',
     render: (row) =>
       row.facultativeOfferPercent != null ? `${row.facultativeOfferPercent}%` : '—',
     csv: (row) => (row.facultativeOfferPercent != null ? `${row.facultativeOfferPercent}%` : ''),
   },
-  rightAmount('facSumInsured', 'Fac Sum Insured', (row) => fac(row).facSumInsured),
-  rightAmount('facPremium', 'Fac Premium', (row) => fac(row).facPremium, '130px'),
-  rightAmount('paidFacPremium', 'Paid Fac Premium', (row) => fac(row).paidFacPremium),
+  rightAmount('facSumInsured', 'Fac Sum Insured', (row) => fac(row).facSumInsured, '100px'),
+  rightAmount('facPremium', 'Fac Premium', (row) => fac(row).facPremium, '100px'),
+  rightAmount('paidFacPremium', 'Paid Fac Premium', (row) => fac(row).paidFacPremium, '100px'),
   {
     key: 'cedantCommissionPct',
     label: 'Cedant Commission (%)',
-    width: '110px',
+    width: '105px',
     className: 'text-right',
     render: (row) => {
       const pct = fac(row).cedantCommissionPercent;
@@ -306,37 +312,38 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
     'cedantCommissionAmount',
     'Cedant Commission',
     (row) => fac(row).cedantCommissionAmount,
+    '100px',
   ),
   rightAmount(
     'netPremiumDueIrisk',
     'Net Premium Due iRisk',
     (row) => fac(row).netPremiumDueIrisk,
-    '150px',
+    '100px',
   ),
   rightAmount(
     'netPremiumDueIriskPaid',
     'Net Premium Due iRisk Paid',
     (row) => fac(row).netPremiumDueIriskPaid,
-    '160px',
+    '140px',
   ),
-  rightAmount('brokerage', 'Brokerage', (row) => fac(row).brokerage, '120px'),
-  rightAmount('brokeragePaid', 'Brokerage Realized', (row) => fac(row).brokeragePaid, '130px'),
+  rightAmount('brokerage', 'Brokerage', (row) => fac(row).brokerage, '100px'),
+  rightAmount('brokeragePaid', 'Brokerage Realized', (row) => fac(row).brokeragePaid, '100px'),
   rightAmount(
     'netPremiumDueReinsurer',
     'Net Premium Due Reinsurer',
     (row) => fac(row).netPremiumDueReinsurer,
-    '160px',
+    '130px',
   ),
   rightAmount(
     'netPremiumDueReinsurerPaid',
     'Net Premium Due Reinsurer Paid',
     (row) => fac(row).netPremiumDueReinsurerPaid,
-    '170px',
+    '150px',
   ),
   {
     key: 'offerStatus',
     label: 'Offer Status',
-    width: '100px',
+    width: '80px',
     render: (row) => (
       <Badge label={facultativeStatusLabel(row.status)} variant={STATUS_VARIANT_MAP[row.status]} />
     ),
@@ -345,7 +352,7 @@ const CEDANT_SCOPE_COLUMNS: ReportColumn[] = [
   {
     key: 'paymentStatus',
     label: 'Payment Status',
-    width: '120px',
+    width: '100px',
     render: (row) => (
       <Badge label={row.paymentStatus} variant={PAYMENT_STATUS_VARIANT_MAP[row.paymentStatus]} />
     ),
@@ -382,12 +389,12 @@ const REINSURER_SCOPE_COLUMNS: ReportColumn[] = [
   dateCol('startDate', 'Start Date', (row) => row.inceptionDate),
   dateCol('endDate', 'End Date', (row) => row.expiryDate),
   CURRENCY_COLUMN,
-  rightAmount('sumInsured100', '100% Sum Insured', (row) => row.sumInsured),
-  rightAmount('premium100', '100% Premium', (row) => row.premium, '130px'),
+  rightAmount('sumInsured100', '100% Sum Insured', (row) => row.sumInsured, '100px'),
+  rightAmount('premium100', '100% Premium', (row) => row.premium, '100px'),
   {
     key: 'facShare',
     label: 'Fac. Share',
-    width: '80px',
+    width: '60px',
     className: 'text-right',
     render: (row) => {
       const s = re(row)?.sharePercent;
@@ -398,31 +405,36 @@ const REINSURER_SCOPE_COLUMNS: ReportColumn[] = [
       return s != null ? `${s}%` : '';
     },
   },
-  rightAmount('facSumInsured', 'Fac Sum Insured', (row) => re(row)?.facSumInsured ?? null),
-  rightAmount('facPremium', 'Fac Premium', (row) => re(row)?.facPremium ?? null, '130px'),
-  rightAmount('paidFacPremium', 'Paid Fac Premium', (row) => re(row)?.paidFacPremium ?? null),
-  rightAmount('brokerage', 'Brokerage', (row) => re(row)?.brokerage ?? null, '120px'),
+  rightAmount('facSumInsured', 'Fac Sum Insured', (row) => re(row)?.facSumInsured ?? null, '100px'),
+  rightAmount('facPremium', 'Fac Premium', (row) => re(row)?.facPremium ?? null, '100px'),
+  rightAmount(
+    'paidFacPremium',
+    'Paid Fac Premium',
+    (row) => re(row)?.paidFacPremium ?? null,
+    '100px',
+  ),
+  rightAmount('brokerage', 'Brokerage', (row) => re(row)?.brokerage ?? null, '100px'),
   rightAmount(
     'brokeragePaid',
     'Brokerage Realized',
     (row) => re(row)?.brokeragePaid ?? null,
-    '130px',
+    '100px',
   ),
-  rightAmount('wht', 'WHT', (row) => re(row)?.withholdingTax ?? null, '110px'),
-  rightAmount('whtPaid', 'Paid WHT', (row) => re(row)?.withholdingTaxPaid ?? null, '110px'),
-  rightAmount('nicLevy', 'NIC Levy', (row) => re(row)?.nicLevy ?? null, '110px'),
-  rightAmount('nicLevyPaid', 'Paid NIC', (row) => re(row)?.nicLevyPaid ?? null, '110px'),
+  rightAmount('wht', 'WHT', (row) => re(row)?.withholdingTax ?? null, '100px'),
+  rightAmount('whtPaid', 'Paid WHT', (row) => re(row)?.withholdingTaxPaid ?? null, '100px'),
+  rightAmount('nicLevy', 'NIC Levy', (row) => re(row)?.nicLevy ?? null, '100px'),
+  rightAmount('nicLevyPaid', 'Paid NIC', (row) => re(row)?.nicLevyPaid ?? null, '100px'),
   rightAmount(
     'netPremiumDueReinsurer',
     'Net Premium Due Reinsurer',
     (row) => re(row)?.netPremiumDueReinsurer ?? null,
-    '160px',
+    '130px',
   ),
   rightAmount(
     'netPremiumPaid',
     'Net Premium Paid',
     (row) => re(row)?.netPremiumPaid ?? null,
-    '150px',
+    '120px',
   ),
   OFFER_STATUS_COLUMN,
   PAYMENT_STATUS_COLUMN,
@@ -547,9 +559,11 @@ export function FacultativeReportTable() {
         <DataTable
           columns={columns}
           data={displayRows}
+          headerClassName="text-[8px]"
+          rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
           onRowClick={(row) =>
-            router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.id}`)
+            router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.placementId}`)
           }
           onExport={reportParams && displayRows.length > 0 ? handleExport : undefined}
           toolbarTrailing={rowsPerPageControl}
