@@ -19,6 +19,7 @@ import {
   LEGACY_SOURCE_SYSTEM,
   LegacyImportMode,
   LegacyOfferClassification,
+  LegacyOfferImportLifecycle,
 } from '../legacy-import.types';
 
 type CliOptions = {
@@ -28,6 +29,7 @@ type CliOptions = {
   tenantId?: string;
   importUserId?: string;
   mode: LegacyImportMode;
+  offerLifecycle: LegacyOfferImportLifecycle;
   fixtureOfferIds: string[];
   classification?: LegacyOfferClassification;
   batchSize?: number;
@@ -51,6 +53,7 @@ async function main() {
   if (!options.source) {
     throw new Error('--source-file is required for dry-run and apply modes.');
   }
+  validateLifecycleOptions(options);
 
   const reader = new LegacyOffersReader();
   const file = await reader.read(options.source);
@@ -61,6 +64,7 @@ async function main() {
     batchSize: options.batchSize,
     afterOfferId: options.afterOfferId,
     referenceOnly: options.referenceOnly,
+    offerLifecycle: options.offerLifecycle,
   });
   const normalizedOffers = selection.normalizedOffers;
   const selectedOfferIds = selection.selectedOfferIds;
@@ -78,6 +82,7 @@ async function main() {
     sourceFileHash: file.sourceFileHash,
     offers: selection.selectedOffers,
     mode: options.mode,
+    offerLifecycle: options.offerLifecycle,
     fixtureOfferIds: options.fixtureOfferIds,
     batchSelection: batchSelectionForPlan(selection),
     existingMaps: [],
@@ -96,6 +101,7 @@ async function main() {
         sourceFileHash: file.sourceFileHash,
         offers: selection.selectedOffers,
         mode: options.mode,
+        offerLifecycle: options.offerLifecycle,
         fixtureOfferIds: options.fixtureOfferIds,
         batchSelection: batchSelectionForPlan(selection),
         existingMaps: [],
@@ -134,27 +140,32 @@ async function main() {
         sourceFileHash: file.sourceFileHash,
         offers: selection.selectedOffers,
         mode: options.mode,
+        offerLifecycle: options.offerLifecycle,
         fixtureOfferIds: options.fixtureOfferIds,
         batchSelection: batchSelectionForPlan(selection),
         existingMaps: resolved.existingMaps,
         scopedFinancialResolvedOfferIds,
       });
+      const dbAwarePlanWithResolutionSummary = withDbResolutionSummary(
+        dbAwarePlan,
+        resolved.resolution,
+      );
       const historicalFinancials = options.includeHistoricalFinancials
         ? await buildHistoricalFinancialPlan({
             prisma,
             options,
             normalizedOffers,
-            plan: dbAwarePlan,
+            plan: dbAwarePlanWithResolutionSummary,
           })
         : undefined;
       console.log(
         JSON.stringify(
           {
-            ...dbAwarePlan,
+            ...dbAwarePlanWithResolutionSummary,
             closedDateLookup: closedDateLookupSummary(closedDateLookup),
             historicalFinancials,
             scopedEligibility: scopedEligibilitySummary(
-              dbAwarePlan,
+              dbAwarePlanWithResolutionSummary,
               historicalFinancials,
             ),
             dbResolution: resolved.resolution,
@@ -254,18 +265,26 @@ async function buildDbAwarePlan(input: {
     plan: input.plan,
     normalizedOffers: input.normalizedOffers,
   });
-  return new LegacyOffersPlanGenerator().build({
+  const dbAwarePlan = new LegacyOffersPlanGenerator().build({
     tenantSlug: input.options.tenantSlug,
     tenantId: resolved.resolution.tenant.id,
     sourceFilePath: input.file.sourceFilePath,
     sourceFileHash: input.file.sourceFileHash,
     offers: input.normalizedOffers.map((offer) => offer.source),
     mode: input.options.mode,
+    offerLifecycle: input.options.offerLifecycle,
     fixtureOfferIds: input.options.fixtureOfferIds,
     batchSelection: input.batchSelection,
     existingMaps: resolved.existingMaps,
     scopedFinancialResolvedOfferIds: input.scopedFinancialResolvedOfferIds,
   });
+  const conflicts = countDbResolutionConflicts(resolved.resolution);
+  if (conflicts > 0) {
+    throw new Error(
+      `DB-aware apply has ${conflicts} unresolved conflict(s); review dry-run output before applying.`,
+    );
+  }
+  return dbAwarePlan;
 }
 
 function closedDateLookupSummary(
@@ -279,6 +298,49 @@ function closedDateLookupSummary(
     ignoredLookupOnlyCount: file.ignoredLookupOnlyIds.length,
     ignoredLookupOnlyIds: file.ignoredLookupOnlyIds,
   };
+}
+
+function withDbResolutionSummary(
+  plan: ReturnType<LegacyOffersPlanGenerator['build']>,
+  resolution: Awaited<ReturnType<LegacyDbAwareDryRun['resolve']>>['resolution'],
+) {
+  if (plan.batchSelection?.mode === 'reference-only') {
+    return {
+      ...plan,
+      counts: {
+        ...plan.counts,
+        creates: {
+          ...plan.counts.creates,
+          currencies: resolution.projectedCounts.currencies.create,
+          counterparties: resolution.projectedCounts.counterparties.create,
+          counterpartyAddresses: resolution.projectedCounts.addresses.create,
+          riskClasses: resolution.projectedCounts.riskClasses.create,
+          riskTypes: resolution.projectedCounts.riskTypes.create,
+          riskTypeFields: resolution.projectedCounts.riskTypeFields.create,
+          placements: 0,
+          participants: 0,
+          placementClosings: 0,
+          legacyImportMaps: resolution.projectedCounts.legacyImportMaps.create,
+        },
+        conflicts: countDbResolutionConflicts(resolution),
+      },
+    };
+  }
+  return {
+    ...plan,
+    counts: {
+      ...plan.counts,
+      conflicts: plan.counts.conflicts + countDbResolutionConflicts(resolution),
+    },
+  };
+}
+
+function countDbResolutionConflicts(
+  resolution: Awaited<ReturnType<LegacyDbAwareDryRun['resolve']>>['resolution'],
+) {
+  return Object.values(resolution.plannedEntities)
+    .flat()
+    .filter((entity) => entity.action === 'conflict').length;
 }
 
 function batchSelectionForPlan(
@@ -316,6 +378,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     tenantSlug: 'acme-ghana',
     mode: 'dry-run',
+    offerLifecycle: 'closed',
     fixtureOfferIds: [],
     allowApply: false,
     resolveDb: false,
@@ -337,6 +400,10 @@ function parseArgs(argv: string[]): CliOptions {
       options.importUserId = requiredValue(arg, next, () => index++);
     } else if (arg === '--mode') {
       options.mode = parseMode(requiredValue(arg, next, () => index++));
+    } else if (arg === '--offer-lifecycle') {
+      options.offerLifecycle = parseOfferLifecycle(
+        requiredValue(arg, next, () => index++),
+      );
     } else if (arg === '--fixture') {
       options.fixtureOfferIds = requiredValue(arg, next, () => index++)
         .split(',')
@@ -590,6 +657,20 @@ function financialSourceOptions(
   };
 }
 
+function validateLifecycleOptions(options: CliOptions) {
+  if (options.offerLifecycle === 'closed') return;
+  if (options.closedDateLookupFile) {
+    throw new Error(
+      '--closed-date-lookup-file is supported only with --offer-lifecycle closed.',
+    );
+  }
+  if (options.includeHistoricalFinancials) {
+    throw new Error(
+      '--include-historical-financials is supported only with --offer-lifecycle closed.',
+    );
+  }
+}
+
 function applyScopeForSelection(
   mode: ReturnType<typeof selectLegacyOffersForImport>['mode'],
 ) {
@@ -622,6 +703,11 @@ function parseMode(value: string): LegacyImportMode {
     return value;
   }
   throw new Error(`Unsupported mode '${value}'.`);
+}
+
+function parseOfferLifecycle(value: string): LegacyOfferImportLifecycle {
+  if (value === 'closed' || value === 'open') return value;
+  throw new Error(`Unsupported --offer-lifecycle '${value}'.`);
 }
 
 function requiredValue(

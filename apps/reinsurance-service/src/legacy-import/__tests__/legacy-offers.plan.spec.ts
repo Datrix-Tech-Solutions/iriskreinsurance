@@ -114,6 +114,83 @@ describe('LegacyOffersPlanGenerator', () => {
     expect(plan.counts.creates.placements).toBe(1);
   });
 
+  it('plans open-offer imports without historical closing rows or maps', () => {
+    const plan = generator.build({
+      tenantSlug: 'stellar-tech',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offerLifecycle: 'open',
+      offers: [offer({ offer_status: 'OPEN' })],
+    });
+
+    expect(plan.offerLifecycle).toBe('open');
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        offerId: '1',
+        action: 'create',
+        participantCount: 1,
+      }),
+    );
+    expect(plan.counts.creates.placements).toBe(1);
+    expect(plan.counts.creates.participants).toBe(1);
+    expect(plan.counts.creates.placementClosings).toBe(0);
+    expect(plan.counts.creates.legacyImportMaps).toBe(2);
+  });
+
+  it('allows open-offer placement-only records with no participants', () => {
+    const plan = generator.build({
+      tenantSlug: 'stellar-tech',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offerLifecycle: 'open',
+      offers: [
+        offer({
+          offer_status: 'OPEN',
+          placed_share: null,
+          offer_participant: [],
+        }),
+      ],
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        classification: 'AUTO_SAFE',
+        action: 'create',
+        participantCount: 0,
+        reasons: ['open-offer-placement-only-no-historical-financials'],
+      }),
+    );
+    expect(plan.counts.creates.placements).toBe(1);
+    expect(plan.counts.creates.participants).toBe(0);
+    expect(plan.counts.creates.placementClosings).toBe(0);
+    expect(plan.counts.creates.legacyImportMaps).toBe(1);
+  });
+
+  it('keeps open-offer rows with nonpositive participant signed lines hard blocked', () => {
+    const source = offer({ offer_status: 'OPEN' });
+    source.offer_participant![0].offer_participant_percentage = 0;
+    const plan = generator.build({
+      tenantSlug: 'stellar-tech',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'file-hash',
+      mode: 'dry-run',
+      offerLifecycle: 'open',
+      offers: [source],
+    });
+
+    expect(plan.records[0]).toEqual(
+      expect.objectContaining({
+        classification: 'DATA_MISMATCH',
+        action: 'reject',
+        reasons: ['nonpositive-participant-signed-line'],
+      }),
+    );
+    expect(plan.counts.rejected).toBe(1);
+    expect(plan.counts.creates.placements).toBe(0);
+  });
+
   it('keeps financially unresolved NEEDS_FINANCIAL_REVIEW offers entirely blocked', () => {
     const plan = generator.build({
       tenantSlug: 'acme-ghana',

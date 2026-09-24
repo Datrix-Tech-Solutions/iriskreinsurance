@@ -9,6 +9,8 @@ export const LEGACY_TOLERANCES = {
 
 export type LegacyImportMode = 'dry-run' | 'apply' | 'rollback';
 
+export type LegacyOfferImportLifecycle = 'closed' | 'open';
+
 export type LegacyOfferClassification =
   | 'AUTO_SAFE'
   | 'NEEDS_FINANCIAL_REVIEW'
@@ -248,6 +250,7 @@ export type LegacyImportPlan = {
   sourceFilePath: string;
   sourceFileHash: string;
   mode: LegacyImportMode;
+  offerLifecycle: LegacyOfferImportLifecycle;
   fixtureOfferIds: string[];
   batchSelection?: {
     mode: 'fixture' | 'classification-batch' | 'reference-only' | 'all';

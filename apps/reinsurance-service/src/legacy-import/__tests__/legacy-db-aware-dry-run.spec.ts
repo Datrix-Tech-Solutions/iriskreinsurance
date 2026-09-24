@@ -147,6 +147,106 @@ describe('LegacyDbAwareDryRun', () => {
     expectNoWrites(writeFns);
   });
 
+  it('does not plan historical closings for open-offer imports', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma, legacyImportMapFindMany, placementClosingFindMany } =
+      prismaMock(
+        [
+          [{ id: 'tenant-1', slug: 'stellar-tech', name: 'Stellar Tech' }],
+          [
+            {
+              id: 'user-1',
+              email: 'admin@stellartech.com.gh',
+              role: 'TENANT_ADMIN',
+            },
+          ],
+          [{ count: 2 }],
+        ],
+        writeFns,
+      );
+
+    const result = await resolveOffers(
+      prisma,
+      [offer({ offer_status: 'OPEN' })],
+      'open',
+    );
+
+    expect(result.plan.counts.creates.placements).toBe(1);
+    expect(result.plan.counts.creates.participants).toBe(1);
+    expect(result.plan.counts.creates.placementClosings).toBe(0);
+    expect(result.plan.counts.creates.legacyImportMaps).toBe(2);
+    expect(result.resolution.plannedEntities.placementClosings).toEqual([]);
+    expect(
+      result.resolution.projectedCounts.legacyImportMaps.byEntityType
+        .offer_participant_closing,
+    ).toBeUndefined();
+    const closingWhere = firstMockArg<{
+      where?: { closingNumber?: { in?: string[] } };
+    }>(placementClosingFindMany);
+    expect(closingWhere.where?.closingNumber?.in).toEqual([]);
+    const mapWhere = firstMockArg<{
+      where?: { entityType?: { in?: string[] } };
+    }>(legacyImportMapFindMany);
+    expect(mapWhere.where?.entityType?.in).not.toContain(
+      'offer_participant_closing',
+    );
+    expectNoWrites(writeFns);
+  });
+
+  it('flags placement-batch missing preloaded reference maps before apply', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'stellar-tech', name: 'Stellar Tech' }],
+        [{ id: 'user-1', email: 'admin@stellartech.com.gh' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const source = offer({
+      offer_id: '6000',
+      offer_status: 'OPEN',
+      classofbusiness: {
+        class_of_business_id: '30',
+        business_name: 'Retention Bond',
+        business_details: '[]',
+      },
+      offer_participant: [],
+    });
+    const normalized = new LegacyOffersNormalizer().normalize(source);
+    const plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'stellar-tech',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'open-file-hash',
+      offers: [source],
+      mode: 'dry-run',
+      offerLifecycle: 'open',
+      batchSelection: {
+        mode: 'classification-batch',
+        selectedOfferIds: ['6000'],
+        classification: 'AUTO_SAFE',
+        batchSize: 250,
+      },
+    });
+
+    const result = await new LegacyDbAwareDryRun(prisma).resolve({
+      tenantSlug: 'stellar-tech',
+      plan,
+      normalizedOffers: [normalized],
+    });
+
+    expect(result.resolution.plannedEntities.riskTypes).toContainEqual(
+      expect.objectContaining({
+        entityType: 'risk_type',
+        legacyId: '30',
+        action: 'conflict',
+        reason: 'placement-batch-reference-import-map-missing',
+      }),
+    );
+    expect(result.plan.counts.conflicts).toBeGreaterThan(0);
+    expectNoWrites(writeFns);
+  });
+
   it('does not plan dependencies that are exclusive to non-eligible offers', async () => {
     const writeFns = writeFunctionMocks();
     const { prisma } = prismaMock(
@@ -792,6 +892,69 @@ describe('LegacyDbAwareDryRun', () => {
     expectNoWrites(writeFns);
   });
 
+  it('projects reference-only dry-run as reference preload without business rows', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'stellar-tech', name: 'Stellar Tech' }],
+        [{ id: 'user-1', email: 'admin@stellartech.com.gh' }],
+        [{ count: 2 }],
+      ],
+      writeFns,
+    );
+    const source = offer({
+      offer_id: '6000',
+      offer_status: 'OPEN',
+      payment_status: 'UNPAID',
+      classofbusiness: {
+        class_of_business_id: '30',
+        business_name: 'Retention Bond',
+        business_details: JSON.stringify([
+          { keydetail: 'Project Description' },
+          { keydetail: 'Obligee Interest' },
+        ]),
+      },
+      offer_participant: [],
+    });
+    const normalized = new LegacyOffersNormalizer().normalize(source);
+    const plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'stellar-tech',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'open-file-hash',
+      offers: [source],
+      mode: 'dry-run',
+      offerLifecycle: 'open',
+      batchSelection: {
+        mode: 'reference-only',
+        selectedOfferIds: ['6000'],
+        classification: 'AUTO_SAFE',
+      },
+    });
+
+    const result = await new LegacyDbAwareDryRun(prisma).resolve({
+      tenantSlug: 'stellar-tech',
+      plan,
+      normalizedOffers: [normalized],
+    });
+
+    expect(result.resolution.plannedEntities.placements).toEqual([]);
+    expect(result.resolution.plannedEntities.participants).toEqual([]);
+    expect(result.resolution.plannedEntities.placementClosings).toEqual([]);
+    expect(result.resolution.projectedCounts.placements.create).toBe(0);
+    expect(result.resolution.projectedCounts.participants.create).toBe(0);
+    expect(result.resolution.projectedCounts.placementClosings.create).toBe(0);
+    expect(result.resolution.projectedCounts.riskTypes.create).toBe(1);
+    expect(result.resolution.projectedCounts.riskTypeFields.create).toBe(2);
+    expect(
+      result.resolution.projectedCounts.legacyImportMaps.byEntityType.offer,
+    ).toBeUndefined();
+    expect(
+      result.resolution.projectedCounts.legacyImportMaps.byEntityType
+        .offer_participant,
+    ).toBeUndefined();
+    expectNoWrites(writeFns);
+  });
+
   it('projects existing fixture maps as skips instead of creates', async () => {
     const writeFns = writeFunctionMocks();
     const { prisma, legacyImportMapFindMany } = prismaMock(
@@ -952,7 +1115,11 @@ describe('LegacyDbAwareDryRun', () => {
   });
 });
 
-async function resolveOffers(prisma: PrismaClient, offers: LegacyOffer[]) {
+async function resolveOffers(
+  prisma: PrismaClient,
+  offers: LegacyOffer[],
+  offerLifecycle: 'closed' | 'open' = 'closed',
+) {
   const normalizedOffers = offers.map((source) =>
     new LegacyOffersNormalizer().normalize(source),
   );
@@ -962,6 +1129,7 @@ async function resolveOffers(prisma: PrismaClient, offers: LegacyOffer[]) {
     sourceFileHash: 'file-hash',
     offers,
     mode: 'dry-run',
+    offerLifecycle,
     fixtureOfferIds: offers.map((item) => String(item.offer_id)),
   });
 
@@ -1000,6 +1168,11 @@ function prismaMock(
     $transaction: writeFns.$transaction,
   } as unknown as PrismaClient;
   return { prisma, legacyImportMapFindMany, placementClosingFindMany };
+}
+
+function firstMockArg<T>(mock: jest.Mock): T {
+  const calls = mock.mock.calls as unknown[][];
+  return calls[0]?.[0] as T;
 }
 
 function writeFunctionMocks() {

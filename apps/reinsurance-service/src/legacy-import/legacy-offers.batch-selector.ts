@@ -1,8 +1,10 @@
 import {
   LegacyOffer,
   LegacyOfferClassification,
+  LegacyOfferImportLifecycle,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
+import { classifyOpenOffer } from './legacy-open-offers.classifier';
 import { LegacyOffersClassifier } from './legacy-offers.classifier';
 import { LegacyOffersNormalizer } from './legacy-offers.normalizer';
 
@@ -13,6 +15,7 @@ export type LegacyBatchSelectionInput = {
   batchSize?: number;
   afterOfferId?: string;
   referenceOnly?: boolean;
+  offerLifecycle?: LegacyOfferImportLifecycle;
 };
 
 export type LegacyBatchSelection = {
@@ -40,7 +43,8 @@ export function selectLegacyOffersForImport(
       .map((offer) => normalizer.normalize(offer))
       .filter(
         (offer) =>
-          classifier.classify(offer).classification === input.classification,
+          classifyForLifecycle(offer, input.offerLifecycle, classifier)
+            .classification === input.classification,
       )
       .sort(compareNumericOfferIdDesc);
     return {
@@ -72,7 +76,8 @@ export function selectLegacyOffersForImport(
       .map((offer) => normalizer.normalize(offer))
       .filter(
         (offer) =>
-          classifier.classify(offer).classification === input.classification,
+          classifyForLifecycle(offer, input.offerLifecycle, classifier)
+            .classification === input.classification,
       )
       .sort(compareNumericOfferIdDesc);
     const filtered = input.afterOfferId
@@ -102,6 +107,16 @@ export function selectLegacyOffersForImport(
     selectedOffers: input.offers,
     normalizedOffers,
   };
+}
+
+function classifyForLifecycle(
+  offer: NormalizedLegacyOffer,
+  offerLifecycle: LegacyOfferImportLifecycle = 'closed',
+  classifier: LegacyOffersClassifier,
+) {
+  return offerLifecycle === 'open'
+    ? classifyOpenOffer(offer)
+    : classifier.classify(offer);
 }
 
 export function validateApplySelection(selection: LegacyBatchSelection): void {

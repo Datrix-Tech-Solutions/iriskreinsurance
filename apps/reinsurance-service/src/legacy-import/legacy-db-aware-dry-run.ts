@@ -299,18 +299,20 @@ export class LegacyDbAwareDryRun {
       })),
     );
     const placementClosings = input.normalizedOffers.flatMap((offer) =>
-      offer.participants.map((participant) => ({
-        legacyId: participant.participantId,
-        rawHash: historicalPlacementClosingHash(offer, participant),
-        closingNumber: historicalPlacementClosingNumber(
-          participant.participantId,
-        ),
-        parentOfferId: offer.offerId,
-        eligible: eligibility.get(offer.offerId)?.eligible ?? false,
-        ineligibleReason:
-          eligibility.get(offer.offerId)?.reason ??
-          'parent-offer-not-phase-1-eligible',
-      })),
+      input.plan.offerLifecycle === 'closed'
+        ? offer.participants.map((participant) => ({
+            legacyId: participant.participantId,
+            rawHash: historicalPlacementClosingHash(offer, participant),
+            closingNumber: historicalPlacementClosingNumber(
+              participant.participantId,
+            ),
+            parentOfferId: offer.offerId,
+            eligible: eligibility.get(offer.offerId)?.eligible ?? false,
+            ineligibleReason:
+              eligibility.get(offer.offerId)?.reason ??
+              'parent-offer-not-phase-1-eligible',
+          }))
+        : [],
     );
     const riskTypeFields = uniqueBy(
       eligibleOffers.flatMap((offer) =>
@@ -336,6 +338,13 @@ export class LegacyDbAwareDryRun {
         ),
       ),
       (item) => item.legacyId,
+    );
+    const preloadedRiskTypeFieldIds = new Set(
+      eligibleOffers.flatMap((offer) =>
+        offer.businessFields.map(
+          (field) => `${offer.classId}:${field.normalizedKey}`,
+        ),
+      ),
     );
 
     const [
@@ -425,6 +434,8 @@ export class LegacyDbAwareDryRun {
         map,
       ]),
     );
+    const isReferenceOnly =
+      input.plan.batchSelection?.mode === 'reference-only';
     const existingCurrencyIndex = indexBy(
       existingCurrencies.map((row) => ({ id: row.id, key: row.isoCode })),
     );
@@ -601,102 +612,116 @@ export class LegacyDbAwareDryRun {
       },
     );
 
-    const plannedEntities: LegacyDbAwareDryRunResolution['plannedEntities'] = {
-      currencies: currencies.map((currency) =>
-        actionFor({
-          entityType: 'currency',
-          legacyId: currency.legacyId,
-          rawHash: sha256({ currency: currency.legacyId }),
-          map: mapIndex.get(`currency:${currency.legacyId}`),
-          existing: existingCurrencyIndex.get(currency.key),
-          currentModel: 'Currency',
+    const plannedEntities = enforcePlacementBatchReferencePrerequisites(
+      {
+        currencies: currencies.map((currency) =>
+          actionFor({
+            entityType: 'currency',
+            legacyId: currency.legacyId,
+            rawHash: sha256({ currency: currency.legacyId }),
+            map: mapIndex.get(`currency:${currency.legacyId}`),
+            existing: existingCurrencyIndex.get(currency.key),
+            currentModel: 'Currency',
+          }),
+        ),
+        counterparties: plannedCounterparties,
+        addresses: plannedAddresses,
+        riskClasses: plannedRiskClasses,
+        riskTypes: plannedRiskTypes,
+        riskTypeFields: planRiskTypeFields({
+          fields: riskTypeFields,
+          mapIndex,
+          plannedRiskTypeIndex,
+          existingRiskTypeFieldIndex,
         }),
-      ),
-      counterparties: plannedCounterparties,
-      addresses: plannedAddresses,
-      riskClasses: plannedRiskClasses,
-      riskTypes: plannedRiskTypes,
-      riskTypeFields: planRiskTypeFields({
-        fields: riskTypeFields,
-        mapIndex,
-        plannedRiskTypeIndex,
-        existingRiskTypeFieldIndex,
-      }),
-      placements: placements.map((placement) => {
-        if (placement.eligible) {
-          return actionFor({
-            entityType: 'offer',
-            legacyId: placement.legacyId,
-            rawHash: placement.rawHash,
-            map: mapIndex.get(`offer:${placement.legacyId}`),
-            existing: existingPlacementIndex.get(placement.key),
-            currentModel: 'Placement',
-          });
-        }
-        return {
-          entityType: 'offer',
-          legacyId: placement.legacyId,
-          action: 'skip',
-          currentModel: 'Placement',
-          reason: placement.ineligibleReason,
-        };
-      }),
-      participants: participants.map((participant) =>
-        participant.eligible
-          ? actionFor({
-              entityType: 'offer_participant',
-              legacyId: participant.legacyId,
-              rawHash: participant.rawHash,
-              map: mapIndex.get(`offer_participant:${participant.legacyId}`),
-              existing: undefined,
-              currentModel: 'PlacementParticipant',
-            })
-          : {
-              entityType: 'offer_participant',
-              legacyId: participant.legacyId,
-              action: 'skip',
-              currentModel: 'PlacementParticipant',
-              reason: participant.ineligibleReason,
-            },
-      ),
-      placementClosings: placementClosings.map((closing) => {
-        if (!closing.eligible) {
-          return {
-            entityType: 'offer_participant_closing',
-            legacyId: closing.legacyId,
-            action: 'skip',
-            currentModel: 'PlacementClosing',
-            reason: closing.ineligibleReason,
-          };
-        }
-        const map = mapIndex.get(
-          `offer_participant_closing:${closing.legacyId}`,
-        );
-        if (map) {
-          return actionFor({
-            entityType: 'offer_participant_closing',
-            legacyId: closing.legacyId,
-            rawHash: closing.rawHash,
-            map,
-            existing: undefined,
-            currentModel: 'PlacementClosing',
-          });
-        }
-        const parentPlacement = mapIndex.get(`offer:${closing.parentOfferId}`);
-        return actionForHistoricalClosing({
-          entityType: 'offer_participant_closing',
-          legacyId: closing.legacyId,
-          rawHash: closing.rawHash,
-          map: undefined,
-          existing: parentPlacement?.currentId
-            ? existingClosingIndex.get(
-                `${parentPlacement.currentId}:${closing.closingNumber}`,
-              )
-            : undefined,
-          currentModel: 'PlacementClosing',
-        });
-      }),
-    };
+        placements: isReferenceOnly
+          ? []
+          : placements.map((placement) => {
+              if (placement.eligible) {
+                return actionFor({
+                  entityType: 'offer',
+                  legacyId: placement.legacyId,
+                  rawHash: placement.rawHash,
+                  map: mapIndex.get(`offer:${placement.legacyId}`),
+                  existing: existingPlacementIndex.get(placement.key),
+                  currentModel: 'Placement',
+                });
+              }
+              return {
+                entityType: 'offer',
+                legacyId: placement.legacyId,
+                action: 'skip',
+                currentModel: 'Placement',
+                reason: placement.ineligibleReason,
+              };
+            }),
+        participants: isReferenceOnly
+          ? []
+          : participants.map((participant) =>
+              participant.eligible
+                ? actionFor({
+                    entityType: 'offer_participant',
+                    legacyId: participant.legacyId,
+                    rawHash: participant.rawHash,
+                    map: mapIndex.get(
+                      `offer_participant:${participant.legacyId}`,
+                    ),
+                    existing: undefined,
+                    currentModel: 'PlacementParticipant',
+                  })
+                : {
+                    entityType: 'offer_participant',
+                    legacyId: participant.legacyId,
+                    action: 'skip',
+                    currentModel: 'PlacementParticipant',
+                    reason: participant.ineligibleReason,
+                  },
+            ),
+        placementClosings: isReferenceOnly
+          ? []
+          : placementClosings.map((closing) => {
+              if (!closing.eligible) {
+                return {
+                  entityType: 'offer_participant_closing',
+                  legacyId: closing.legacyId,
+                  action: 'skip',
+                  currentModel: 'PlacementClosing',
+                  reason: closing.ineligibleReason,
+                };
+              }
+              const map = mapIndex.get(
+                `offer_participant_closing:${closing.legacyId}`,
+              );
+              if (map) {
+                return actionFor({
+                  entityType: 'offer_participant_closing',
+                  legacyId: closing.legacyId,
+                  rawHash: closing.rawHash,
+                  map,
+                  existing: undefined,
+                  currentModel: 'PlacementClosing',
+                });
+              }
+              const parentPlacement = mapIndex.get(
+                `offer:${closing.parentOfferId}`,
+              );
+              return actionForHistoricalClosing({
+                entityType: 'offer_participant_closing',
+                legacyId: closing.legacyId,
+                rawHash: closing.rawHash,
+                map: undefined,
+                existing: parentPlacement?.currentId
+                  ? existingClosingIndex.get(
+                      `${parentPlacement.currentId}:${closing.closingNumber}`,
+                    )
+                  : undefined,
+                currentModel: 'PlacementClosing',
+              });
+            }),
+      },
+      input.plan,
+      preloadedRiskTypeFieldIds,
+    );
 
     return {
       resolveDb: true,
@@ -729,6 +754,46 @@ export class LegacyDbAwareDryRun {
       },
     };
   }
+}
+
+function enforcePlacementBatchReferencePrerequisites(
+  plannedEntities: LegacyDbAwareDryRunResolution['plannedEntities'],
+  plan: LegacyImportPlan,
+  preloadedRiskTypeFieldIds: Set<string>,
+): LegacyDbAwareDryRunResolution['plannedEntities'] {
+  if (plan.batchSelection?.mode !== 'classification-batch') {
+    return plannedEntities;
+  }
+  return {
+    ...plannedEntities,
+    currencies: blockMissingPreloadedMaps(plannedEntities.currencies),
+    counterparties: blockMissingPreloadedMaps(plannedEntities.counterparties),
+    addresses: blockMissingPreloadedMaps(plannedEntities.addresses),
+    riskClasses: blockMissingPreloadedMaps(plannedEntities.riskClasses),
+    riskTypes: blockMissingPreloadedMaps(plannedEntities.riskTypes),
+    riskTypeFields: plannedEntities.riskTypeFields.map((entity) =>
+      preloadedRiskTypeFieldIds.has(entity.legacyId)
+        ? blockMissingPreloadedMap(entity)
+        : entity,
+    ),
+  };
+}
+
+function blockMissingPreloadedMaps(
+  entities: LegacyDbPlannedEntity[],
+): LegacyDbPlannedEntity[] {
+  return entities.map(blockMissingPreloadedMap);
+}
+
+function blockMissingPreloadedMap(
+  entity: LegacyDbPlannedEntity,
+): LegacyDbPlannedEntity {
+  if (entity.action !== 'create' && entity.action !== 'reuse') return entity;
+  return {
+    ...entity,
+    action: 'conflict',
+    reason: 'placement-batch-reference-import-map-missing',
+  };
 }
 
 function actionForHistoricalClosing(input: {
@@ -992,10 +1057,14 @@ function identitiesFor(
           entityType: 'offer_participant',
           legacyId: participant.participantId,
         },
-        {
-          entityType: 'offer_participant_closing',
-          legacyId: participant.participantId,
-        },
+        ...(plan?.offerLifecycle === 'open'
+          ? []
+          : [
+              {
+                entityType: 'offer_participant_closing',
+                legacyId: participant.participantId,
+              },
+            ]),
       ]),
       ...riskTypeFieldsForPlan(offer, plan).map((field) => ({
         entityType: 'risk_type_field',

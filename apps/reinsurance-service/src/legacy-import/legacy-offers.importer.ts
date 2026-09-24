@@ -22,10 +22,11 @@ import {
   LEGACY_TOLERANCES,
   LegacyClosedDateLookup,
   LegacyImportPlan,
+  LegacyOfferImportLifecycle,
   NormalizedLegacyOffer,
   NormalizedLegacyParticipant,
 } from './legacy-import.types';
-import { LegacyDecimal } from './legacy-decimal';
+import { LegacyDecimal, sumDecimals } from './legacy-decimal';
 import {
   legacyRiskClassLegacyId,
   normalizeLegacyRiskTypeName,
@@ -214,27 +215,31 @@ export class LegacyOffersImporter {
             reinsurerIds.get(participant.participantId)!,
             created,
           );
-          await this.createHistoricalClosing(
+          if (input.plan.offerLifecycle === 'closed') {
+            await this.createHistoricalClosing(
+              tx,
+              mapCache,
+              input,
+              importRunId,
+              offer,
+              participant,
+              placementId,
+              participantId,
+              created,
+            );
+          }
+        }
+        if (input.plan.offerLifecycle === 'closed') {
+          await this.createHistoricalFinancialRecords(
             tx,
             mapCache,
             input,
             importRunId,
             offer,
-            participant,
             placementId,
-            participantId,
             created,
           );
         }
-        await this.createHistoricalFinancialRecords(
-          tx,
-          mapCache,
-          input,
-          importRunId,
-          offer,
-          placementId,
-          created,
-        );
       }
 
       await tx.legacyImportRun.update({
@@ -731,7 +736,7 @@ export class LegacyOffersImporter {
         normalizedReference: offer.normalizedReference,
         title: offer.title,
         placementType: PlacementType.FACULTATIVE,
-        status: PlacementStatus.CLOSED,
+        status: placementStatusForLegacyOffer(offer, input.plan.offerLifecycle),
         cedantId,
         policyNumber: offer.policyNumber,
         riskTypeId,
@@ -791,7 +796,10 @@ export class LegacyOffersImporter {
         sharePercent: participant.percentage,
         signedLinePercent: participant.percentage,
         brokerageFee: participant.brokerageFee,
-        notes: `Imported legacy participant ${participant.participantId}; historical closing/payment evidence migrated when available.`,
+        notes: legacyParticipantNote(
+          participant.participantId,
+          input.plan.offerLifecycle,
+        ),
       },
     });
     created.participants += 1;
@@ -1417,6 +1425,36 @@ function clean(value: unknown): string | null {
   }
   const trimmed = String(value).trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function placementStatusForLegacyOffer(
+  offer: NormalizedLegacyOffer,
+  offerLifecycle: LegacyOfferImportLifecycle,
+): PlacementStatus {
+  if (offerLifecycle === 'closed') return PlacementStatus.CLOSED;
+  const acceptedPercent = sumDecimals(
+    offer.participants.map((participant) => participant.percentage),
+  );
+  if (!acceptedPercent.gt(LegacyDecimal.zero())) {
+    return PlacementStatus.MARKETING;
+  }
+  const targetPercent = LegacyDecimal.from(offer.numbers.facultativeOffer);
+  if (!targetPercent.gt(LegacyDecimal.zero())) {
+    return PlacementStatus.PARTIALLY_PLACED;
+  }
+  return !targetPercent.subtract(acceptedPercent).gt(LegacyDecimal.zero())
+    ? PlacementStatus.PLACED
+    : PlacementStatus.PARTIALLY_PLACED;
+}
+
+function legacyParticipantNote(
+  participantId: string,
+  offerLifecycle: LegacyOfferImportLifecycle,
+) {
+  if (offerLifecycle === 'open') {
+    return `Imported legacy participant ${participantId}; open legacy offer import created no historical closing or payment records.`;
+  }
+  return `Imported legacy participant ${participantId}; historical closing/payment evidence migrated when available.`;
 }
 
 function emptyCreatedCounts() {

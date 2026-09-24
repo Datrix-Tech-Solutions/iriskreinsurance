@@ -5,10 +5,12 @@ import {
   LegacyImportPlanRecord,
   LegacyOffer,
   LegacyOfferClassification,
+  LegacyOfferImportLifecycle,
   LegacyValidationIssue,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
 import { LegacyOffersClassifier } from './legacy-offers.classifier';
+import { classifyOpenOffer } from './legacy-open-offers.classifier';
 import { LegacyOffersNormalizer } from './legacy-offers.normalizer';
 import { LegacyOffersValidator } from './legacy-offers.validator';
 import { resolveLegacyRiskClass } from './legacy-risk-taxonomy';
@@ -28,6 +30,7 @@ export type BuildLegacyImportPlanInput = {
   sourceFileHash: string;
   offers: LegacyOffer[];
   mode: LegacyImportMode;
+  offerLifecycle?: LegacyOfferImportLifecycle;
   fixtureOfferIds?: string[];
   batchSelection?: LegacyImportPlan['batchSelection'];
   existingMaps?: ExistingImportMap[];
@@ -91,7 +94,10 @@ export class LegacyOffersPlanGenerator {
       }
 
       const normalized = this.normalizer.normalize(sourceOffer);
-      const result = this.classifier.classify(normalized);
+      const result =
+        (input.offerLifecycle ?? 'closed') === 'open'
+          ? classifyOpenOffer(normalized)
+          : this.classifier.classify(normalized);
       classification[result.classification] += 1;
       records.push(
         this.planRecord(
@@ -111,9 +117,10 @@ export class LegacyOffersPlanGenerator {
       sourceFilePath: input.sourceFilePath,
       sourceFileHash: input.sourceFileHash,
       mode: input.mode,
+      offerLifecycle: input.offerLifecycle ?? 'closed',
       fixtureOfferIds,
       batchSelection: input.batchSelection,
-      counts: summarize(records),
+      counts: summarize(records, input.offerLifecycle ?? 'closed'),
       classification,
       duplicateLegacyIds,
       repeatedPolicyNumbers,
@@ -221,7 +228,10 @@ function groupIssuesByOffer(issues: LegacyValidationIssue[]) {
   }, new Map<string, LegacyValidationIssue[]>());
 }
 
-function summarize(records: LegacyImportPlan['records']) {
+function summarize(
+  records: LegacyImportPlan['records'],
+  offerLifecycle: LegacyOfferImportLifecycle,
+) {
   const creates: Record<string, number> = {
     currencies: 0,
     counterparties: 0,
@@ -248,8 +258,12 @@ function summarize(records: LegacyImportPlan['records']) {
       const participantCount = record.participantCount ?? 0;
       creates.placements += 1;
       creates.participants += participantCount;
-      creates.placementClosings += participantCount;
-      creates.legacyImportMaps += 1 + participantCount + participantCount;
+      if (offerLifecycle === 'closed') {
+        creates.placementClosings += participantCount;
+        creates.legacyImportMaps += 1 + participantCount + participantCount;
+      } else {
+        creates.legacyImportMaps += 1 + participantCount;
+      }
     }
     if (record.action === 'skip') summary.skips += 1;
     if (record.action === 'conflict') summary.conflicts += 1;

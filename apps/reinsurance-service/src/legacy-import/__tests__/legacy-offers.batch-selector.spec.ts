@@ -175,6 +175,27 @@ describe('legacy offer batch selection', () => {
     expect(selection.selectedOfferIds).toEqual(['99']);
   });
 
+  it('uses open-offer eligibility when selecting open AUTO_SAFE batches', () => {
+    const blocked = offer({ offer_id: '101', offer_status: 'OPEN' });
+    blocked.offer_participant![0].offer_participant_percentage = 0;
+    const selection = selectLegacyOffersForImport({
+      offers: [
+        offer({
+          offer_id: '102',
+          offer_status: 'OPEN',
+          placed_share: null,
+          offer_participant: [],
+        }),
+        blocked,
+      ],
+      classification: 'AUTO_SAFE',
+      batchSize: 10,
+      offerLifecycle: 'open',
+    });
+
+    expect(selection.selectedOfferIds).toEqual(['102']);
+  });
+
   it('keeps fixture mode available and allows mapped fixture records to skip', () => {
     const selected = selectLegacyOffersForImport({
       offers: [offer({ offer_id: '6740' }), offer({ offer_id: '6739' })],

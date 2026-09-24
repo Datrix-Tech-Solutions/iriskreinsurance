@@ -295,6 +295,78 @@ describe('LegacyOffersImporter', () => {
     expect(mapCreates(tx, 'risk_type_field', '1:year_of_manufacture')).toBe(0);
   });
 
+  it('imports open offers as active placements without closings or payments', async () => {
+    const source = offer({ offer_status: 'OPEN' });
+    const input = applyInput([source]);
+    input.plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'acme-ghana',
+      tenantId: 'tenant-1',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'open-file-hash',
+      offers: [source],
+      mode: 'apply',
+      offerLifecycle: 'open',
+      fixtureOfferIds: ['1'],
+    });
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(result.created.placements).toBe(1);
+    expect(result.created.participants).toBe(1);
+    expect(result.created.placementClosings).toBe(0);
+    expect(result.created.placementPayments).toBe(0);
+    expect(result.created.legacyImportMaps).toBe(8);
+    expect(createData(tx.placement)).toEqual(
+      expect.objectContaining({
+        status: 'PLACED',
+      }),
+    );
+    expect(createData(tx.placementParticipant)).toEqual(
+      expect.objectContaining({
+        status: 'ACCEPTED',
+        notes:
+          'Imported legacy participant p1; open legacy offer import created no historical closing or payment records.',
+      }),
+    );
+    expect(tx.placementClosing.create).not.toHaveBeenCalled();
+    expect(tx.placementPayment.create).not.toHaveBeenCalled();
+    expect(mapCreates(tx, 'offer_participant_closing', 'p1')).toBe(0);
+  });
+
+  it('imports open offers with no participants as marketing placements only', async () => {
+    const source = offer({
+      offer_status: 'OPEN',
+      placed_share: null,
+      offer_participant: [],
+    });
+    const input = applyInput([source]);
+    input.plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'acme-ghana',
+      tenantId: 'tenant-1',
+      sourceFilePath: 'legacy-offers-open-2026.json',
+      sourceFileHash: 'open-file-hash',
+      offers: [source],
+      mode: 'apply',
+      offerLifecycle: 'open',
+      fixtureOfferIds: ['1'],
+    });
+    const { prisma, tx } = prismaMock();
+
+    const result = await new LegacyOffersImporter(prisma).apply(input);
+
+    expect(result.created.placements).toBe(1);
+    expect(result.created.participants).toBe(0);
+    expect(result.created.placementClosings).toBe(0);
+    expect(result.created.legacyImportMaps).toBe(6);
+    expect(createData(tx.placement)).toEqual(
+      expect.objectContaining({ status: 'MARKETING' }),
+    );
+    expect(tx.placementParticipant.create).not.toHaveBeenCalled();
+    expect(tx.placementClosing.create).not.toHaveBeenCalled();
+    expect(tx.placementPayment.create).not.toHaveBeenCalled();
+  });
+
   it('placement batch rerun reuses an existing offer-only RiskTypeField map', async () => {
     const source = offerWithOfferOnlyField('25', '2018');
     const { prisma, tx } = prismaMock({
