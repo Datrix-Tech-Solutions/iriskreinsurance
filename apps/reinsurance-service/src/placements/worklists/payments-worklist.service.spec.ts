@@ -108,7 +108,7 @@ describe('ReinsurancePaymentsWorklistService', () => {
     });
   });
 
-  it('builds payment statuses from bank-confirmed cash plus mandatory deductions', async () => {
+  it('builds payment statuses from actual cash while preserving deduction settlement credit', async () => {
     prisma.$queryRaw.mockResolvedValue([]);
 
     await service.findPayments('tenant-1', {
@@ -126,6 +126,10 @@ describe('ReinsurancePaymentsWorklistService', () => {
     expect(sql).toContain('"effectiveSettlementCredit"');
     expect(sql).toContain(
       'COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0)',
+    );
+    expect(sql).toContain('WHEN COALESCE(pt."paidAmount", 0) > 0.0001');
+    expect(sql).toContain(
+      'OR COALESCE(ob."currentObligation", 0) - COALESCE(ob."mandatoryDeductions", 0) <= 0.0001',
     );
   });
 

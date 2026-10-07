@@ -394,8 +394,16 @@ export class ReinsuranceFacultativeRowStateService {
     const outstanding = this.round(
       input.currentObligation - effectiveSettlementCredit,
     );
-    if (input.currentObligation > 0 && outstanding <= 0.0001) return 'Paid';
-    if (effectiveSettlementCredit > 0.0001) return 'Part Payment';
+    const cashDueAfterDeductions = this.round(
+      input.currentObligation - input.mandatoryDeductions,
+    );
+    if (
+      input.currentObligation > 0 &&
+      outstanding <= 0.0001 &&
+      (input.paidAmount > 0.0001 || cashDueAfterDeductions <= 0.0001)
+    )
+      return 'Paid';
+    if (input.paidAmount > 0.0001) return 'Part Payment';
     if (input.pendingAmount > 0.0001) return 'Pending';
     return 'Outstanding';
   }

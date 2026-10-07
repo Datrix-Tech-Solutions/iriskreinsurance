@@ -165,6 +165,10 @@ describe('CedantsReportService', () => {
     expect(sql).toContain('pay."type" = \'PREMIUM_RECEIVED\'');
     expect(sql).toContain('pay."status" = \'BANK_CONFIRMED\'');
     expect(sql).toContain('pay."status" = \'RECORDED\'');
+    expect(sql).toContain('WHEN COALESCE(pr."received", 0) > 0.0001');
+    expect(sql).toContain(
+      'OR COALESCE(cr."cedantObligation", 0) - COALESCE(cr."mandatoryDeductions", 0) <= 0.0001',
+    );
     expect(sql).toContain('"paymentStatus" IN');
     expect(sql).not.toContain('PlacementPaymentAllocation');
     expect(sql).not.toContain('PlacementNote');
