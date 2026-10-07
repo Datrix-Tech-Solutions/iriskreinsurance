@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
 import { SidePanel } from '@/components/organisms/shared/SidePanel';
@@ -9,8 +9,7 @@ import { TableButton } from '@/components/atoms/TableButton';
 import { FormField } from '@/components/molecules/shared/FormField';
 import { DatePicker } from '@/components/atoms/DatePicker';
 import { SearchSelect } from '@/components/atoms/SearchSelect';
-import { Facultative } from '@/types/reinsurance';
-import { RecoveryRow, useAllReinsurerClaims, useCreateClaimRecoveryReceipt } from '@/hooks';
+import { RecoveryRow, useCreateClaimRecoveryReceipt, useRecoveriesWorklist } from '@/hooks';
 import { useAnyPermissionRules } from '@/hooks/hr/usePermission';
 import { RiPerm } from '@/lib/reinsurance/permissions';
 import { extractError } from '@/lib/extractError';
@@ -241,19 +240,19 @@ function RecordRecoveryReceiptModal({
 }
 
 interface ReinsurerRecoveriesTabProps {
-  placements: Facultative[];
   reinsurerId: string;
 }
 
-export function ReinsurerRecoveriesTab({ placements, reinsurerId }: ReinsurerRecoveriesTabProps) {
-  const { rows, isLoading } = useAllReinsurerClaims(placements);
+export function ReinsurerRecoveriesTab({ reinsurerId }: ReinsurerRecoveriesTabProps) {
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useRecoveriesWorklist({
+    page,
+    limit: 10,
+    reinsurerId,
+  });
   const canRecordRecovery = useAnyPermissionRules(RiPerm.recordRecovery);
   const [paymentRow, setPaymentRow] = useState<RecoveryRow | null>(null);
-
-  const recoveryRows = useMemo(
-    () => rows.filter((row) => row.reinsurerId === reinsurerId),
-    [rows, reinsurerId],
-  );
+  const recoveryRows = data?.items ?? [];
 
   const columns: Column<RecoveryRow>[] = [
     {
@@ -340,9 +339,9 @@ export function ReinsurerRecoveriesTab({ placements, reinsurerId }: ReinsurerRec
         columns={columns}
         data={recoveryRows}
         emptyMessage={isLoading ? 'Loading...' : 'No cash-call recoveries for this reinsurer yet'}
-        currentPage={1}
-        totalPages={0}
-        onPageChange={() => {}}
+        currentPage={page}
+        totalPages={Math.max(1, data?.meta.totalPages ?? 0)}
+        onPageChange={setPage}
         noInternalScroll
       />
 

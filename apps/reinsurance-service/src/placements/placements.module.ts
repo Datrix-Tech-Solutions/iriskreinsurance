@@ -47,6 +47,7 @@ import { ReinsuranceClaimRowStateService } from './worklists/claim-row-state.ser
 import { ReinsuranceClaimsWorklistService } from './worklists/claims-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './worklists/facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './worklists/payments-worklist.service';
+import { ReinsuranceRecoveriesWorklistService } from './worklists/recoveries-worklist.service';
 import { ReinsuranceWorklistsController } from './worklists/reinsurance-worklists.controller';
 
 @Module({
@@ -74,6 +75,7 @@ import { ReinsuranceWorklistsController } from './worklists/reinsurance-worklist
     ReinsuranceClaimsWorklistService,
     ReinsuranceFacultativeRowStateService,
     ReinsurancePaymentsWorklistService,
+    ReinsuranceRecoveriesWorklistService,
     PlacementAttachmentsService,
     PlacementClaimsService,
     PlacementClaimCashCallsService,

@@ -222,9 +222,7 @@ export default function ReinsurerDetailPage({
 
                 {activeTab === 'premiums' && <ReinsurerPremiumsTab />}
 
-                {activeTab === 'recoveries' && (
-                  <ReinsurerRecoveriesTab placements={placements} reinsurerId={reinsurerId} />
-                )}
+                {activeTab === 'recoveries' && <ReinsurerRecoveriesTab reinsurerId={reinsurerId} />}
               </div>
             </div>
           </div>

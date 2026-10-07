@@ -5,6 +5,7 @@ import { ReinsuranceClaimRowStateService } from './claim-row-state.service';
 import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './payments-worklist.service';
+import { ReinsuranceRecoveriesWorklistService } from './recoveries-worklist.service';
 import { ReinsuranceWorklistsController } from './reinsurance-worklists.controller';
 
 describe('ReinsuranceWorklistsController', () => {
@@ -21,6 +22,9 @@ describe('ReinsuranceWorklistsController', () => {
     findClaims: jest.fn(),
     summarizeClaims: jest.fn(),
   };
+  const recoveriesWorklist = {
+    findRecoveries: jest.fn(),
+  };
   const user = { tenantId: 'tenant-1' } as RequestUser;
 
   beforeEach(() => {
@@ -33,6 +37,7 @@ describe('ReinsuranceWorklistsController', () => {
       facultativeRowState as unknown as ReinsuranceFacultativeRowStateService,
       claimRowState as unknown as ReinsuranceClaimRowStateService,
       claimsWorklist as unknown as ReinsuranceClaimsWorklistService,
+      recoveriesWorklist as unknown as ReinsuranceRecoveriesWorklistService,
     );
 
   it('delegates payment worklist queries using only authenticated tenant context', async () => {
@@ -205,6 +210,42 @@ describe('ReinsuranceWorklistsController', () => {
     const descriptor = Object.getOwnPropertyDescriptor(
       ReinsuranceWorklistsController.prototype,
       'summarizeClaims',
+    );
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        descriptor?.value as (...args: unknown[]) => unknown,
+      ),
+    ).toEqual([PlacementPermission.VIEW]);
+  });
+
+  it('delegates recoveries worklist queries using only authenticated tenant context', async () => {
+    const controller = createController();
+    const query = {
+      page: 2,
+      limit: 25,
+      search: 'POL',
+      reinsurerId: '11111111-1111-4111-8111-111111111111',
+    } as const;
+    recoveriesWorklist.findRecoveries.mockResolvedValue({
+      items: [],
+      meta: { page: 2, limit: 25, total: 0, totalPages: 0 },
+      summary: { byCurrency: [] },
+    });
+
+    await controller.findRecoveries(query, { user } as never);
+
+    expect(recoveriesWorklist.findRecoveries).toHaveBeenCalledWith(
+      'tenant-1',
+      query,
+    );
+  });
+
+  it('requires placement view permission for the recoveries worklist', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      ReinsuranceWorklistsController.prototype,
+      'findRecoveries',
     );
 
     expect(
