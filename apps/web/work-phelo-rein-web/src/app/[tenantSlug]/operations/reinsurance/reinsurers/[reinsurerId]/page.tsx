@@ -5,7 +5,12 @@ import Link from 'next/link';
 import { Icons } from '@/components/atoms/icons';
 import { Button } from '@/components/atoms/Button';
 import { pageBreadcrumb, pageContent } from '@/lib/layout';
-import { useReinsurers, useFacultatives, useCurrencies, useFacultativePlacement } from '@/hooks';
+import {
+  useReinsurers,
+  useCurrencies,
+  useFacultativePlacement,
+  useReinsurerPlacementsWorklist,
+} from '@/hooks';
 import { usePermissionRule } from '@/hooks/hr/usePermission';
 import { EditReinsurancePanel } from '@/components/organisms/reinsurance/panels/EditReinsurancePanel';
 import { ReinsurerOverview } from '@/components/molecules/reinsurance/stats/ReinsurerOverview';
@@ -19,8 +24,6 @@ import { FacultativeOverview } from '@/components/molecules/reinsurance/stats/Fa
 import { DistributionListTab } from '@/components/molecules/reinsurance/tabs/DistributionListTab';
 import { PlacementClosingsTab } from '@/components/molecules/reinsurance/tabs/PlacementClosingsTab';
 import { EndorsementTab } from '@/components/molecules/reinsurance/tabs/EndorsmentTab';
-import { type ReinsurerParticipation } from '@/components/molecules/reinsurance/tables/ReinsurerPoliciesTable';
-import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 
 type ReinsurerTab = 'placements' | 'revenue' | 'premiums' | 'recoveries' | 'contacts';
 type FacultativeTab = 'distribution' | 'closings' | 'endorsement';
@@ -87,8 +90,16 @@ export default function ReinsurerDetailPage({
   const canView = usePermissionRule('operations.reinsurance.counterparties:VIEW');
   const canEdit = usePermissionRule('operations.reinsurance.counterparties:EDIT');
   const { data: reinsurers = [], isLoading: reinsurersLoading } = useReinsurers();
-  const { data: placements = [], isLoading: placementsLoading } = useFacultatives();
   const { data: currencies = [] } = useCurrencies();
+  const { data: reinsurerPlacementSummary } = useReinsurerPlacementsWorklist(
+    {
+      reinsurerId,
+      page: 1,
+      limit: 1,
+      filter: 'all',
+    },
+    { enabled: canView },
+  );
 
   const reinsurer = reinsurers.find((r) => r.id === reinsurerId) ?? null;
 
@@ -98,34 +109,12 @@ export default function ReinsurerDetailPage({
 
   const settingsBase = `/${tenantSlug}/operations/reinsurance/reinsurers`;
 
-  const participations = useMemo<ReinsurerParticipation[]>(() => {
-    return placements.flatMap((p) => {
-      const participant = p.participants.find((pt) => pt.counterpartyId === reinsurerId);
-      if (!participant) return [];
-      return [
-        {
-          id: p.id,
-          reference: displayPolicyNumber(p.policyNumber),
-          title: p.title,
-          cedant: p.cedant.name,
-          role: participant.role,
-          sharePercent: participant.sharePercent,
-          participantStatus: participant.status,
-          placementStatus: p.status,
-          offerType: 'Facultative',
-          inceptionDate: p.inceptionDate,
-          expiryDate: p.expiryDate,
-        },
-      ];
-    });
-  }, [placements, reinsurerId]);
-
   const acceptanceRate = useMemo(() => {
-    const accepted = participations.filter((p) => p.participantStatus === 'ACCEPTED').length;
-    const declined = participations.filter((p) => p.participantStatus === 'DECLINED').length;
+    const accepted = reinsurerPlacementSummary?.summary.accepted ?? 0;
+    const declined = reinsurerPlacementSummary?.summary.declined ?? 0;
     const decided = accepted + declined;
     return decided > 0 ? Math.round((accepted / decided) * 100) : null;
-  }, [participations]);
+  }, [reinsurerPlacementSummary]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -201,8 +190,7 @@ export default function ReinsurerDetailPage({
 
                 {activeTab === 'placements' && (
                   <ReinsurerPlacementsTab
-                    participations={participations}
-                    isLoading={placementsLoading}
+                    reinsurerId={reinsurerId}
                     onView={(id, reference) => setActiveView({ placementId: id, reference })}
                     // onView={(id) =>
                     //   router.push(`/${tenantSlug}/operations/reinsurance/facultative/${id}`)
@@ -212,10 +200,8 @@ export default function ReinsurerDetailPage({
 
                 {activeTab === 'revenue' && (
                   <ReinsurerRevenueTab
-                    placements={placements}
                     reinsurerId={reinsurerId}
                     reinsurer={reinsurer}
-                    reinsurerDefaultBrokerageFee={reinsurer.brokerageFee}
                     currencies={currencies}
                   />
                 )}

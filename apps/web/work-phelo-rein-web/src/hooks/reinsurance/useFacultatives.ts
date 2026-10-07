@@ -31,6 +31,8 @@ import {
   ForceCloseEndorsementResponse,
   PlacementDocument,
   FacultativeRowStateResponse,
+  PaginatedReinsurerPlacements,
+  ReinsurerPlacementFilter,
 } from '@/types/reinsurance';
 
 const BASE = '/operations/reinsurance/placements';
@@ -46,6 +48,11 @@ const placementLockStatusKey = (placementId: string) =>
   [...placementQueryKey(placementId), 'lock-status'] as const;
 const paymentEligibleFacultativesKey = [...FACULTATIVES_KEY, 'payment-eligible'] as const;
 const facultativeRowStatePrefixKey = ['reinsurance', 'worklists', 'facultative-row-state'] as const;
+const reinsurerPlacementsWorklistKey = [
+  'reinsurance',
+  'worklists',
+  'reinsurer-placements',
+] as const;
 const facultativeRowStateKey = (placementIds: string[]) =>
   [...facultativeRowStatePrefixKey, [...new Set(placementIds)].sort()] as const;
 
@@ -89,6 +96,14 @@ export interface FacultativesPageParams {
   riskTypeId?: string;
   classOfBusiness?: string;
   archived?: boolean;
+}
+
+export interface ReinsurerPlacementsWorklistParams {
+  reinsurerId: string;
+  page?: number;
+  limit?: number;
+  filter?: ReinsurerPlacementFilter;
+  search?: string;
 }
 
 export const facultativePlacementKey = (placementId: string) => placementQueryKey(placementId);
@@ -139,6 +154,16 @@ function normalizePageParams(params: FacultativesPageParams = {}) {
     ...(params.riskTypeId ? { riskTypeId: params.riskTypeId } : {}),
     ...(params.classOfBusiness?.trim() ? { classOfBusiness: params.classOfBusiness.trim() } : {}),
     ...(typeof params.archived === 'boolean' ? { archived: params.archived } : {}),
+  };
+}
+
+function normalizeReinsurerPlacementsParams(params: ReinsurerPlacementsWorklistParams) {
+  return {
+    reinsurerId: params.reinsurerId,
+    page: params.page ?? 1,
+    limit: params.limit ?? 10,
+    filter: params.filter ?? 'all',
+    ...(params.search?.trim() ? { search: params.search.trim() } : {}),
   };
 }
 
@@ -195,6 +220,25 @@ export function useFacultativeRowState(
       (options.enabled ?? true) &&
       uniquePlacementIds.length > 0 &&
       uniquePlacementIds.length <= 100,
+  });
+}
+
+export function useReinsurerPlacementsWorklist(
+  params: ReinsurerPlacementsWorklistParams,
+  options: { enabled?: boolean } = {},
+) {
+  const normalizedParams = normalizeReinsurerPlacementsParams(params);
+
+  return useQuery({
+    queryKey: [...reinsurerPlacementsWorklistKey, normalizedParams],
+    queryFn: async () => {
+      const res = await api.get<PaginatedReinsurerPlacements>(
+        `${WORKLIST_BASE}/reinsurer-placements`,
+        { params: normalizedParams },
+      );
+      return res.data;
+    },
+    enabled: (options.enabled ?? true) && !!params.reinsurerId,
   });
 }
 

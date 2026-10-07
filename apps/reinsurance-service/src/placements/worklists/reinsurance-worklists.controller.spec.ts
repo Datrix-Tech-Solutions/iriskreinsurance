@@ -6,6 +6,7 @@ import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './payments-worklist.service';
 import { ReinsuranceRecoveriesWorklistService } from './recoveries-worklist.service';
+import { ReinsuranceReinsurerPlacementsWorklistService } from './reinsurer-placements-worklist.service';
 import { ReinsuranceWorklistsController } from './reinsurance-worklists.controller';
 
 describe('ReinsuranceWorklistsController', () => {
@@ -25,6 +26,9 @@ describe('ReinsuranceWorklistsController', () => {
   const recoveriesWorklist = {
     findRecoveries: jest.fn(),
   };
+  const reinsurerPlacementsWorklist = {
+    findPlacements: jest.fn(),
+  };
   const user = { tenantId: 'tenant-1' } as RequestUser;
 
   beforeEach(() => {
@@ -38,6 +42,7 @@ describe('ReinsuranceWorklistsController', () => {
       claimRowState as unknown as ReinsuranceClaimRowStateService,
       claimsWorklist as unknown as ReinsuranceClaimsWorklistService,
       recoveriesWorklist as unknown as ReinsuranceRecoveriesWorklistService,
+      reinsurerPlacementsWorklist as unknown as ReinsuranceReinsurerPlacementsWorklistService,
     );
 
   it('delegates payment worklist queries using only authenticated tenant context', async () => {
@@ -246,6 +251,42 @@ describe('ReinsuranceWorklistsController', () => {
     const descriptor = Object.getOwnPropertyDescriptor(
       ReinsuranceWorklistsController.prototype,
       'findRecoveries',
+    );
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        descriptor?.value as (...args: unknown[]) => unknown,
+      ),
+    ).toEqual([PlacementPermission.VIEW]);
+  });
+
+  it('delegates reinsurer placement worklist queries using only authenticated tenant context', async () => {
+    const controller = createController();
+    const query = {
+      reinsurerId: '11111111-1111-4111-8111-111111111111',
+      page: 2,
+      limit: 25,
+      filter: 'accepted',
+    } as const;
+    reinsurerPlacementsWorklist.findPlacements.mockResolvedValue({
+      items: [],
+      summary: { all: 0, accepted: 0, pending: 0, closed: 0, declined: 0 },
+      meta: { page: 2, limit: 25, total: 0, totalPages: 0 },
+    });
+
+    await controller.findReinsurerPlacements(query, { user } as never);
+
+    expect(reinsurerPlacementsWorklist.findPlacements).toHaveBeenCalledWith(
+      'tenant-1',
+      query,
+    );
+  });
+
+  it('requires placement view permission for the reinsurer placement worklist', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      ReinsuranceWorklistsController.prototype,
+      'findReinsurerPlacements',
     );
 
     expect(

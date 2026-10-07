@@ -1332,6 +1332,47 @@ export interface PaginatedRecoveriesWorklist {
   summary: RecoveriesWorklistSummary;
 }
 
+export type ReinsurerPlacementFilter = 'all' | 'accepted' | 'pending' | 'closed' | 'declined';
+
+export interface ReinsurerPlacementRow {
+  id: string;
+  reference: string;
+  policyNumber: string | null;
+  title: string;
+  cedant: string;
+  role: PlacementParticipantRole;
+  sharePercent: string | null;
+  participantStatus: PlacementParticipantStatus;
+  placementStatus: FacultativeStatus;
+  offerType: 'Facultative';
+  inceptionDate: string | null;
+  expiryDate: string | null;
+  currency: string | null;
+  premium: number | null;
+  riskType: string | null;
+}
+
+export interface ReinsurerPlacementsSummary {
+  all: number;
+  accepted: number;
+  pending: number;
+  closed: number;
+  declined: number;
+}
+
+export interface ReinsurerPlacementsMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedReinsurerPlacements {
+  items: ReinsurerPlacementRow[];
+  summary: ReinsurerPlacementsSummary;
+  meta: ReinsurerPlacementsMeta;
+}
+
 export type ClaimRowBucket = 'notification' | 'open' | 'closed';
 
 export interface ClaimRowState {

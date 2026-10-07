@@ -26,6 +26,9 @@ interface ReinsurerPoliciesTableProps {
   data: ReinsurerParticipation[];
   isLoading?: boolean;
   onRowClick?: (id: string) => void;
+  currentPage?: number;
+  totalPages?: number;
+  onPageChange?: (page: number) => void;
 }
 
 const PAGE_SIZE = 10;
@@ -145,10 +148,17 @@ export function ReinsurerPoliciesTable({
   data,
   isLoading,
   onRowClick,
+  currentPage,
+  totalPages,
+  onPageChange,
 }: ReinsurerPoliciesTableProps) {
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE));
-  const paged = data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const controlled = currentPage != null && totalPages != null && onPageChange != null;
+  const effectivePage = controlled ? currentPage : page;
+  const effectiveTotalPages = controlled
+    ? Math.max(1, totalPages)
+    : Math.max(1, Math.ceil(data.length / PAGE_SIZE));
+  const paged = controlled ? data : data.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <DataTable
@@ -157,9 +167,9 @@ export function ReinsurerPoliciesTable({
       isLoading={isLoading}
       emptyMessage="No offers found for this reinsurer"
       onRowClick={onRowClick ? (row) => onRowClick(row.id) : undefined}
-      currentPage={page}
-      totalPages={totalPages}
-      onPageChange={setPage}
+      currentPage={effectivePage}
+      totalPages={effectiveTotalPages}
+      onPageChange={controlled ? onPageChange : setPage}
       noInternalScroll
     />
   );
