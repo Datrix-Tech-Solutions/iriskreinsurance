@@ -360,6 +360,10 @@ describe('PremiumsReportService', () => {
     expect(sql).toContain('pay."status" = \'RECORDED\'');
     expect(sql).toContain('"mandatoryDeductions"');
     expect(sql).toContain('"effectiveSettlementCredit"');
+    expect(sql).toContain('WHEN COALESCE(pp."premiumReceived", 0) > 0.0001');
+    expect(sql).toContain(
+      'OR COALESCE(cr."cedantObligation", 0) - COALESCE(cr."mandatoryDeductions", 0) <= 0.0001',
+    );
     expect(sql).toContain('"bankConfirmedAt"');
     expect(sql).toContain('"paymentStatus" IN');
   });

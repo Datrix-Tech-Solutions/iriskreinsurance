@@ -242,8 +242,12 @@ export class ReinsurancePaymentsWorklistService {
             WHEN COALESCE(ob."currentObligation", 0) > 0
              AND COALESCE(ob."currentObligation", 0)
                    - (COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0)) <= 0.0001
+             AND (
+               COALESCE(pt."paidAmount", 0) > 0.0001
+               OR COALESCE(ob."currentObligation", 0) - COALESCE(ob."mandatoryDeductions", 0) <= 0.0001
+             )
               THEN 'Paid'
-            WHEN COALESCE(pt."paidAmount", 0) + COALESCE(ob."mandatoryDeductions", 0) > 0.0001
+            WHEN COALESCE(pt."paidAmount", 0) > 0.0001
               THEN 'Part Payment'
             WHEN COALESCE(pt."pendingAmount", 0) > 0.0001
               THEN 'Pending'

@@ -355,8 +355,12 @@ export class CedantsReportService {
             WHEN COALESCE(cr."cedantObligation", 0) > 0
              AND COALESCE(cr."cedantObligation", 0)
                    - (COALESCE(pr."received", 0) + COALESCE(cr."mandatoryDeductions", 0)) <= 0.0001
+             AND (
+               COALESCE(pr."received", 0) > 0.0001
+               OR COALESCE(cr."cedantObligation", 0) - COALESCE(cr."mandatoryDeductions", 0) <= 0.0001
+             )
               THEN 'Paid'
-            WHEN COALESCE(pr."received", 0) + COALESCE(cr."mandatoryDeductions", 0) > 0.0001
+            WHEN COALESCE(pr."received", 0) > 0.0001
               THEN 'Part Payment'
             WHEN COALESCE(pr."pending", 0) > 0.0001
               THEN 'Pending'

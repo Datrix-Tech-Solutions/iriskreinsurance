@@ -189,7 +189,7 @@ describe('ReinsuranceFacultativeRowStateService', () => {
     expect(result.items[0]).toMatchObject({ paymentStatus: 'Paid' });
   });
 
-  it('keeps deduction-only settlements as partly paid until cash is received', async () => {
+  it('keeps deduction-only settlements outstanding until cash is received', async () => {
     prisma.placementClosing.findMany.mockResolvedValue([
       originalClosing(PLACEMENT_ID, 'participant-1', '5241.60', {
         commissionAmount: '1310.40',
@@ -201,7 +201,42 @@ describe('ReinsuranceFacultativeRowStateService', () => {
       placementIds: [PLACEMENT_ID],
     });
 
-    expect(result.items[0]).toMatchObject({ paymentStatus: 'Part Payment' });
+    expect(result.items[0]).toMatchObject({ paymentStatus: 'Outstanding' });
+  });
+
+  it('returns Pending when deductions exist but only recorded premium cash is present', async () => {
+    prisma.placementClosing.findMany.mockResolvedValue([
+      originalClosing(PLACEMENT_ID, 'participant-1', '5241.60', {
+        commissionAmount: '1310.40',
+        netPremium: '3669.12',
+      }),
+    ]);
+    prisma.placementPayment.findMany.mockResolvedValue([
+      payment(PLACEMENT_ID, PlacementPaymentType.PREMIUM_RECEIVED, '1000.00', {
+        status: PlacementPaymentStatus.RECORDED,
+      }),
+    ]);
+
+    const result = await service.findRowState(TENANT_ID, {
+      placementIds: [PLACEMENT_ID],
+    });
+
+    expect(result.items[0]).toMatchObject({ paymentStatus: 'Pending' });
+  });
+
+  it('returns Paid for zero-cash obligations fully covered by mandatory deductions', async () => {
+    prisma.placementClosing.findMany.mockResolvedValue([
+      originalClosing(PLACEMENT_ID, 'participant-1', '100.00', {
+        commissionAmount: '0.00',
+        netPremium: '0.00',
+      }),
+    ]);
+
+    const result = await service.findRowState(TENANT_ID, {
+      placementIds: [PLACEMENT_ID],
+    });
+
+    expect(result.items[0]).toMatchObject({ paymentStatus: 'Paid' });
   });
 
   it('matches existing reversal behavior by ignoring reversal child rows for payment status', async () => {

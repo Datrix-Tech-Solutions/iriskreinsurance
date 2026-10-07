@@ -36,15 +36,9 @@ export function PaymentOverview({ placement }: PaymentOverviewProps) {
 
   const due = financialPosition?.cedant.currentObligation ?? 0;
   const paid = financialPosition?.cedant.netSettled ?? 0;
-  const effectiveSettlement = financialPosition?.cedant.effectiveSettlementCredit ?? paid;
   const outstanding = financialPosition?.cedant.outstanding ?? 0;
   const pending = pendingPremiumReceived(payments);
-  const paymentStatus = cedantPaymentStatusFromPosition(
-    due,
-    effectiveSettlement,
-    outstanding,
-    pending,
-  );
+  const paymentStatus = cedantPaymentStatusFromPosition(due, paid, outstanding, pending);
 
   return (
     <CollapsibleOverview

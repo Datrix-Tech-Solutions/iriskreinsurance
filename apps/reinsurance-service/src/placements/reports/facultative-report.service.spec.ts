@@ -197,6 +197,10 @@ describe('FacultativeReportService', () => {
     expect(sql).toContain('pay."type" = \'REINSURER_DISBURSEMENT\'');
     expect(sql).toContain('pay."status" = \'BANK_CONFIRMED\'');
     expect(sql).toContain('pay."status" = \'RECORDED\'');
+    expect(sql).toContain('WHEN COALESCE(pp."premiumReceived", 0) > 0.0001');
+    expect(sql).toContain(
+      'OR COALESCE(cr."cedantObligation", 0) - COALESCE(cr."mandatoryDeductions", 0) <= 0.0001',
+    );
     expect(sql).toContain('"PlacementNote" n');
     expect(sql).toContain('n."type" = \'CREDIT_NOTE\'');
     expect(sql).toContain('rr."paymentStatus" IN');
