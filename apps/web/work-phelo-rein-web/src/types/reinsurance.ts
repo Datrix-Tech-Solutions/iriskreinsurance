@@ -1281,6 +1281,57 @@ export interface PlacementClaimRecoveryPosition {
   cedantSettlementStatus: string;
 }
 
+export interface RecoveriesWorklistMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface RecoveriesWorklistCurrencySummary {
+  currency: string;
+  calledAmount: number;
+  recordedAmount: number;
+  confirmedAmount: number;
+  outstandingAmount: number;
+  overdueCount: number;
+}
+
+export interface RecoveriesWorklistSummary {
+  byCurrency: RecoveriesWorklistCurrencySummary[];
+}
+
+export interface RecoveriesWorklistRow {
+  id: string;
+  placementId: string;
+  policyNumber: string | null;
+  insuredTitle: string;
+  riskType: string | null;
+  claimId: string;
+  claimNumber: string;
+  cashCallId: string;
+  cashCallNumber: string;
+  cashCallStatus: PlacementClaimCashCallStatus;
+  allocationId: string;
+  reinsurerId: string;
+  reinsurerName: string;
+  currency: string;
+  calledAmount: number;
+  recordedAmount: number;
+  confirmedAmount: number;
+  reversedAmount: number;
+  outstandingAmount: number;
+  recoveredAmount: number;
+  recoveryStatus: PlacementClaimRecoveryStatus;
+  occurrenceDate: string;
+}
+
+export interface PaginatedRecoveriesWorklist {
+  items: RecoveriesWorklistRow[];
+  meta: RecoveriesWorklistMeta;
+  summary: RecoveriesWorklistSummary;
+}
+
 export type ClaimRowBucket = 'notification' | 'open' | 'closed';
 
 export interface ClaimRowState {

@@ -1,5 +1,6 @@
 'use client';
 
+import { ReactNode } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { TrendBadge } from '@/components/atoms/TrendBadge';
 import { Skeleton } from '@/components/atoms/Skeleton';
@@ -7,7 +8,7 @@ import { cardClass, waterIconStyle } from '@/lib/utils';
 
 interface KpiCardProps {
   label: string;
-  value: string | number;
+  value: ReactNode;
   icon: LucideIcon;
   /** Hex/CSS color seed for the icon's water-glass circle. */
   iconColor?: string;
@@ -52,7 +53,7 @@ export function KpiCard({
         ) : (
           <>
             <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-lg font-bold text-gray-900">{value}</span>
+              <div className="text-lg font-bold text-gray-900">{value}</div>
               {sub && sub.length > 0 && (
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[10px] text-gray-500">
                   {sub.map((s) => (

@@ -24,8 +24,12 @@ import {
   PlacementClaimRecoveryApproval,
   PlacementClaimRecoveryPosition,
   PlacementClaimRecoveryReceipt,
+  PlacementClaimRecoveryStatus,
+  PaginatedRecoveriesWorklist,
   PlacementClaimStatus,
   PaginatedClaimsWorklist,
+  RecoveriesWorklistSummary,
+  RecoveriesWorklistRow,
   UpdatePlacementClaimPayload,
 } from '@/types/reinsurance';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
@@ -65,6 +69,7 @@ export const claimRowStateKey = (claimIds: string[]) =>
   ['reinsurance', 'worklists', 'claim-row-state', [...new Set(claimIds)].sort()] as const;
 
 const claimsWorklistsKey = ['reinsurance', 'worklists', 'claims'] as const;
+const recoveriesWorklistsKey = ['reinsurance', 'worklists', 'recoveries'] as const;
 
 export interface ClaimsWorklistParams {
   tab?: ClaimTabBucket;
@@ -93,6 +98,37 @@ export const claimsWorklistKey = (params: ClaimsWorklistParams = {}) =>
 export const claimsWorklistSummaryKey = () =>
   ['reinsurance', 'worklists', 'claims-summary'] as const;
 
+export interface RecoveriesWorklistParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  reinsurerId?: string;
+  cedantId?: string;
+  recoveryStatus?: PlacementClaimRecoveryStatus;
+  cashCallStatus?: PlacementClaimCashCallStatus;
+  currency?: string;
+  since?: string;
+  until?: string;
+}
+
+function normalizeRecoveriesWorklistParams(params: RecoveriesWorklistParams = {}) {
+  return {
+    page: params.page ?? 1,
+    limit: params.limit ?? 10,
+    ...(params.search?.trim() ? { search: params.search.trim() } : {}),
+    ...(params.reinsurerId ? { reinsurerId: params.reinsurerId } : {}),
+    ...(params.cedantId ? { cedantId: params.cedantId } : {}),
+    ...(params.recoveryStatus ? { recoveryStatus: params.recoveryStatus } : {}),
+    ...(params.cashCallStatus ? { cashCallStatus: params.cashCallStatus } : {}),
+    ...(params.currency?.trim() ? { currency: params.currency.trim().toUpperCase() } : {}),
+    ...(params.since ? { since: params.since } : {}),
+    ...(params.until ? { until: params.until } : {}),
+  };
+}
+
+export const recoveriesWorklistKey = (params: RecoveriesWorklistParams = {}) =>
+  [...recoveriesWorklistsKey, normalizeRecoveriesWorklistParams(params)] as const;
+
 function invalidateClaimWorkflow(
   queryClient: ReturnType<typeof useQueryClient>,
   placementId: string,
@@ -110,6 +146,7 @@ function invalidateClaimWorkflow(
   }
   queryClient.invalidateQueries({ queryKey: claimsWorklistsKey });
   queryClient.invalidateQueries({ queryKey: claimsWorklistSummaryKey() });
+  queryClient.invalidateQueries({ queryKey: recoveriesWorklistsKey });
   queryClient.invalidateQueries({ queryKey: ['reinsurance', 'dashboard'] });
 }
 
@@ -580,6 +617,49 @@ export interface RecoveryRow {
   recoveryStatus: PlacementClaimRecoveryPosition['perCashCall'][number]['recoveryStatus'];
   receipts: PlacementClaimRecoveryReceipt[];
   occurrenceDate: string;
+}
+
+function toRecoveryRow(row: RecoveriesWorklistRow): RecoveryRow {
+  return {
+    ...row,
+    policyNumber: displayPolicyNumber(row.policyNumber),
+    receipts: [],
+  };
+}
+
+export function useRecoveriesWorklist(params: RecoveriesWorklistParams = {}) {
+  const normalizedParams = normalizeRecoveriesWorklistParams(params);
+  return useQuery({
+    queryKey: recoveriesWorklistKey(params),
+    queryFn: async () => {
+      const res = await api.get<PaginatedRecoveriesWorklist>(`${WORKLIST_BASE}/recoveries`, {
+        params: normalizedParams,
+      });
+      return {
+        ...res.data,
+        items: res.data.items.map(toRecoveryRow),
+      };
+    },
+  });
+}
+
+export function useRecoveriesSummary(
+  params: Omit<RecoveriesWorklistParams, 'page' | 'limit'> = {},
+) {
+  const normalizedParams = normalizeRecoveriesWorklistParams({
+    ...params,
+    page: 1,
+    limit: 1,
+  });
+  return useQuery({
+    queryKey: [...recoveriesWorklistsKey, 'summary', normalizedParams],
+    queryFn: async (): Promise<RecoveriesWorklistSummary> => {
+      const res = await api.get<PaginatedRecoveriesWorklist>(`${WORKLIST_BASE}/recoveries`, {
+        params: normalizedParams,
+      });
+      return res.data.summary;
+    },
+  });
 }
 
 /**

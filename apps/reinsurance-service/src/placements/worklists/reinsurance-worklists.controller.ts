@@ -29,11 +29,14 @@ import { QueryClaimsSummaryDto } from '../dto/query-claims-summary.dto';
 import { QueryClaimsWorklistDto } from '../dto/query-claims-worklist.dto';
 import { QueryFacultativeRowStateDto } from '../dto/query-facultative-row-state.dto';
 import { QueryPaymentWorklistDto } from '../dto/query-payment-worklist.dto';
+import { QueryRecoveriesWorklistDto } from '../dto/query-recoveries-worklist.dto';
+import { RecoveriesWorklistResponseDto } from '../dto/recoveries-worklist-response.dto';
 import { PlacementPermission } from '../placement.permissions';
 import { ReinsuranceClaimRowStateService } from './claim-row-state.service';
 import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './payments-worklist.service';
+import { ReinsuranceRecoveriesWorklistService } from './recoveries-worklist.service';
 
 @Controller('worklists')
 @ApiTags('Reinsurance - Worklists')
@@ -53,6 +56,7 @@ export class ReinsuranceWorklistsController {
     private readonly facultativeRowState: ReinsuranceFacultativeRowStateService,
     private readonly claimRowState: ReinsuranceClaimRowStateService,
     private readonly claimsWorklist: ReinsuranceClaimsWorklistService,
+    private readonly recoveriesWorklist: ReinsuranceRecoveriesWorklistService,
   ) {}
 
   @Get('payments')
@@ -132,5 +136,21 @@ export class ReinsuranceWorklistsController {
     @Req() request: Request & { user: RequestUser },
   ) {
     return this.claimsWorklist.summarizeClaims(request.user.tenantId, query);
+  }
+
+  @Get('recoveries')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @ApiOperation({
+    summary: 'List Reinsurance recoveries worklist rows',
+    description:
+      'Returns server-paginated cash-call recovery rows with backend-derived receipt positions and currency-separated summary totals. ' +
+      'This replaces frontend placement preload, per-placement claims discovery and per-claim recovery-position fan-out.',
+  })
+  @ApiOkResponse({ type: RecoveriesWorklistResponseDto })
+  findRecoveries(
+    @Query() query: QueryRecoveriesWorklistDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.recoveriesWorklist.findRecoveries(request.user.tenantId, query);
   }
 }

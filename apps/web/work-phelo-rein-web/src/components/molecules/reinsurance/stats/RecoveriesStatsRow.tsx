@@ -1,76 +1,70 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { KpiCard } from '@/components/molecules/reinsurance/stats/KpiCard';
 import { Icons } from '@/components/atoms/icons';
-import { useFacultatives, useAllReinsurerClaims } from '@/hooks';
+import { useRecoveriesSummary } from '@/hooks';
+import { RecoveriesWorklistCurrencySummary } from '@/types/reinsurance';
 
-const MS_PER_DAY = 1000 * 60 * 60 * 24;
-const OVERDUE_DAYS = 90;
+function fmtCurrencyAmount(currency: string, value: number): string {
+  return `${currency} ${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
 
-function fmtAmount(value: number): string {
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
-  return value.toFixed(2);
+function CurrencyBreakdown({
+  rows,
+  field,
+}: {
+  rows: RecoveriesWorklistCurrencySummary[];
+  field: 'calledAmount' | 'confirmedAmount' | 'outstandingAmount';
+}) {
+  if (rows.length === 0) return <>0.00</>;
+
+  if (rows.length === 1) {
+    const row = rows[0];
+    return <>{fmtCurrencyAmount(row.currency, row[field])}</>;
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5 leading-tight text-sm">
+      {rows.map((row) => (
+        <span key={row.currency}>{fmtCurrencyAmount(row.currency, row[field])}</span>
+      ))}
+    </div>
+  );
 }
 
 export function RecoveriesStatsRow() {
-  const [now] = useState(() => Date.now());
-  const { data: allPlacements = [], isLoading: loadingPlacements } = useFacultatives();
+  const { data, isLoading } = useRecoveriesSummary();
 
-  const reinsuredPlacements = useMemo(
-    () =>
-      allPlacements.filter((p) =>
-        p.participants.some((pt) => pt.status === 'ACCEPTED' || pt.status === 'CLOSED'),
-      ),
-    [allPlacements],
-  );
+  const { summaryRows, overdueCount } = useMemo(() => {
+    const summaryRows = data?.byCurrency ?? [];
+    const overdue = summaryRows.reduce((sum, row) => sum + row.overdueCount, 0);
 
-  const { rows, isLoading: loadingClaims } = useAllReinsurerClaims(reinsuredPlacements);
-
-  const isLoading = loadingPlacements || loadingClaims;
-
-  const { amountDue, amountReceived, outstanding, overdueCount } = useMemo(() => {
-    let due = 0;
-    let received = 0;
-    let overdueCount = 0;
-
-    rows.forEach((row) => {
-      const rowOutstanding = Math.max(0, row.outstandingAmount);
-      due += row.calledAmount;
-      received += row.recoveredAmount;
-      if (
-        rowOutstanding > 0 &&
-        (now - new Date(row.occurrenceDate).getTime()) / MS_PER_DAY > OVERDUE_DAYS
-      ) {
-        overdueCount += 1;
-      }
-    });
-
-    return { amountDue: due, amountReceived: received, outstanding: due - received, overdueCount };
-  }, [rows, now]);
+    return { summaryRows, overdueCount: overdue };
+  }, [data]);
 
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <KpiCard
         label="Amount Due"
-        value={fmtAmount(amountDue)}
+        value={<CurrencyBreakdown rows={summaryRows} field="calledAmount" />}
         icon={Icons.FileCheck2}
         iconColor="#2a78d6"
         isLoading={isLoading}
       />
       <KpiCard
         label="Amount Received"
-        value={fmtAmount(amountReceived)}
+        value={<CurrencyBreakdown rows={summaryRows} field="confirmedAmount" />}
         icon={Icons.CircleDollarSign}
         iconColor="#008300"
         isLoading={isLoading}
       />
       <KpiCard
         label="Outstanding"
-        value={fmtAmount(outstanding)}
+        value={<CurrencyBreakdown rows={summaryRows} field="outstandingAmount" />}
         icon={Icons.Clock}
         iconColor="#eda100"
         isLoading={isLoading}

@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
 import { TableButton } from '@/components/atoms/TableButton';
 import { EndorsedReferencePill } from '@/components/atoms/EndorsedReferencePill';
 import { SearchSelect } from '@/components/atoms/SearchSelect';
 import { Badge } from '@/components/atoms/Badge';
-import { useFacultatives, useAllReinsurerClaims, RecoveryRow } from '@/hooks';
+import { RecoveryRow, useRecoveriesWorklist, useReinsurerOptions } from '@/hooks';
 import { RecordRecoveryReceiptModal } from '@/components/organisms/reinsurance/RecordRecoveryReceiptModal';
 import { PlacementClaimRecoveryStatus } from '@/types/reinsurance';
 
@@ -39,50 +39,15 @@ export function RecoveriesTable() {
   const [page, setPage] = useState(1);
   const [paymentRow, setPaymentRow] = useState<RecoveryTableRow | null>(null);
 
-  const { data: allPlacements = [], isLoading: loadingPlacements } = useFacultatives();
-
-  const reinsuredPlacements = useMemo(
-    () =>
-      allPlacements.filter((p) =>
-        p.participants.some((pt) => pt.status === 'ACCEPTED' || pt.status === 'CLOSED'),
-      ),
-    [allPlacements],
-  );
-
-  const { rows, isLoading: loadingClaims } = useAllReinsurerClaims(reinsuredPlacements);
-
-  const isLoading = loadingPlacements || loadingClaims;
-
-  const recoveryRows: RecoveryTableRow[] = useMemo(() => rows, [rows]);
-
-  const reinsurerOptions = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const r of recoveryRows) seen.set(r.reinsurerId, r.reinsurerName);
-    return Array.from(seen.entries())
-      .map(([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [recoveryRows]);
-
-  const filtered = useMemo(() => {
-    let rows = recoveryRows;
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          r.policyNumber.toLowerCase().includes(q) ||
-          r.insuredTitle.toLowerCase().includes(q) ||
-          r.reinsurerName.toLowerCase().includes(q) ||
-          r.claimNumber.toLowerCase().includes(q),
-      );
-    }
-    if (reinsurerFilter) {
-      rows = rows.filter((r) => r.reinsurerId === reinsurerFilter);
-    }
-    return rows;
-  }, [recoveryRows, search, reinsurerFilter]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const { data, isLoading } = useRecoveriesWorklist({
+    page,
+    limit: PAGE_SIZE,
+    search,
+    reinsurerId: reinsurerFilter,
+  });
+  const { options: reinsurerOptions } = useReinsurerOptions();
+  const recoveryRows: RecoveryTableRow[] = data?.items ?? [];
+  const totalPages = Math.max(1, data?.meta.totalPages ?? 0);
 
   const columns: Column<RecoveryTableRow>[] = [
     {
@@ -220,7 +185,7 @@ export function RecoveriesTable() {
     <>
       <DataTable
         columns={columns}
-        data={paged}
+        data={recoveryRows}
         isLoading={isLoading}
         searchPlaceholder="Search recoveries..."
         searchValue={search}
