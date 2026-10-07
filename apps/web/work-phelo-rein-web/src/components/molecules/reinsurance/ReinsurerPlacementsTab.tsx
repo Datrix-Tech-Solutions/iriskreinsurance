@@ -1,66 +1,32 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { FilterChip } from '@/components/atoms/FilterChip';
 import {
   ReinsurerPoliciesTable,
   type ReinsurerParticipation,
 } from '@/components/molecules/reinsurance/tables/ReinsurerPoliciesTable';
+import { useReinsurerPlacementsWorklist } from '@/hooks';
+import { ReinsurerPlacementFilter } from '@/types/reinsurance';
 
-type ParticipationFilter = 'all' | 'accepted' | 'pending' | 'closed' | 'declined';
+type ParticipationFilter = ReinsurerPlacementFilter;
 
 interface ReinsurerPlacementsTabProps {
-  participations: ReinsurerParticipation[];
-  isLoading: boolean;
+  reinsurerId: string;
   onView: (id: string, reference: string) => void;
 }
 
-export function ReinsurerPlacementsTab({
-  participations,
-  isLoading,
-  onView,
-}: ReinsurerPlacementsTabProps) {
+export function ReinsurerPlacementsTab({ reinsurerId, onView }: ReinsurerPlacementsTabProps) {
   const [filter, setFilter] = useState<ParticipationFilter>('all');
-
-  const counts = useMemo(
-    () => ({
-      all: participations.length,
-      accepted: participations.filter((p) => p.participantStatus === 'ACCEPTED').length,
-      pending: participations.filter(
-        (p) => p.placementStatus === 'DRAFT' || p.placementStatus === 'MARKETING',
-      ).length,
-      closed: participations.filter(
-        (p) =>
-          p.placementStatus === 'PARTIALLY_PLACED' ||
-          p.placementStatus === 'PLACED' ||
-          p.placementStatus === 'CLOSED',
-      ).length,
-      declined: participations.filter((p) => p.participantStatus === 'DECLINED').length,
-    }),
-    [participations],
-  );
-
-  const filtered = useMemo(() => {
-    switch (filter) {
-      case 'accepted':
-        return participations.filter((p) => p.participantStatus === 'ACCEPTED');
-      case 'pending':
-        return participations.filter(
-          (p) => p.placementStatus === 'DRAFT' || p.placementStatus === 'MARKETING',
-        );
-      case 'closed':
-        return participations.filter(
-          (p) =>
-            p.placementStatus === 'PARTIALLY_PLACED' ||
-            p.placementStatus === 'PLACED' ||
-            p.placementStatus === 'CLOSED',
-        );
-      case 'declined':
-        return participations.filter((p) => p.participantStatus === 'DECLINED');
-      default:
-        return participations;
-    }
-  }, [participations, filter]);
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useReinsurerPlacementsWorklist({
+    reinsurerId,
+    filter,
+    page,
+    limit: 10,
+  });
+  const counts = data?.summary ?? { all: 0, accepted: 0, pending: 0, closed: 0, declined: 0 };
+  const rows: ReinsurerParticipation[] = data?.items ?? [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -69,42 +35,60 @@ export function ReinsurerPlacementsTab({
           label="All Offers"
           count={counts.all}
           active={filter === 'all'}
-          onClick={() => setFilter('all')}
+          onClick={() => {
+            setFilter('all');
+            setPage(1);
+          }}
         />
         <FilterChip
           label="Accepted"
           count={counts.accepted}
           active={filter === 'accepted'}
-          onClick={() => setFilter('accepted')}
+          onClick={() => {
+            setFilter('accepted');
+            setPage(1);
+          }}
         />
         <FilterChip
           label="Pending"
           count={counts.pending}
           active={filter === 'pending'}
-          onClick={() => setFilter('pending')}
+          onClick={() => {
+            setFilter('pending');
+            setPage(1);
+          }}
         />
         <FilterChip
           label="Closed"
           count={counts.closed}
           active={filter === 'closed'}
-          onClick={() => setFilter('closed')}
+          onClick={() => {
+            setFilter('closed');
+            setPage(1);
+          }}
         />
         <FilterChip
           label="Declined"
           count={counts.declined}
           active={filter === 'declined'}
-          onClick={() => setFilter('declined')}
+          onClick={() => {
+            setFilter('declined');
+            setPage(1);
+          }}
         />
       </div>
 
       <ReinsurerPoliciesTable
         key={filter}
-        data={filtered}
+        data={rows}
         isLoading={isLoading}
         onRowClick={(id) => {
-          const participation = participations.find((p) => p.id === id);
+          const participation = rows.find((p) => p.id === id);
           if (participation) onView(participation.id, participation.reference);
         }}
+        currentPage={data?.meta.page ?? page}
+        totalPages={data?.meta.totalPages ?? 1}
+        onPageChange={setPage}
       />
     </div>
   );

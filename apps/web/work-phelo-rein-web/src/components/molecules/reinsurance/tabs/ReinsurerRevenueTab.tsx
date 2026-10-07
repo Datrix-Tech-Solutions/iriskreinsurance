@@ -2,8 +2,8 @@
 
 import { useMemo } from 'react';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
-import { Facultative, Currency, Reinsurer } from '@/types/reinsurance';
-import { useReinsurerPaymentSummary } from '@/hooks';
+import { Currency, Reinsurer } from '@/types/reinsurance';
+import { useReinsurersReport } from '@/hooks';
 import { useReinsuranceCharges } from '@/hooks/reinsurance/useReinsuranceCharges';
 import { isForeignCedant, selectChargeRate } from '@/lib/reinsuranceTax';
 
@@ -92,21 +92,21 @@ const FOREIGN_CHARGE_COLUMNS: Column<RevenueRow>[] = [
 ];
 
 interface ReinsurerRevenueTabProps {
-  placements: Facultative[];
   reinsurerId: string;
   reinsurer: Reinsurer;
-  reinsurerDefaultBrokerageFee: number | null;
   currencies: Currency[];
 }
 
 export function ReinsurerRevenueTab({
-  placements,
   reinsurerId,
   reinsurer,
-  reinsurerDefaultBrokerageFee,
   currencies,
 }: ReinsurerRevenueTabProps) {
-  const { paidByCode } = useReinsurerPaymentSummary(placements, reinsurerId);
+  const { summary, isLoading } = useReinsurersReport({
+    reinsurerIds: [reinsurerId],
+    page: 1,
+    limit: 1,
+  });
   const { data: charges } = useReinsuranceCharges();
 
   const isForeignReinsurer = isForeignCedant(reinsurer);
@@ -123,42 +123,29 @@ export function ReinsurerRevenueTab({
     [isForeignReinsurer],
   );
 
-  const { brokerageByCode, grossByCode } = useMemo(() => {
+  const { brokerageByCode, grossByCode, disbursedByCode, outstandingByCode } = useMemo(() => {
     const brokerage = new Map<string, number>();
     const gross = new Map<string, number>();
+    const disbursed = new Map<string, number>();
+    const outstanding = new Map<string, number>();
 
-    for (const placement of placements) {
-      const participant = placement.participants.find((pt) => pt.counterpartyId === reinsurerId);
-      if (!participant) continue;
-      if (participant.status !== 'ACCEPTED' && participant.status !== 'CLOSED') continue;
-      if (placement.premium == null || placement.currency == null) continue;
-
-      const share = participant.sharePercent != null ? parseFloat(participant.sharePercent) : null;
-      if (share == null) continue;
-
-      const shareAmount = placement.premium * (share / 100);
-      gross.set(placement.currency, (gross.get(placement.currency) ?? 0) + shareAmount);
-
-      const feeRaw =
-        participant.brokerageFee ??
-        (reinsurerDefaultBrokerageFee != null ? String(reinsurerDefaultBrokerageFee) : null);
-      const fee = feeRaw != null ? parseFloat(feeRaw) : null;
-      if (fee != null) {
-        const brokerageAmount = shareAmount * (fee / 100);
-        brokerage.set(
-          placement.currency,
-          (brokerage.get(placement.currency) ?? 0) + brokerageAmount,
-        );
-      }
+    for (const row of summary.totalsByCurrency) {
+      brokerage.set(row.currency, row.brokerage);
+      gross.set(row.currency, row.cededPremium);
+      disbursed.set(row.currency, row.disbursed);
+      outstanding.set(row.currency, row.outstanding);
     }
 
-    return { brokerageByCode: brokerage, grossByCode: gross };
-  }, [placements, reinsurerId, reinsurerDefaultBrokerageFee]);
+    return {
+      brokerageByCode: brokerage,
+      grossByCode: gross,
+      disbursedByCode: disbursed,
+      outstandingByCode: outstanding,
+    };
+  }, [summary.totalsByCurrency]);
 
   const rows: RevenueRow[] = currencies.map((c) => {
     const gross = grossByCode.get(c.isoCode) ?? null;
-    const paid = paidByCode.get(c.isoCode) ?? null;
-    const outstanding = gross != null ? gross - (paid ?? 0) : null;
 
     const nicRate = isForeignReinsurer ? selectChargeRate(charges, 'NIC_LEVY', c.isoCode) : 0;
     const whtRate = isForeignReinsurer
@@ -170,8 +157,8 @@ export function ReinsurerRevenueTab({
       brokerage: brokerageByCode.get(c.isoCode) ?? null,
       nicLevy: gross != null && nicRate > 0 ? gross * (nicRate / 100) : null,
       withholdingTax: gross != null && whtRate > 0 ? gross * (whtRate / 100) : null,
-      paidPremiums: paid,
-      outstandingPremiums: outstanding,
+      paidPremiums: disbursedByCode.get(c.isoCode) ?? null,
+      outstandingPremiums: outstandingByCode.get(c.isoCode) ?? null,
     };
   });
 
@@ -179,6 +166,7 @@ export function ReinsurerRevenueTab({
     <DataTable
       columns={columns}
       data={rows}
+      isLoading={isLoading}
       emptyMessage="No currencies configured"
       currentPage={1}
       totalPages={0}

@@ -30,13 +30,16 @@ import { QueryClaimsWorklistDto } from '../dto/query-claims-worklist.dto';
 import { QueryFacultativeRowStateDto } from '../dto/query-facultative-row-state.dto';
 import { QueryPaymentWorklistDto } from '../dto/query-payment-worklist.dto';
 import { QueryRecoveriesWorklistDto } from '../dto/query-recoveries-worklist.dto';
+import { QueryReinsurerPlacementsWorklistDto } from '../dto/query-reinsurer-placements-worklist.dto';
 import { RecoveriesWorklistResponseDto } from '../dto/recoveries-worklist-response.dto';
+import { ReinsurerPlacementsWorklistResponseDto } from '../dto/reinsurer-placements-worklist-response.dto';
 import { PlacementPermission } from '../placement.permissions';
 import { ReinsuranceClaimRowStateService } from './claim-row-state.service';
 import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './payments-worklist.service';
 import { ReinsuranceRecoveriesWorklistService } from './recoveries-worklist.service';
+import { ReinsuranceReinsurerPlacementsWorklistService } from './reinsurer-placements-worklist.service';
 
 @Controller('worklists')
 @ApiTags('Reinsurance - Worklists')
@@ -57,6 +60,7 @@ export class ReinsuranceWorklistsController {
     private readonly claimRowState: ReinsuranceClaimRowStateService,
     private readonly claimsWorklist: ReinsuranceClaimsWorklistService,
     private readonly recoveriesWorklist: ReinsuranceRecoveriesWorklistService,
+    private readonly reinsurerPlacementsWorklist: ReinsuranceReinsurerPlacementsWorklistService,
   ) {}
 
   @Get('payments')
@@ -152,5 +156,24 @@ export class ReinsuranceWorklistsController {
     @Req() request: Request & { user: RequestUser },
   ) {
     return this.recoveriesWorklist.findRecoveries(request.user.tenantId, query);
+  }
+
+  @Get('reinsurer-placements')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @ApiOperation({
+    summary: 'List Reinsurance placements for one reinsurer',
+    description:
+      'Returns server-paginated placement participation rows for a selected reinsurer. ' +
+      'This replaces frontend broad placement loading and client-side participant filtering.',
+  })
+  @ApiOkResponse({ type: ReinsurerPlacementsWorklistResponseDto })
+  findReinsurerPlacements(
+    @Query() query: QueryReinsurerPlacementsWorklistDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.reinsurerPlacementsWorklist.findPlacements(
+      request.user.tenantId,
+      query,
+    );
   }
 }
