@@ -223,13 +223,13 @@ wait_for_container_health redis
 log "✓ Infrastructure services healthy"
 
 section "Database Migrations"
-docker_compose run --rm --no-deps auth-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/auth-service/prisma/schema.prisma"
-docker_compose run --rm --no-deps hr-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/hr-service/prisma/schema.prisma"
-docker_compose run --rm --no-deps notification-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/notification-service/prisma/schema.prisma"
-docker_compose run --rm --no-deps subscription-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/subscription-service/prisma/schema.prisma" || true
-docker_compose run --rm --no-deps marketing-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/marketing-service/prisma/schema.prisma" || true
-docker_compose run --rm --no-deps reinsurance-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/reinsurance-service/prisma/schema.prisma"
-docker_compose run --rm --no-deps accounting-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/accounting-service/prisma/schema.prisma"
+run_prisma_migration "auth-service" "/app/apps/auth-service/prisma/schema.prisma" "auth-service"
+run_prisma_migration "hr-service" "/app/apps/hr-service/prisma/schema.prisma" "hr-service"
+run_prisma_migration "notification-service" "/app/apps/notification-service/prisma/schema.prisma" "notification-service"
+run_prisma_migration "subscription-service" "/app/apps/subscription-service/prisma/schema.prisma" "subscription-service"
+run_prisma_migration "marketing-service" "/app/apps/marketing-service/prisma/schema.prisma" "marketing-service"
+run_prisma_migration "reinsurance-service" "/app/apps/reinsurance-service/prisma/schema.prisma" "reinsurance-service"
+run_prisma_migration "accounting-service" "/app/apps/accounting-service/prisma/schema.prisma" "accounting-service"
 log "✓ Migrations complete"
 
 section "Deploy"
