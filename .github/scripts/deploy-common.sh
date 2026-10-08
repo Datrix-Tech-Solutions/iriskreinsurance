@@ -313,6 +313,22 @@ docker_compose_exec() {
   docker_compose exec -T "$@"
 }
 
+run_prisma_migration() {
+  local service_name="$1"
+  local schema_path="$2"
+  local label="${3:-$service_name}"
+  local deploy_env="${DEPLOY_ENV:-unknown}"
+
+  log "→ ${label}: running Prisma migrate deploy for ${deploy_env} (${schema_path})"
+
+  if ! docker_compose run --rm --no-deps "$service_name" \
+    sh -c "npx prisma@5.22.0 migrate deploy --schema \"$schema_path\""; then
+    die "${label}: Prisma migration failed for ${deploy_env}; deployment stopped before application rollout"
+  fi
+
+  log "✓ ${label}: Prisma migrations applied"
+}
+
 deploy_path_for_env() {
   local deploy_env="$1"
 
