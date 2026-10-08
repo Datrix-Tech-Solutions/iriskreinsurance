@@ -19,7 +19,7 @@ RUN npm run build --workspace=packages/schemas
 RUN npm run build --workspace=packages/utils
 RUN npm run build --workspace=packages/config
 RUN npm run build --workspace=apps/auth-service
-# Compile seed.ts and seed-resources.ts to JavaScript
+# Compile seed.ts and seed support files to JavaScript
 # Use --rootDir . so that relative imports (../src/...) resolve correctly:
 # src/permissions/... → dist/permissions/...
 # prisma/seed.ts → dist/prisma/seed.js
@@ -29,7 +29,7 @@ RUN cd apps/auth-service && npx tsc \
   --module commonjs \
   --target es2020 \
   --skipLibCheck \
-  prisma/seed.ts prisma/seed-resources.ts
+  prisma/seed.ts prisma/seed-resources.ts prisma/seed-policy.ts
 
 FROM node:20-alpine AS runner
 RUN apk add --no-cache openssl
@@ -63,4 +63,3 @@ COPY --from=builder /app/apps/auth-service/prisma/migrations ./apps/auth-service
 WORKDIR /app/apps/auth-service
 EXPOSE 4001
 CMD ["node", "dist/main"]
-

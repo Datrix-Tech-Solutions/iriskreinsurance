@@ -7,6 +7,10 @@ import {
   seedSystemPermissionSets,
   syncUserSystemPermissionSet,
 } from '../src/permissions/system-permission-sets';
+import {
+  resolveSeedMode,
+  resolveSuperAdminSeedDecision,
+} from './seed-policy';
 
 const prisma = new PrismaClient();
 
@@ -48,15 +52,6 @@ async function seedPlatform(
     },
   });
 
-  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL;
-  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
-
-  if (!superAdminEmail || !superAdminPassword) {
-    throw new Error(
-      'SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD env vars are required',
-    );
-  }
-
   const existingSuperAdmins = await prisma.user.findMany({
     where: { role: 'SUPER_ADMIN' },
     select: {
@@ -67,68 +62,84 @@ async function seedPlatform(
     orderBy: { createdAt: 'asc' },
   });
 
-  if (options.isProd && existingSuperAdmins.length > 1) {
-    throw new Error(
-      [
-        'Production seed aborted: multiple SUPER_ADMIN users already exist.',
-        'Expected exactly one SUPER_ADMIN under the datrix-internal tenant.',
-        'Please clean up duplicate super-admin accounts before rerunning the seed.',
-        `Found: ${existingSuperAdmins.map((user) => `${user.email} (${user.tenantId})`).join(', ')}`,
-      ].join(' '),
+  const superAdminDecision = resolveSuperAdminSeedDecision({
+    isProd: options.isProd,
+    existingSuperAdmins,
+    superAdminEmail: process.env.SUPER_ADMIN_EMAIL,
+    superAdminPassword: process.env.SUPER_ADMIN_PASSWORD,
+    allowProdBootstrap:
+      process.env.AUTH_ALLOW_PROD_SUPER_ADMIN_BOOTSTRAP === 'true',
+  });
+
+  let superAdminUserId: string;
+
+  if (superAdminDecision.action === 'dev-upsert') {
+    const hashedSuperAdminPassword = await hash(superAdminDecision.password);
+
+    if (superAdminDecision.existingSuperAdmin) {
+      await prisma.user.update({
+        where: { id: superAdminDecision.existingSuperAdmin.id },
+        data: {
+          tenantId: datrixTenant.id,
+          email: superAdminDecision.email,
+          password: hashedSuperAdminPassword,
+          firstName: 'Super',
+          lastName: 'Admin',
+          role: 'SUPER_ADMIN',
+          status: 'ACTIVE',
+          emailVerifiedAt: new Date(),
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      });
+      superAdminUserId = superAdminDecision.existingSuperAdmin.id;
+    } else {
+      const created = await prisma.user.create({
+        data: {
+          tenantId: datrixTenant.id,
+          email: superAdminDecision.email,
+          password: hashedSuperAdminPassword,
+          firstName: 'Super',
+          lastName: 'Admin',
+          role: 'SUPER_ADMIN',
+          status: 'ACTIVE',
+          emailVerifiedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      superAdminUserId = created.id;
+    }
+
+    console.log(`  SuperAdmin: ${superAdminDecision.email}`);
+  } else if (superAdminDecision.action === 'prod-bootstrap-create') {
+    const hashedSuperAdminPassword = await hash(superAdminDecision.password);
+    const created = await prisma.user.create({
+      data: {
+        tenantId: datrixTenant.id,
+        email: superAdminDecision.email,
+        password: hashedSuperAdminPassword,
+        firstName: 'Super',
+        lastName: 'Admin',
+        role: 'SUPER_ADMIN',
+        status: 'ACTIVE',
+        emailVerifiedAt: new Date(),
+      },
+      select: { id: true },
+    });
+    superAdminUserId = created.id;
+    console.log('  Production SuperAdmin bootstrapped explicitly.');
+  } else {
+    superAdminUserId = superAdminDecision.existingSuperAdmin.id;
+    console.log(
+      '  Production SuperAdmin exists; preserving credentials and account fields.',
     );
   }
-
-  const hashedSuperAdminPassword = await hash(superAdminPassword);
-  const existingSuperAdmin = existingSuperAdmins[0];
-
-  if (existingSuperAdmin) {
-    await prisma.user.update({
-      where: { id: existingSuperAdmin.id },
-      data: {
-        tenantId: datrixTenant.id,
-        email: superAdminEmail,
-        password: hashedSuperAdminPassword,
-        firstName: 'Super',
-        lastName: 'Admin',
-        role: 'SUPER_ADMIN',
-        status: 'ACTIVE',
-        emailVerifiedAt: new Date(),
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-      },
-    });
-  } else {
-    await prisma.user.create({
-      data: {
-        tenantId: datrixTenant.id,
-        email: superAdminEmail,
-        password: hashedSuperAdminPassword,
-        firstName: 'Super',
-        lastName: 'Admin',
-        role: 'SUPER_ADMIN',
-        status: 'ACTIVE',
-        emailVerifiedAt: new Date(),
-      },
-    });
-  }
-
-  console.log(`  SuperAdmin: ${superAdminEmail}`);
 
   const datrixSets = await seedSystemPermissionSets(prisma, datrixTenant.id);
   await seedDefaultPermissionTemplates(prisma, datrixTenant.id);
   await syncUserSystemPermissionSet(prisma, {
     tenantId: datrixTenant.id,
-    userId: (
-      await prisma.user.findUniqueOrThrow({
-        where: {
-          tenantId_email: {
-            tenantId: datrixTenant.id,
-            email: superAdminEmail,
-          },
-        },
-        select: { id: true },
-      })
-    ).id,
+    userId: superAdminUserId,
     role: 'SUPER_ADMIN',
     grantedBy: 'seed-system',
     seededSetIds: datrixSets,
@@ -641,12 +652,19 @@ async function seedDemo(resources: Record<string, string>) {
 
 async function main() {
   const isProd = process.env.NODE_ENV === 'production';
+  const seedMode = resolveSeedMode(process.env.AUTH_SEED_MODE);
 
   console.log('Starting seed...');
   console.log(`Environment: ${process.env.NODE_ENV ?? 'development'}\n`);
+  console.log(`Mode: ${seedMode}\n`);
 
   console.log('Seeding platform resources...');
   const resources = await seedResources();
+
+  if (seedMode === 'reference') {
+    console.log('\nReference seed complete — skipping tenant and user bootstrap.');
+    return;
+  }
 
   await seedPlatform(resources, { isProd });
 
@@ -663,7 +681,11 @@ async function main() {
   console.log(' SEED COMPLETE');
   console.log('='.repeat(65));
   console.log(`Resources:   ${Object.keys(resources).length}`);
-  console.log(`SuperAdmin:  ${process.env.SUPER_ADMIN_EMAIL}`);
+  if (process.env.SUPER_ADMIN_EMAIL) {
+    console.log(`SuperAdmin:  ${process.env.SUPER_ADMIN_EMAIL}`);
+  } else if (isProd) {
+    console.log('SuperAdmin:  existing production account preserved');
+  }
   if (!isProd) {
     console.log(
       'Demo tenants: acme-ghana, stellar-tech, golden-harvest, sunrise-imports',

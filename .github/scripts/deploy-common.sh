@@ -50,8 +50,6 @@ required_env_vars_for() {
     AUTH_MICROSOFT_CALLBACK_URL
     NOTIFY_RESEND_API_KEY
     NOTIFY_RESEND_FROM_EMAIL
-    SUPER_ADMIN_PASSWORD
-    SUPER_ADMIN_EMAIL
     HR_FIELD_ENCRYPTION_KEY
     HR_FIELD_HMAC_KEY
     BUILD_SHA
@@ -66,6 +64,7 @@ required_env_vars_for() {
   case "$deploy_env" in
   dev)
     required+=(DATABASE_URL)
+    required+=(SUPER_ADMIN_EMAIL SUPER_ADMIN_PASSWORD)
     ;;
   prod)
     required+=(DATABASE_URL REDIS_PASSWORD)
