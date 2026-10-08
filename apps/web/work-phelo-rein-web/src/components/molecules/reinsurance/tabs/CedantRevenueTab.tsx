@@ -2,8 +2,8 @@
 
 import { useMemo } from 'react';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
-import { Facultative, Currency } from '@/types/reinsurance';
-import { useCedantPaymentSummary } from '@/hooks';
+import { Currency } from '@/types/reinsurance';
+import { useCedantsReport } from '@/hooks';
 
 type RevenueRow = Currency & {
   netPremium: number | null;
@@ -78,52 +78,47 @@ const REVENUE_COLUMNS: Column<RevenueRow>[] = [
 ];
 
 interface CedantRevenueTabProps {
-  placements: Facultative[];
+  cedantId: string;
   currencies: Currency[];
 }
 
-export function CedantRevenueTab({ placements, currencies }: CedantRevenueTabProps) {
-  const { paidByCode } = useCedantPaymentSummary(placements);
+export function CedantRevenueTab({ cedantId, currencies }: CedantRevenueTabProps) {
+  const { summary, isLoading } = useCedantsReport({
+    cedantIds: [cedantId],
+    page: 1,
+    limit: 1,
+  });
 
-  const { brokerageByCode, netPremiumByCode } = useMemo(() => {
+  const { brokerageByCode, netPremiumByCode, paidByCode, outstandingByCode } = useMemo(() => {
     const brokerage = new Map<string, number>();
     const netPremium = new Map<string, number>();
+    const paid = new Map<string, number>();
+    const outstanding = new Map<string, number>();
 
-    for (const p of placements) {
-      if (p.premium == null || p.currency == null) continue;
-
-      // Match the canonical formula used throughout the codebase
-      const facPremium =
-        p.facultativeOffer != null ? (p.facultativeOffer / 100) * p.premium : p.premium;
-      const net = p.commission != null ? facPremium * (1 - p.commission / 100) : facPremium;
-      netPremium.set(p.currency, (netPremium.get(p.currency) ?? 0) + net);
-
-      for (const pt of p.participants) {
-        if (pt.status !== 'ACCEPTED' && pt.status !== 'CLOSED') continue;
-        const share = pt.sharePercent != null ? parseFloat(pt.sharePercent) : null;
-        const fee = pt.brokerageFee != null ? parseFloat(pt.brokerageFee) : null;
-        if (share == null || fee == null) continue;
-        brokerage.set(
-          p.currency,
-          (brokerage.get(p.currency) ?? 0) + p.premium * (share / 100) * (fee / 100),
-        );
-      }
+    for (const row of summary.totalsByCurrency) {
+      brokerage.set(row.currency, row.brokerage);
+      netPremium.set(row.currency, row.totalPremium);
+      paid.set(row.currency, row.received);
+      outstanding.set(row.currency, row.outstanding);
     }
 
-    return { brokerageByCode: brokerage, netPremiumByCode: netPremium };
-  }, [placements]);
+    return {
+      brokerageByCode: brokerage,
+      netPremiumByCode: netPremium,
+      paidByCode: paid,
+      outstandingByCode: outstanding,
+    };
+  }, [summary.totalsByCurrency]);
 
   const rows: RevenueRow[] = currencies.map((c) => {
     const net = netPremiumByCode.get(c.isoCode) ?? null;
     const paid = paidByCode.get(c.isoCode) ?? null;
-    const outstanding = net != null ? net - (paid ?? 0) : null;
-
     return {
       ...c,
       netPremium: net,
       brokerage: brokerageByCode.get(c.isoCode) ?? null,
       paidPremiums: paid,
-      outstandingPremiums: outstanding,
+      outstandingPremiums: outstandingByCode.get(c.isoCode) ?? null,
     };
   });
 
@@ -131,6 +126,7 @@ export function CedantRevenueTab({ placements, currencies }: CedantRevenueTabPro
     <DataTable
       columns={REVENUE_COLUMNS}
       data={rows}
+      isLoading={isLoading}
       emptyMessage="No currencies configured"
       currentPage={1}
       totalPages={0}

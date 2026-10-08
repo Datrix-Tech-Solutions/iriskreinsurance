@@ -3,6 +3,7 @@ import { PERMISSIONS_KEY } from '../../auth/decorators/permissions.decorator';
 import { PlacementPermission } from '../placement.permissions';
 import { ReinsuranceClaimRowStateService } from './claim-row-state.service';
 import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
+import { ReinsuranceCedantPlacementsWorklistService } from './cedant-placements-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './payments-worklist.service';
 import { ReinsuranceRecoveriesWorklistService } from './recoveries-worklist.service';
@@ -29,6 +30,9 @@ describe('ReinsuranceWorklistsController', () => {
   const reinsurerPlacementsWorklist = {
     findPlacements: jest.fn(),
   };
+  const cedantPlacementsWorklist = {
+    findPlacements: jest.fn(),
+  };
   const user = { tenantId: 'tenant-1' } as RequestUser;
 
   beforeEach(() => {
@@ -43,6 +47,7 @@ describe('ReinsuranceWorklistsController', () => {
       claimsWorklist as unknown as ReinsuranceClaimsWorklistService,
       recoveriesWorklist as unknown as ReinsuranceRecoveriesWorklistService,
       reinsurerPlacementsWorklist as unknown as ReinsuranceReinsurerPlacementsWorklistService,
+      cedantPlacementsWorklist as unknown as ReinsuranceCedantPlacementsWorklistService,
     );
 
   it('delegates payment worklist queries using only authenticated tenant context', async () => {
@@ -287,6 +292,42 @@ describe('ReinsuranceWorklistsController', () => {
     const descriptor = Object.getOwnPropertyDescriptor(
       ReinsuranceWorklistsController.prototype,
       'findReinsurerPlacements',
+    );
+
+    expect(
+      Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        descriptor?.value as (...args: unknown[]) => unknown,
+      ),
+    ).toEqual([PlacementPermission.VIEW]);
+  });
+
+  it('delegates cedant placement worklist queries using only authenticated tenant context', async () => {
+    const controller = createController();
+    const query = {
+      cedantId: '11111111-1111-4111-8111-111111111111',
+      page: 2,
+      limit: 25,
+      filter: 'paid',
+    } as const;
+    cedantPlacementsWorklist.findPlacements.mockResolvedValue({
+      items: [],
+      summary: { all: 0, pending: 0, closed: 0, unpaid: 0, paid: 0 },
+      meta: { page: 2, limit: 25, total: 0, totalPages: 0 },
+    });
+
+    await controller.findCedantPlacements(query, { user } as never);
+
+    expect(cedantPlacementsWorklist.findPlacements).toHaveBeenCalledWith(
+      'tenant-1',
+      query,
+    );
+  });
+
+  it('requires placement view permission for the cedant placement worklist', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      ReinsuranceWorklistsController.prototype,
+      'findCedantPlacements',
     );
 
     expect(

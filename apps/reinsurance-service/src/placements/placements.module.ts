@@ -45,6 +45,7 @@ import { S3DocumentStorageService } from './documents/storage/s3-document-storag
 import { TenantDocumentProfileClient } from './documents/tenant-document-profile.client';
 import { ReinsuranceClaimRowStateService } from './worklists/claim-row-state.service';
 import { ReinsuranceClaimsWorklistService } from './worklists/claims-worklist.service';
+import { ReinsuranceCedantPlacementsWorklistService } from './worklists/cedant-placements-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './worklists/facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './worklists/payments-worklist.service';
 import { ReinsuranceRecoveriesWorklistService } from './worklists/recoveries-worklist.service';
@@ -74,6 +75,7 @@ import { ReinsuranceWorklistsController } from './worklists/reinsurance-worklist
     ClaimsReportService,
     ReinsuranceClaimRowStateService,
     ReinsuranceClaimsWorklistService,
+    ReinsuranceCedantPlacementsWorklistService,
     ReinsuranceFacultativeRowStateService,
     ReinsurancePaymentsWorklistService,
     ReinsuranceRecoveriesWorklistService,

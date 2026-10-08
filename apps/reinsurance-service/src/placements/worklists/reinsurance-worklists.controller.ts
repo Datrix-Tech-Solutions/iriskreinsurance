@@ -27,15 +27,18 @@ import { FacultativeRowStateResponseDto } from '../dto/facultative-row-state-res
 import { QueryClaimRowStateDto } from '../dto/query-claim-row-state.dto';
 import { QueryClaimsSummaryDto } from '../dto/query-claims-summary.dto';
 import { QueryClaimsWorklistDto } from '../dto/query-claims-worklist.dto';
+import { QueryCedantPlacementsWorklistDto } from '../dto/query-cedant-placements-worklist.dto';
 import { QueryFacultativeRowStateDto } from '../dto/query-facultative-row-state.dto';
 import { QueryPaymentWorklistDto } from '../dto/query-payment-worklist.dto';
 import { QueryRecoveriesWorklistDto } from '../dto/query-recoveries-worklist.dto';
 import { QueryReinsurerPlacementsWorklistDto } from '../dto/query-reinsurer-placements-worklist.dto';
 import { RecoveriesWorklistResponseDto } from '../dto/recoveries-worklist-response.dto';
 import { ReinsurerPlacementsWorklistResponseDto } from '../dto/reinsurer-placements-worklist-response.dto';
+import { CedantPlacementsWorklistResponseDto } from '../dto/cedant-placements-worklist-response.dto';
 import { PlacementPermission } from '../placement.permissions';
 import { ReinsuranceClaimRowStateService } from './claim-row-state.service';
 import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
+import { ReinsuranceCedantPlacementsWorklistService } from './cedant-placements-worklist.service';
 import { ReinsuranceFacultativeRowStateService } from './facultative-row-state.service';
 import { ReinsurancePaymentsWorklistService } from './payments-worklist.service';
 import { ReinsuranceRecoveriesWorklistService } from './recoveries-worklist.service';
@@ -61,6 +64,7 @@ export class ReinsuranceWorklistsController {
     private readonly claimsWorklist: ReinsuranceClaimsWorklistService,
     private readonly recoveriesWorklist: ReinsuranceRecoveriesWorklistService,
     private readonly reinsurerPlacementsWorklist: ReinsuranceReinsurerPlacementsWorklistService,
+    private readonly cedantPlacementsWorklist: ReinsuranceCedantPlacementsWorklistService,
   ) {}
 
   @Get('payments')
@@ -172,6 +176,25 @@ export class ReinsuranceWorklistsController {
     @Req() request: Request & { user: RequestUser },
   ) {
     return this.reinsurerPlacementsWorklist.findPlacements(
+      request.user.tenantId,
+      query,
+    );
+  }
+
+  @Get('cedant-placements')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @ApiOperation({
+    summary: 'List Reinsurance placements for one cedant',
+    description:
+      'Returns server-paginated placement rows and cedant premium state for a selected cedant. ' +
+      'This replaces frontend cedant placement loading plus per-placement payments, closings and financial-position fan-out.',
+  })
+  @ApiOkResponse({ type: CedantPlacementsWorklistResponseDto })
+  findCedantPlacements(
+    @Query() query: QueryCedantPlacementsWorklistDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.cedantPlacementsWorklist.findPlacements(
       request.user.tenantId,
       query,
     );

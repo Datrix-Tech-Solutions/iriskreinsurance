@@ -1373,6 +1373,44 @@ export interface PaginatedReinsurerPlacements {
   meta: ReinsurerPlacementsMeta;
 }
 
+export type CedantPlacementFilter = 'all' | 'pending' | 'closed' | 'unpaid' | 'paid';
+
+export interface CedantPlacementRow extends Facultative {
+  closingStatus: 'CONFIRMED' | null;
+  paymentStatus: FacultativeRowPaymentStatus;
+  hasRecordedPayment: boolean;
+  hasNonVoidEndorsement: boolean;
+  acceptedParticipantCount: number;
+  participantCount: number;
+  currentObligation: number;
+  bankConfirmedCash: number;
+  pendingCash: number;
+  mandatoryDeductions: number;
+  effectiveSettlementCredit: number;
+  outstandingAmount: number;
+}
+
+export interface CedantPlacementsSummary {
+  all: number;
+  pending: number;
+  closed: number;
+  unpaid: number;
+  paid: number;
+}
+
+export interface CedantPlacementsMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedCedantPlacements {
+  items: CedantPlacementRow[];
+  summary: CedantPlacementsSummary;
+  meta: CedantPlacementsMeta;
+}
+
 export type ClaimRowBucket = 'notification' | 'open' | 'closed';
 
 export interface ClaimRowState {
