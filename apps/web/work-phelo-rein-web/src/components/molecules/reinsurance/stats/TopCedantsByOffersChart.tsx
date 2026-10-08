@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Period, periodWindow } from '@/components/atoms/PeriodToggle';
-import { useFacultatives } from '@/hooks';
+import { Period } from '@/components/atoms/PeriodToggle';
+import { useReinsuranceTopCedants } from '@/hooks';
 import {
   TopCedantsBarChart,
   type TopCedantRow,
@@ -32,44 +32,20 @@ export function TopCedantsByOffersChart({
   sinceIso,
   untilIso,
 }: TopCedantsByOffersChartProps) {
-  const { data: all = [], isLoading } = useFacultatives();
+  const { data: topCedants, isLoading } = useReinsuranceTopCedants({ period, year });
 
   const rows = useMemo<TopCedantRow[]>(() => {
-    const { start, end } = sinceIso
-      ? { start: new Date(sinceIso), end: untilIso ? new Date(untilIso) : new Date() }
-      : periodWindow(period, { year });
-    const counts = new Map<string, TopCedantRow>();
-
-    for (const f of all) {
-      if (closedOnly) {
-        if (f.status !== 'CLOSED') continue;
-        if (sinceIso) {
-          const closedAt = new Date(f.updatedAt);
-          if (closedAt < start || closedAt > end) continue;
-        }
-      } else {
-        const createdAt = new Date(f.createdAt);
-        if (createdAt < start || createdAt > end) continue;
-      }
-      const { id, name } = f.cedant;
-      const prev = counts.get(id) ?? {
-        name,
-        count: 0,
-        premiumByCurrency: new Map<string, number>(),
-      };
-      if (f.premium != null && f.currency != null) {
-        prev.premiumByCurrency.set(
-          f.currency,
-          (prev.premiumByCurrency.get(f.currency) ?? 0) + f.premium,
-        );
-      }
-      counts.set(id, { name, count: prev.count + 1, premiumByCurrency: prev.premiumByCurrency });
-    }
-
-    return Array.from(counts.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [all, period, year, closedOnly, sinceIso, untilIso]);
+    void closedOnly;
+    void sinceIso;
+    void untilIso;
+    return topCedants.map((row) => ({
+      name: row.name,
+      count: row.offerCount,
+      premiumByCurrency: new Map(
+        row.totalPremiumByCurrency.map((item) => [item.currency, item.amount]),
+      ),
+    }));
+  }, [topCedants, closedOnly, sinceIso, untilIso]);
 
   return (
     <TopCedantsBarChart
