@@ -7,6 +7,7 @@ describe('ReinsuranceDashboardController', () => {
   const dashboardService = {
     getOverview: jest.fn(),
     getPlacements: jest.fn(),
+    getBreakdowns: jest.fn(),
     getFinancials: jest.fn(),
     getClaims: jest.fn(),
   };
@@ -32,12 +33,14 @@ describe('ReinsuranceDashboardController', () => {
 
     await controller.getOverview({ user } as never);
     await controller.getPlacements({ user } as never);
-    await controller.getFinancials({ user } as never);
+    await controller.getBreakdowns({}, { user } as never);
+    await controller.getFinancials({}, { user } as never);
     await controller.getClaims({}, { user } as never);
 
     expect(dashboardService.getOverview).toHaveBeenCalledWith('tenant-1');
     expect(dashboardService.getPlacements).toHaveBeenCalledWith('tenant-1');
-    expect(dashboardService.getFinancials).toHaveBeenCalledWith('tenant-1');
+    expect(dashboardService.getBreakdowns).toHaveBeenCalledWith('tenant-1', {});
+    expect(dashboardService.getFinancials).toHaveBeenCalledWith('tenant-1', {});
     expect(dashboardService.getClaims).toHaveBeenCalledWith('tenant-1', {});
   });
 });

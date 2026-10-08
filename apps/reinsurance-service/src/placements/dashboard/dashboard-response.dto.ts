@@ -8,6 +8,45 @@ export class ReinsuranceDashboardCurrencyBreakdownDto {
   amount!: number;
 }
 
+export class ReinsuranceDashboardNamedCurrencyBreakdownDto {
+  @ApiProperty({ example: 'risk-class-1', nullable: true })
+  id!: string | null;
+
+  @ApiProperty({ example: 'Motor' })
+  name!: string;
+
+  @ApiProperty({ example: 12 })
+  placementCount!: number;
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  premiumByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  sumInsuredByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+}
+
+export class ReinsuranceDashboardTopCounterpartyDto {
+  @ApiProperty({ format: 'uuid' })
+  id!: string;
+
+  @ApiProperty({ example: 'Acme Insurance Ltd' })
+  name!: string;
+
+  @ApiProperty({ example: 12 })
+  offerCount!: number;
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  totalPremiumByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+}
+
+export class ReinsuranceDashboardPremiumTrendPointDto {
+  @ApiProperty({ example: '2026-08-01T00:00:00.000Z' })
+  month!: string;
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  amountByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+}
+
 export class ReinsuranceDashboardNoteCountsDto {
   @ApiProperty({ example: 4 })
   draft!: number;
@@ -72,6 +111,54 @@ export class ReinsuranceDashboardPlacementsResponseDto {
   warnings!: string[];
 }
 
+export class ReinsuranceDashboardBreakdownsResponseDto {
+  @ApiProperty({ type: ReinsuranceDashboardPlacementsResponseDto })
+  offers!: ReinsuranceDashboardPlacementsResponseDto & {
+    placedOffers: number;
+    partiallyClosedOffers: number;
+    closedOffers: number;
+    closedRate: number;
+    previous: {
+      placementCount: number;
+      placedOffers: number;
+      partiallyClosedOffers: number;
+      closedOffers: number;
+      closedRate: number;
+    };
+    trends: {
+      placementCount: number;
+      placedOffers: number;
+      partiallyClosedOffers: number;
+      closedOffers: number;
+      closedRate: number;
+    };
+  };
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  sumInsuredByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  totalRiskByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  grossPremiumByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardNamedCurrencyBreakdownDto] })
+  riskClasses!: ReinsuranceDashboardNamedCurrencyBreakdownDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardTopCounterpartyDto] })
+  topCedants!: ReinsuranceDashboardTopCounterpartyDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardTopCounterpartyDto] })
+  topReinsurers!: ReinsuranceDashboardTopCounterpartyDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardPremiumTrendPointDto] })
+  premiumTrend!: ReinsuranceDashboardPremiumTrendPointDto[];
+
+  @ApiProperty({ type: [String] })
+  warnings!: string[];
+}
+
 export class ReinsuranceDashboardFinancialsResponseDto {
   @ApiProperty({ example: 250000 })
   grossPremium!: number;
@@ -102,6 +189,9 @@ export class ReinsuranceDashboardFinancialsResponseDto {
 
   @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
   outstandingByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
+
+  @ApiProperty({ type: [ReinsuranceDashboardCurrencyBreakdownDto] })
+  brokerageByCurrency!: ReinsuranceDashboardCurrencyBreakdownDto[];
 
   @ApiProperty({ type: ReinsuranceDashboardNoteCountsDto })
   noteCounts!: ReinsuranceDashboardNoteCountsDto;

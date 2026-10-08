@@ -2,36 +2,27 @@
 
 import { useMemo } from 'react';
 import { DataList, Column } from '@/components/organisms/shared/DataList';
-import { Period, periodWindow } from '@/components/atoms/PeriodToggle';
-import { useFacultatives, useCurrencies } from '@/hooks';
-import { Currency } from '@/types/reinsurance';
+import { Period } from '@/components/atoms/PeriodToggle';
+import { useReinsuranceTopReinsurers, useCurrencies } from '@/hooks';
 import { transparentCardClass } from '@/lib/utils';
-
-const REINSURER_ROLES = new Set(['REINSURER', 'LEAD_REINSURER', 'CO_REINSURER']);
-const QUALIFYING_STATUSES = new Set(['ACCEPTED', 'CLOSED']);
 
 interface ReinsurerRow {
   id: string;
   name: string;
   offerCount: number;
-  totalPremium: number;
+  totalPremiumByCurrency: Array<{ currency: string; amount: number }>;
 }
 
-function getRate(currencies: Currency[], isoCode: string | null): number {
-  if (!isoCode) return 1;
-  const c = currencies.find((x) => x.isoCode === isoCode);
-  return c?.exchangeRateToBase ? parseFloat(c.exchangeRateToBase) : 1;
-}
-
-function fmtAmount(value: number, symbol: string): string {
+function fmtAmount(value: number, symbol: string, isoCode: string): string {
   const abs = Math.abs(value);
-  if (abs >= 1_000_000_000) return `${symbol} ${(value / 1_000_000_000).toFixed(2)}B`;
-  if (abs >= 1_000_000) return `${symbol} ${(value / 1_000_000).toFixed(2)}M`;
-  if (abs >= 1_000) return `${symbol} ${(value / 1_000).toFixed(2)}K`;
-  return `${symbol} ${value.toFixed(2)}`;
+  const prefix = symbol || isoCode;
+  if (abs >= 1_000_000_000) return `${prefix} ${(value / 1_000_000_000).toFixed(2)}B`;
+  if (abs >= 1_000_000) return `${prefix} ${(value / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000) return `${prefix} ${(value / 1_000).toFixed(2)}K`;
+  return `${prefix} ${value.toFixed(2)}`;
 }
 
-function buildColumns(symbol: string): Column<ReinsurerRow>[] {
+function buildColumns(symbolFor: (currency: string) => string): Column<ReinsurerRow>[] {
   return [
     {
       key: 'name',
@@ -52,7 +43,15 @@ function buildColumns(symbol: string): Column<ReinsurerRow>[] {
       width: '160px',
       className: 'text-right',
       render: (row) => (
-        <span className="font-semibold text-gray-900">{fmtAmount(row.totalPremium, symbol)}</span>
+        <span className="flex flex-col items-end gap-0.5 font-semibold text-gray-900">
+          {row.totalPremiumByCurrency.length === 0
+            ? '—'
+            : row.totalPremiumByCurrency.map((item) => (
+                <span key={item.currency}>
+                  {fmtAmount(item.amount, symbolFor(item.currency), item.currency)}
+                </span>
+              ))}
+        </span>
       ),
     },
   ];
@@ -64,63 +63,33 @@ interface TopReinsurersCardProps {
   currency: string;
 }
 
-export function TopReinsurersCard({ period, year, currency }: TopReinsurersCardProps) {
-  const { data: all = [], isLoading: loadingFac } = useFacultatives();
+export function TopReinsurersCard({ period, year, currency: _currency }: TopReinsurersCardProps) {
+  void _currency;
+  const { data: topReinsurers, isLoading: loadingReinsurers } = useReinsuranceTopReinsurers({
+    period,
+    year,
+  });
   const { data: currencies = [], isLoading: loadingCur } = useCurrencies();
 
-  const { rows, symbol } = useMemo(() => {
-    const { start, end } = periodWindow(period, { year });
-
-    const baseCurrency = currencies.find((c) => c.isBaseCurrency);
-    const targetIso = currency || baseCurrency?.isoCode || '';
-    const targetRate = getRate(currencies, targetIso);
-    const targetCurrency = currencies.find((c) => c.isoCode === targetIso);
-    const symbol = targetCurrency?.symbol ?? targetIso;
-
-    const map = new Map<string, { name: string; count: number; premium: number }>();
-
-    for (const f of all) {
-      if (f.premium == null) continue;
-      const createdAt = new Date(f.createdAt);
-      if (createdAt < start || createdAt > end) continue;
-
-      const sourceRate = getRate(currencies, f.currency);
-      const premiumInTarget = (f.premium * sourceRate) / targetRate;
-
-      for (const p of f.participants) {
-        if (!REINSURER_ROLES.has(p.role) || !QUALIFYING_STATUSES.has(p.status)) continue;
-        if (p.sharePercent == null) continue;
-        const share = parseFloat(p.sharePercent) / 100;
-
-        const prev = map.get(p.counterpartyId) ?? {
-          name: p.counterparty.name,
-          count: 0,
-          premium: 0,
-        };
-        map.set(p.counterpartyId, {
-          name: prev.name,
-          count: prev.count + 1,
-          premium: prev.premium + premiumInTarget * share,
-        });
-      }
-    }
-
-    const rows: ReinsurerRow[] = Array.from(map.entries())
-      .map(([id, d]) => ({ id, name: d.name, offerCount: d.count, totalPremium: d.premium }))
-      .sort((a, b) => b.totalPremium - a.totalPremium)
-      .slice(0, 5);
-
-    return { rows, symbol };
-  }, [all, currencies, period, year, currency]);
+  const symbolFor = useMemo(
+    () => (code: string) => currencies.find((c) => c.isoCode === code)?.symbol ?? code,
+    [currencies],
+  );
+  const rows = topReinsurers.map((row) => ({
+    id: row.id,
+    name: row.name,
+    offerCount: row.offerCount,
+    totalPremiumByCurrency: row.totalPremiumByCurrency,
+  }));
 
   return (
     <div className={transparentCardClass('flex flex-col gap-3 py-5 h-80')}>
       <h3 className="text-sm font-semibold text-gray-900">Top 5 Reinsurers</h3>
       <div className="flex-1 min-h-0 overflow-y-auto -mx-3 px-3">
         <DataList
-          columns={buildColumns(symbol)}
+          columns={buildColumns(symbolFor)}
           data={rows}
-          isLoading={loadingFac || loadingCur}
+          isLoading={loadingReinsurers || loadingCur}
           emptyMessage="No reinsurer data for this period"
         />
       </div>

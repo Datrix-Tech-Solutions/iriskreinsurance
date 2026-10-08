@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { PieChart } from '@mui/x-charts/PieChart';
-import { Period, periodWindow } from '@/components/atoms/PeriodToggle';
-import { useFacultatives, useRiskTypes, useRiskClasses } from '@/hooks';
+import { Period } from '@/components/atoms/PeriodToggle';
+import { useReinsuranceRiskClassBreakdown } from '@/hooks';
 import { useThemeStore } from '@/store/theme.store';
 
 const COLORS = [
@@ -27,8 +27,8 @@ function fmt(n: number): string {
 }
 
 interface SliceMeta {
-  totalPremium: number;
-  totalSumInsured: number;
+  premiumByCurrency: Array<{ currency: string; amount: number }>;
+  sumInsuredByCurrency: Array<{ currency: string; amount: number }>;
   color: string;
 }
 
@@ -40,50 +40,26 @@ interface RiskClassPieChartProps {
 export function RiskClassPieChart({ period, year }: RiskClassPieChartProps) {
   const [hovered, setHovered] = useState<number | null>(null);
   const isDark = useThemeStore((s) => s.theme === 'dark');
-  const { data: all = [] } = useFacultatives();
-  const { data: riskTypes = [] } = useRiskTypes();
-  const { data: riskClasses = [] } = useRiskClasses();
+  const { data: riskClasses = [] } = useReinsuranceRiskClassBreakdown({ period, year });
 
   const { pieData, meta } = useMemo(() => {
-    const { start, end } = periodWindow(period, { year });
-    const placements = all.filter((f) => {
-      const t = new Date(f.createdAt);
-      return t >= start && t <= end;
-    });
+    const entries = [...riskClasses].sort((a, b) => b.placementCount - a.placementCount);
 
-    const riskTypeMap = new Map(riskTypes.map((rt) => [rt.id, rt]));
-    const riskClassMap = new Map(riskClasses.map((rc) => [rc.id, rc.name]));
-
-    const counts = new Map<string, { count: number; premium: number; sumInsured: number }>();
-    for (const f of placements) {
-      const name = f.riskTypeId
-        ? (riskClassMap.get(riskTypeMap.get(f.riskTypeId)?.riskClassId ?? '') ?? 'Unclassified')
-        : 'Unclassified';
-      const prev = counts.get(name) ?? { count: 0, premium: 0, sumInsured: 0 };
-      counts.set(name, {
-        count: prev.count + 1,
-        premium: prev.premium + (f.premium ?? 0),
-        sumInsured: prev.sumInsured + (f.sumInsured ?? 0),
-      });
-    }
-
-    const entries = Array.from(counts.entries()).sort((a, b) => b[1].count - a[1].count);
-
-    const pieData = entries.map(([name, d], i) => ({
+    const pieData = entries.map((row, i) => ({
       id: i,
-      value: d.count,
-      label: name,
+      value: row.placementCount,
+      label: row.name,
       color: COLORS[i % COLORS.length],
     }));
 
-    const meta: SliceMeta[] = entries.map(([, d], i) => ({
-      totalPremium: d.premium,
-      totalSumInsured: d.sumInsured,
+    const meta: SliceMeta[] = entries.map((row, i) => ({
+      premiumByCurrency: row.premiumByCurrency,
+      sumInsuredByCurrency: row.sumInsuredByCurrency,
       color: COLORS[i % COLORS.length],
     }));
 
     return { pieData, meta };
-  }, [all, riskTypes, riskClasses, period, year]);
+  }, [riskClasses]);
 
   if (pieData.length === 0) {
     return (
@@ -143,11 +119,23 @@ export function RiskClassPieChart({ period, year }: RiskClassPieChartProps) {
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-[#9ca3af]">Premium</span>
-                  <span className="font-medium">{fmt(activeSlice.totalPremium)}</span>
+                  <span className="font-medium">
+                    {activeSlice.premiumByCurrency.length === 0
+                      ? '—'
+                      : activeSlice.premiumByCurrency
+                          .map((item) => `${item.currency} ${fmt(item.amount)}`)
+                          .join(', ')}
+                  </span>
                 </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-[#9ca3af]">Sum Insured</span>
-                  <span className="font-medium">{fmt(activeSlice.totalSumInsured)}</span>
+                  <span className="font-medium">
+                    {activeSlice.sumInsuredByCurrency.length === 0
+                      ? '—'
+                      : activeSlice.sumInsuredByCurrency
+                          .map((item) => `${item.currency} ${fmt(item.amount)}`)
+                          .join(', ')}
+                  </span>
                 </div>
               </div>
             </div>

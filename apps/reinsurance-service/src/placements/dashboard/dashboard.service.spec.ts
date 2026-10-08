@@ -27,6 +27,7 @@ describe('ReinsuranceDashboardService', () => {
     placementClaimAllocation: { findMany: PrismaMethod };
     placementClaimCashCall: { findMany: PrismaMethod };
     placementClaimRecoveryReceipt: { findMany: PrismaMethod };
+    $queryRaw: jest.MockedFunction<(query: unknown) => Promise<unknown>>;
   };
   let service: ReinsuranceDashboardService;
 
@@ -64,6 +65,7 @@ describe('ReinsuranceDashboardService', () => {
       placementClaimRecoveryReceipt: {
         findMany: jest.fn<Promise<unknown>, [unknown]>(),
       },
+      $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
     };
     service = new ReinsuranceDashboardService(
       prisma as unknown as PrismaService,
@@ -181,7 +183,7 @@ describe('ReinsuranceDashboardService', () => {
     expect(prisma.placementPayment.findMany).toHaveBeenCalledWith({
       where: {
         tenantId: 'tenant-1',
-        status: PlacementPaymentStatus.RECORDED,
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
         type: PlacementPaymentType.PREMIUM_RECEIVED,
         placement: { archivedAt: null },
       },
@@ -198,6 +200,9 @@ describe('ReinsuranceDashboardService', () => {
     });
     expect(result.netPremiumByCurrency).toEqual([
       { currency: 'GHS', amount: 1020 },
+    ]);
+    expect(result.brokerageByCurrency).toEqual([
+      { currency: 'GHS', amount: 60 },
     ]);
   });
 
@@ -241,6 +246,141 @@ describe('ReinsuranceDashboardService', () => {
     ]);
     expect(result.warnings).toEqual([
       'Multiple currencies are present. Use the byCurrency fields for reliable financial reporting.',
+    ]);
+  });
+
+  it('returns set-based dashboard breakdowns without collapsing currencies', async () => {
+    prisma.$queryRaw
+      .mockResolvedValueOnce([
+        { status: PlacementStatus.CLOSED, count: 2 },
+        { status: PlacementStatus.PLACED, count: 1 },
+      ])
+      .mockResolvedValueOnce([{ status: PlacementStatus.CLOSED, count: 1 }])
+      .mockResolvedValueOnce([
+        {
+          currency: 'GHS',
+          sumInsured: '1000.00',
+          totalRisk: '400.00',
+          grossPremium: '50.00',
+        },
+        {
+          currency: 'USD',
+          sumInsured: '500.00',
+          totalRisk: '250.00',
+          grossPremium: '20.00',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'risk-class-1',
+          name: 'Motor',
+          placementCount: 2,
+          currency: 'GHS',
+          premium: '50.00',
+          sumInsured: '1000.00',
+        },
+        {
+          id: 'risk-class-1',
+          name: 'Motor',
+          placementCount: 1,
+          currency: 'USD',
+          premium: '20.00',
+          sumInsured: '500.00',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'cedant-1',
+          name: 'Acme Cedant',
+          offerCount: 2,
+          currency: 'GHS',
+          premium: '50.00',
+        },
+        {
+          id: 'cedant-1',
+          name: 'Acme Cedant',
+          offerCount: 1,
+          currency: 'USD',
+          premium: '20.00',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: 'reinsurer-1',
+          name: 'Apex Re',
+          offerCount: 1,
+          currency: 'GHS',
+          premium: '25.00',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          month: '2026-08-01T00:00:00.000Z',
+          currency: 'GHS',
+          amount: '50.00',
+        },
+        {
+          month: '2026-08-01T00:00:00.000Z',
+          currency: 'USD',
+          amount: '20.00',
+        },
+      ]);
+
+    const result = await service.getBreakdowns('tenant-1', {
+      since: '2026-08-01T00:00:00.000Z',
+      until: '2026-08-31T23:59:59.999Z',
+    });
+
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(7);
+    expect(result.offers).toMatchObject({
+      placementCount: 3,
+      placedOffers: 1,
+      closedOffers: 2,
+      closedRate: 66.66666666666666,
+      previous: {
+        placementCount: 1,
+        closedOffers: 1,
+      },
+    });
+    expect(result.sumInsuredByCurrency).toEqual([
+      { currency: 'GHS', amount: 1000 },
+      { currency: 'USD', amount: 500 },
+    ]);
+    expect(result.grossPremiumByCurrency).toEqual([
+      { currency: 'GHS', amount: 50 },
+      { currency: 'USD', amount: 20 },
+    ]);
+    expect(result.riskClasses).toEqual([
+      {
+        id: 'risk-class-1',
+        name: 'Motor',
+        placementCount: 3,
+        premiumByCurrency: [
+          { currency: 'GHS', amount: 50 },
+          { currency: 'USD', amount: 20 },
+        ],
+        sumInsuredByCurrency: [
+          { currency: 'GHS', amount: 1000 },
+          { currency: 'USD', amount: 500 },
+        ],
+      },
+    ]);
+    expect(result.topCedants[0]).toMatchObject({
+      id: 'cedant-1',
+      offerCount: 3,
+      totalPremiumByCurrency: [
+        { currency: 'GHS', amount: 50 },
+        { currency: 'USD', amount: 20 },
+      ],
+    });
+    expect(result.premiumTrend).toEqual([
+      {
+        month: '2026-08-01T00:00:00.000Z',
+        amountByCurrency: [
+          { currency: 'GHS', amount: 50 },
+          { currency: 'USD', amount: 20 },
+        ],
+      },
     ]);
   });
 

@@ -19,12 +19,14 @@ import { ModuleGuard } from '../../auth/guards/module.guard';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import {
   ReinsuranceDashboardClaimsResponseDto,
+  ReinsuranceDashboardBreakdownsResponseDto,
   ReinsuranceDashboardFinancialsResponseDto,
   ReinsuranceDashboardOverviewResponseDto,
   ReinsuranceDashboardPlacementsResponseDto,
 } from './dashboard-response.dto';
 import { ReinsuranceDashboardService } from './dashboard.service';
 import { QueryDashboardClaimsDto } from './query-dashboard-claims.dto';
+import { QueryDashboardPeriodDto } from './query-dashboard-period.dto';
 
 @Controller('dashboard')
 @ApiTags('Reinsurance - Dashboard')
@@ -64,15 +66,32 @@ export class ReinsuranceDashboardController {
     return this.dashboardService.getPlacements(request.user.tenantId);
   }
 
+  @Get('breakdowns')
+  @ApiOperation({
+    summary: 'Get Reinsurance dashboard breakdowns',
+    description:
+      'Returns period-scoped dashboard offer counts, risk class breakdowns, top counterparties and native-currency premium trend data without loading placement lists in the browser.',
+  })
+  @ApiOkResponse({ type: ReinsuranceDashboardBreakdownsResponseDto })
+  getBreakdowns(
+    @Query() query: QueryDashboardPeriodDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.dashboardService.getBreakdowns(request.user.tenantId, query);
+  }
+
   @Get('financials')
   @ApiOperation({
     summary: 'Get Reinsurance financial dashboard summary',
     description:
-      'Uses confirmed closing snapshots for premium/commission/brokerage and recorded payment rows for paid/outstanding amounts.',
+      'Uses confirmed closing snapshots for premium/commission/brokerage and bank-confirmed payment rows for paid/outstanding amounts.',
   })
   @ApiOkResponse({ type: ReinsuranceDashboardFinancialsResponseDto })
-  getFinancials(@Req() request: Request & { user: RequestUser }) {
-    return this.dashboardService.getFinancials(request.user.tenantId);
+  getFinancials(
+    @Query() query: QueryDashboardPeriodDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.dashboardService.getFinancials(request.user.tenantId, query);
   }
 
   @Get('claims')
