@@ -94,7 +94,6 @@ write_env_file "${DEPLOY_PATH}/apps/auth-service/.env.prod" \
   "MICROSOFT_CLIENT_ID=${AUTH_MICROSOFT_CLIENT_ID}" \
   "MICROSOFT_CLIENT_SECRET=${AUTH_MICROSOFT_CLIENT_SECRET}" \
   "MICROSOFT_CALLBACK_URL=${AUTH_MICROSOFT_CALLBACK_URL}" \
-  "SUPER_ADMIN_EMAIL=${SUPER_ADMIN_EMAIL}" \
   "AUTH_TENANT_ASSET_STORAGE_PROVIDER=${AUTH_TENANT_ASSET_STORAGE_PROVIDER}" \
   "AUTH_TENANT_ASSET_S3_BUCKET=${AUTH_TENANT_ASSET_S3_BUCKET:-}" \
   "AUTH_TENANT_ASSET_S3_REGION=${AUTH_TENANT_ASSET_S3_REGION:-}" \
@@ -232,6 +231,17 @@ docker_compose run --rm --no-deps reinsurance-service sh -c "npx prisma@5.22.0 m
 docker_compose run --rm --no-deps accounting-service sh -c "npx prisma@5.22.0 migrate deploy --schema /app/apps/accounting-service/prisma/schema.prisma"
 log "✓ Migrations complete"
 
+section "Auth Reference Seed"
+if docker_compose run --rm --no-deps \
+  -e NODE_ENV=production \
+  -e AUTH_SEED_MODE=reference \
+  auth-service \
+  node /app/apps/auth-service/dist/prisma/seed.js; then
+  log "✓ Production auth reference seed complete"
+else
+  die "Production auth reference seed failed"
+fi
+
 section "Deploy"
 if ! docker_compose up -d --remove-orphans --no-build; then
   print_compose_failure_diagnostics
@@ -250,18 +260,6 @@ wait_for_container_health reinsurance-service
 wait_for_container_health accounting-service
 wait_for_container_health api-gateway
 wait_for_container_health nextjs
-
-section "Production Platform Bootstrap"
-if docker_compose_exec \
-  -e SUPER_ADMIN_EMAIL="${SUPER_ADMIN_EMAIL}" \
-  -e SUPER_ADMIN_PASSWORD="${SUPER_ADMIN_PASSWORD}" \
-  -e NODE_ENV=production \
-  auth-service \
-  node /app/apps/auth-service/dist/prisma/seed.js; then
-  log "✓ Production platform seed complete"
-else
-  die "Production platform seed failed"
-fi
 
 section "Reachability"
 wait_for_http_ok "prod api-gateway" "http://127.0.0.1:4110/health"
