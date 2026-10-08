@@ -6,7 +6,7 @@ import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { Icons } from '@/components/atoms/icons';
 import { Button } from '@/components/atoms/Button';
 import { pageBreadcrumb, pageContent } from '@/lib/layout';
-import { useCedants, useCurrencies, useFacultativesPage, useFacultativePlacement } from '@/hooks';
+import { useCedants, useCurrencies, useFacultativePlacement } from '@/hooks';
 import { usePermissionRule } from '@/hooks/hr/usePermission';
 import { EditCedantPanel } from '@/components/organisms/reinsurance/panels/EditCedantPanel';
 import { EditFacultativePanel } from '@/components/organisms/reinsurance/panels/EditFacultativePanel';
@@ -89,13 +89,6 @@ export default function CedantDetailPage({
   const canEdit = usePermissionRule('operations.reinsurance.counterparties:EDIT');
 
   const { data: cedants = [], isLoading: cedantsLoading } = useCedants();
-  const [placementsPage, setPlacementsPage] = useState(1);
-  const { data: placementsResponse, isLoading: placementsLoading } = useFacultativesPage({
-    page: placementsPage,
-    limit: 10,
-    cedantId,
-    archived: false,
-  });
   const { data: currencies = [] } = useCurrencies();
 
   const cedant = cedants.find((c) => c.id === cedantId) ?? null;
@@ -108,9 +101,6 @@ export default function CedantDetailPage({
   const [premiumPlacement, setPremiumPlacement] = useState<Facultative | null>(null);
 
   const settingsBase = `/${tenantSlug}/operations/reinsurance/cedants`;
-
-  const cedantPlacements = placementsResponse?.items ?? [];
-  const cedantPlacementTotalPages = Math.max(1, placementsResponse?.meta.totalPages ?? 1);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -197,8 +187,7 @@ export default function CedantDetailPage({
 
                 {activeTab === 'placements' && (
                   <CedantPlacementsTab
-                    placements={cedantPlacements}
-                    isLoading={placementsLoading}
+                    cedantId={cedantId}
                     onView={(p) => setActivePlacementView({ mode: 'view', placement: p })}
                     onPremiums={(p) => setPremiumPlacement(p)}
                     onDisbursement={(p) =>
@@ -206,14 +195,11 @@ export default function CedantDetailPage({
                         `/${tenantSlug}/operations/reinsurance/payments/${p.id}?from=cedant`,
                       )
                     }
-                    currentPage={placementsPage}
-                    totalPages={cedantPlacementTotalPages}
-                    onPageChange={setPlacementsPage}
                   />
                 )}
 
                 {activeTab === 'revenue' && (
-                  <CedantRevenueTab placements={cedantPlacements} currencies={currencies} />
+                  <CedantRevenueTab cedantId={cedantId} currencies={currencies} />
                 )}
               </div>
             </div>

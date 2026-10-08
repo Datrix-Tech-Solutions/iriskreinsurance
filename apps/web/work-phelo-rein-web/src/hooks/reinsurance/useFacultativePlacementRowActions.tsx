@@ -21,7 +21,7 @@ import { extractError } from '@/lib/extractError';
 import { useToast } from '@/hooks/useToast';
 import { useAnyPermissionRules } from '@/hooks/hr/usePermission';
 import { RiPerm } from '@/lib/reinsurance/permissions';
-import { Facultative } from '@/types/reinsurance';
+import { Facultative, FacultativeRowState } from '@/types/reinsurance';
 
 interface UseFacultativePlacementRowActionsOptions {
   /** The rows the menu will be built for — used to pre-fetch per-row payment / endorsement state. */
@@ -31,6 +31,9 @@ interface UseFacultativePlacementRowActionsOptions {
   onView: (placement: Facultative) => void;
   /** Actions appended after the status-driven ones — e.g. Premium Payment / Disbursement. */
   extraActions?: (placement: Facultative) => RowAction[];
+  /** Optional row state already returned by a server-side worklist. When provided, this avoids
+   *  the bounded facultative-row-state request for this table. */
+  preloadedRowState?: FacultativeRowState[];
   /** Called after an endorsement is created. Defaults to navigating to the placement's
    *  facultative endorsement tab, matching FacultativeTable. */
   onEndorsementCreated?: (placement: Facultative) => void;
@@ -46,6 +49,7 @@ export function useFacultativePlacementRowActions({
   placements,
   onView,
   extraActions,
+  preloadedRowState,
   onEndorsementCreated,
 }: UseFacultativePlacementRowActionsOptions): {
   getRowActions: (placement: Facultative) => RowAction[];
@@ -78,10 +82,15 @@ export function useFacultativePlacementRowActions({
   );
 
   const placementIds = useMemo(() => placements.map((p) => p.id), [placements]);
-  const rowState = useFacultativeRowState(placementIds, { enabled: placementIds.length > 0 });
+  const rowState = useFacultativeRowState(placementIds, {
+    enabled: placementIds.length > 0 && preloadedRowState == null,
+  });
   const rowStateById = useMemo(
-    () => new Map((rowState.data?.items ?? []).map((item) => [item.placementId, item])),
-    [rowState.data?.items],
+    () =>
+      new Map(
+        (preloadedRowState ?? rowState.data?.items ?? []).map((item) => [item.placementId, item]),
+      ),
+    [preloadedRowState, rowState.data?.items],
   );
 
   const closeArchiveModal = () => {

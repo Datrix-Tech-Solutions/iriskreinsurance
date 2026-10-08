@@ -31,7 +31,9 @@ import {
   ForceCloseEndorsementResponse,
   PlacementDocument,
   FacultativeRowStateResponse,
+  PaginatedCedantPlacements,
   PaginatedReinsurerPlacements,
+  CedantPlacementFilter,
   ReinsurerPlacementFilter,
 } from '@/types/reinsurance';
 
@@ -53,6 +55,7 @@ const reinsurerPlacementsWorklistKey = [
   'worklists',
   'reinsurer-placements',
 ] as const;
+const cedantPlacementsWorklistKey = ['reinsurance', 'worklists', 'cedant-placements'] as const;
 const facultativeRowStateKey = (placementIds: string[]) =>
   [...facultativeRowStatePrefixKey, [...new Set(placementIds)].sort()] as const;
 
@@ -103,6 +106,14 @@ export interface ReinsurerPlacementsWorklistParams {
   page?: number;
   limit?: number;
   filter?: ReinsurerPlacementFilter;
+  search?: string;
+}
+
+export interface CedantPlacementsWorklistParams {
+  cedantId: string;
+  page?: number;
+  limit?: number;
+  filter?: CedantPlacementFilter;
   search?: string;
 }
 
@@ -160,6 +171,16 @@ function normalizePageParams(params: FacultativesPageParams = {}) {
 function normalizeReinsurerPlacementsParams(params: ReinsurerPlacementsWorklistParams) {
   return {
     reinsurerId: params.reinsurerId,
+    page: params.page ?? 1,
+    limit: params.limit ?? 10,
+    filter: params.filter ?? 'all',
+    ...(params.search?.trim() ? { search: params.search.trim() } : {}),
+  };
+}
+
+function normalizeCedantPlacementsParams(params: CedantPlacementsWorklistParams) {
+  return {
+    cedantId: params.cedantId,
     page: params.page ?? 1,
     limit: params.limit ?? 10,
     filter: params.filter ?? 'all',
@@ -239,6 +260,24 @@ export function useReinsurerPlacementsWorklist(
       return res.data;
     },
     enabled: (options.enabled ?? true) && !!params.reinsurerId,
+  });
+}
+
+export function useCedantPlacementsWorklist(
+  params: CedantPlacementsWorklistParams,
+  options: { enabled?: boolean } = {},
+) {
+  const normalizedParams = normalizeCedantPlacementsParams(params);
+
+  return useQuery({
+    queryKey: [...cedantPlacementsWorklistKey, normalizedParams],
+    queryFn: async () => {
+      const res = await api.get<PaginatedCedantPlacements>(`${WORKLIST_BASE}/cedant-placements`, {
+        params: normalizedParams,
+      });
+      return res.data;
+    },
+    enabled: (options.enabled ?? true) && !!params.cedantId,
   });
 }
 
