@@ -1,10 +1,128 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LegacyFinancialPlanner } from '../legacy-financials';
+import {
+  LegacyFinancialPlanner,
+  scopedFinancialResolvedOfferIdsFor,
+} from '../legacy-financials';
+import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { NormalizedLegacyOffer } from '../legacy-import.types';
 
 describe('LegacyFinancialPlanner', () => {
+  it.each(['MISSING', 'AMBIGUOUS', 'REVIEW'])(
+    'fails closed for a %s offer financial crosswalk',
+    (matchClass) => {
+      const fixture = makeFixture({
+        paymentStatus: 'PAID',
+        paidFacPremium: '700.00',
+        paidCommission: '100.00',
+        brokeragePaid: '50.00',
+        offerMatchClass: matchClass,
+      });
+      if (matchClass === 'MISSING') {
+        fs.writeFileSync(fixture.options.offerCrosswalkFile, '[]');
+      }
+      const financials = new LegacyFinancialPlanner().build({
+        options: fixture.options,
+        normalizedOffers: [offer()],
+        placementByOfferId: new Map(),
+      });
+
+      expect(financials.blockedOffers).toEqual([
+        {
+          legacyOfferId: '1001',
+          reasons: ['missing-accepted-offer-financial-crosswalk'],
+        },
+      ]);
+      expect(financials.records).toEqual([]);
+      expect(financials.counts.premiumReceipts.create).toBe(0);
+      expect(financials.counts.reinsurerDisbursements.create).toBe(0);
+      const plan = new LegacyOffersPlanGenerator().build({
+        tenantSlug: 'stellar-tech',
+        sourceFilePath: 'source.json',
+        sourceFileHash: 'source-hash',
+        offers: [],
+        mode: 'dry-run',
+      });
+      plan.records = [
+        {
+          offerId: '1001',
+          classification: 'NEEDS_FINANCIAL_REVIEW',
+          scopedEligibility: 'FINANCIAL_UNRESOLVED',
+          action: 'review',
+          reasons: ['paid-payment-status'],
+          rawHash: 'offer-hash',
+          participantCount: 1,
+          errors: [],
+        },
+      ];
+      expect(scopedFinancialResolvedOfferIdsFor(plan, financials).size).toBe(0);
+    },
+  );
+
+  it('blocks an accepted crosswalk whose manager source row is missing', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '700.00',
+      paidCommission: '100.00',
+      brokeragePaid: '50.00',
+    });
+    fs.writeFileSync(
+      path.join(fixture.options.sourceDir, 'joined_jan_2026.json'),
+      JSON.stringify({ policies: [] }),
+    );
+    const plan = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map(),
+    });
+    expect(plan.blockedOffers).toEqual([
+      {
+        legacyOfferId: '1001',
+        reasons: ['missing-manager-financial-source-row'],
+      },
+    ]);
+    expect(plan.records).toEqual([]);
+  });
+
+  it('resolves a financial-review offer only when its complete crosswalk reconciles', () => {
+    const fixture = makeFixture({
+      paymentStatus: 'PAID',
+      paidFacPremium: '700.00',
+      paidCommission: '100.00',
+      brokeragePaid: '50.00',
+    });
+    const financials = new LegacyFinancialPlanner().build({
+      options: fixture.options,
+      normalizedOffers: [offer()],
+      placementByOfferId: new Map(),
+    });
+    const plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'stellar-tech',
+      sourceFilePath: 'source.json',
+      sourceFileHash: 'source-hash',
+      offers: [],
+      mode: 'dry-run',
+    });
+    plan.records = [
+      {
+        offerId: '1001',
+        classification: 'NEEDS_FINANCIAL_REVIEW',
+        scopedEligibility: 'FINANCIAL_UNRESOLVED',
+        action: 'review',
+        reasons: ['paid-payment-status'],
+        rawHash: 'offer-hash',
+        participantCount: 1,
+        errors: [],
+      },
+    ];
+    expect(scopedFinancialResolvedOfferIdsFor(plan, financials)).toEqual(
+      new Set(['1001']),
+    );
+    expect(plan.records[0].classification).toBe('NEEDS_FINANCIAL_REVIEW');
+    expect(financials.records).toHaveLength(2);
+    expect(financials.blockedOffers).toEqual([]);
+  });
   it('plans a premium receipt and reinsurer disbursement from evidenced paid components', () => {
     const fixture = makeFixture({
       paymentStatus: 'PAID',
@@ -24,6 +142,7 @@ describe('LegacyFinancialPlanner', () => {
 
     expect(plan.counts.premiumReceipts.create).toBe(1);
     expect(plan.counts.reinsurerDisbursements.create).toBe(1);
+    expect(plan.blockedOffers).toEqual([]);
     expect(plan.records).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -625,6 +744,7 @@ function makeFixture(input: {
   paidWht?: string;
   paidNic?: string;
   participantMatchClass?: string;
+  offerMatchClass?: string;
   placements?: Array<Record<string, unknown>>;
   participantRows?: Array<Record<string, unknown>>;
 }) {
@@ -666,7 +786,7 @@ function makeFixture(input: {
         closedDate: '2026-01-15',
         policyNumber: 'POL-1',
         legacyOfferId: '1001',
-        matchClass: 'EXACT',
+        matchClass: input.offerMatchClass ?? 'EXACT',
       },
     ]),
   );

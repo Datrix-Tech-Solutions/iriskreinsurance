@@ -5,6 +5,33 @@ import { LegacyOffer } from '../legacy-import.types';
 describe('LegacyOffersPlanGenerator', () => {
   const generator = new LegacyOffersPlanGenerator();
 
+  it.each(['UNPAID', 'PAID'])(
+    'keeps a financially blocked %s offer held even if marked resolved',
+    (paymentStatus) => {
+      const plan = generator.build({
+        tenantSlug: 'stellar-tech',
+        sourceFilePath: 'source.json',
+        sourceFileHash: 'source-hash',
+        offers: [offer({ payment_status: paymentStatus })],
+        mode: 'dry-run',
+        scopedFinancialResolvedOfferIds: new Set(['1']),
+        financiallyBlockedOfferIds: new Set(['1']),
+      });
+      expect(plan.records[0]).toMatchObject({
+        action: 'review',
+        scopedEligibility: 'FINANCIAL_UNRESOLVED',
+      });
+      expect(plan.records[0].reasons).toContain(
+        'historical-financial-resolution-incomplete',
+      );
+      expect(plan.counts.financialReview).toBe(1);
+      expect(plan.counts.creates.placements).toBe(0);
+      expect(plan.counts.creates.participants).toBe(0);
+      expect(plan.counts.creates.placementClosings).toBe(0);
+      expect(plan.counts.creates.legacyImportMaps).toBe(0);
+    },
+  );
+
   it('plans idempotent skips when import map hash matches', () => {
     const plan = generator.build({
       tenantSlug: 'acme-ghana',

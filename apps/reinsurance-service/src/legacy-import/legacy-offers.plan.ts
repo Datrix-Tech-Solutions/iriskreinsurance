@@ -35,6 +35,7 @@ export type BuildLegacyImportPlanInput = {
   batchSelection?: LegacyImportPlan['batchSelection'];
   existingMaps?: ExistingImportMap[];
   scopedFinancialResolvedOfferIds?: Set<string>;
+  financiallyBlockedOfferIds?: Set<string>;
 };
 
 export class LegacyOffersPlanGenerator {
@@ -106,6 +107,7 @@ export class LegacyOffersPlanGenerator {
           result.reasons,
           existing,
           input.scopedFinancialResolvedOfferIds ?? new Set<string>(),
+          input.financiallyBlockedOfferIds ?? new Set<string>(),
         ),
       );
     }
@@ -135,6 +137,7 @@ export class LegacyOffersPlanGenerator {
     reasons: string[],
     existing: Map<string, ExistingImportMap>,
     scopedFinancialResolvedOfferIds: Set<string>,
+    financiallyBlockedOfferIds: Set<string>,
   ): LegacyImportPlanRecord {
     if (classification === 'DATA_MISMATCH') {
       return {
@@ -143,6 +146,18 @@ export class LegacyOffersPlanGenerator {
         scopedEligibility: 'DATA_MISMATCH',
         action: 'reject',
         reasons,
+        rawHash: offer.rawHash,
+        participantCount: offer.participants.length,
+        errors: [],
+      };
+    }
+    if (financiallyBlockedOfferIds.has(offer.offerId)) {
+      return {
+        offerId: offer.offerId,
+        classification,
+        scopedEligibility: 'FINANCIAL_UNRESOLVED',
+        action: 'review',
+        reasons: ['historical-financial-resolution-incomplete', ...reasons],
         rawHash: offer.rawHash,
         participantCount: offer.participants.length,
         errors: [],

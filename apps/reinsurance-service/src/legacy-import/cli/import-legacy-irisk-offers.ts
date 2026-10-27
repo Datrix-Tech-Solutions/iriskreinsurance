@@ -14,6 +14,7 @@ import {
   LegacyFinancialPlan,
   LegacyFinancialPlanner,
   LegacyFinancialSourceOptions,
+  scopedFinancialResolvedOfferIdsFor,
 } from '../legacy-financials';
 import {
   LEGACY_SOURCE_SYSTEM,
@@ -93,6 +94,11 @@ async function main() {
   const scopedFinancialResolvedOfferIds = sourceHistoricalFinancials
     ? scopedFinancialResolvedOfferIdsFor(plan, sourceHistoricalFinancials)
     : new Set<string>();
+  const financiallyBlockedOfferIds = new Set(
+    sourceHistoricalFinancials?.blockedOffers.map(
+      (offer) => offer.legacyOfferId,
+    ),
+  );
   const scopedPlan = sourceHistoricalFinancials
     ? new LegacyOffersPlanGenerator().build({
         tenantSlug: options.tenantSlug,
@@ -106,6 +112,7 @@ async function main() {
         batchSelection: batchSelectionForPlan(selection),
         existingMaps: [],
         scopedFinancialResolvedOfferIds,
+        financiallyBlockedOfferIds,
       })
     : plan;
 
@@ -145,6 +152,7 @@ async function main() {
         batchSelection: batchSelectionForPlan(selection),
         existingMaps: resolved.existingMaps,
         scopedFinancialResolvedOfferIds,
+        financiallyBlockedOfferIds,
       });
       const dbAwarePlanWithResolutionSummary = withDbResolutionSummary(
         dbAwarePlan,
@@ -156,6 +164,7 @@ async function main() {
             options,
             normalizedOffers,
             plan: dbAwarePlanWithResolutionSummary,
+            sourceBlockedOffers: sourceHistoricalFinancials?.blockedOffers,
           })
         : undefined;
       console.log(
@@ -211,6 +220,7 @@ async function main() {
           selectedOfferIds,
           batchSelection: batchSelectionForPlan(selection),
           scopedFinancialResolvedOfferIds,
+          financiallyBlockedOfferIds,
         })
       : scopedPlan;
     const result = await new LegacyOffersImporter(prisma).apply({
@@ -228,6 +238,7 @@ async function main() {
             options,
             normalizedOffers,
             plan: applyPlan,
+            sourceBlockedOffers: sourceHistoricalFinancials?.blockedOffers,
           })
         : undefined,
       scope: applyScopeForSelection(selection.mode),
@@ -259,6 +270,7 @@ async function buildDbAwarePlan(input: {
   selectedOfferIds: string[];
   batchSelection: ReturnType<typeof batchSelectionForPlan>;
   scopedFinancialResolvedOfferIds: Set<string>;
+  financiallyBlockedOfferIds: Set<string>;
 }) {
   const resolved = await new LegacyDbAwareDryRun(input.prisma).resolve({
     tenantSlug: input.options.tenantSlug,
@@ -277,6 +289,7 @@ async function buildDbAwarePlan(input: {
     batchSelection: input.batchSelection,
     existingMaps: resolved.existingMaps,
     scopedFinancialResolvedOfferIds: input.scopedFinancialResolvedOfferIds,
+    financiallyBlockedOfferIds: input.financiallyBlockedOfferIds,
   });
   const conflicts = countDbResolutionConflicts(resolved.resolution);
   if (conflicts > 0) {
@@ -453,6 +466,7 @@ async function buildHistoricalFinancialPlan(input: {
     typeof selectLegacyOffersForImport
   >['normalizedOffers'];
   plan: ReturnType<LegacyOffersPlanGenerator['build']>;
+  sourceBlockedOffers?: LegacyFinancialPlan['blockedOffers'];
 }) {
   const financialOptions = financialSourceOptions(input.options);
   const offerIds = input.normalizedOffers.map((offer) => offer.offerId);
@@ -520,7 +534,7 @@ async function buildHistoricalFinancialPlan(input: {
         },
       ]),
   );
-  return new LegacyFinancialPlanner().build({
+  const financials = new LegacyFinancialPlanner().build({
     options: financialOptions,
     normalizedOffers: input.normalizedOffers,
     placementByOfferId,
@@ -530,6 +544,22 @@ async function buildHistoricalFinancialPlan(input: {
       financialLegacyMapEntityTypes().includes(map.entityType),
     ),
   });
+  const blocked = new Map<string, Set<string>>();
+  for (const offer of [
+    ...(input.sourceBlockedOffers ?? []),
+    ...financials.blockedOffers,
+  ]) {
+    const reasons = blocked.get(offer.legacyOfferId) ?? new Set<string>();
+    offer.reasons.forEach((reason) => reasons.add(reason));
+    blocked.set(offer.legacyOfferId, reasons);
+  }
+  return {
+    ...financials,
+    blockedOffers: [...blocked].map(([legacyOfferId, reasons]) => ({
+      legacyOfferId,
+      reasons: [...reasons],
+    })),
+  };
 }
 
 function buildSourceHistoricalFinancialPlan(input: {
@@ -575,24 +605,6 @@ function financialWriteExcludedOfferIds(
           record.action === 'reject' ||
           record.action === 'review' ||
           record.action === 'conflict',
-      )
-      .map((record) => record.offerId),
-  );
-}
-
-function scopedFinancialResolvedOfferIdsFor(
-  plan: ReturnType<LegacyOffersPlanGenerator['build']>,
-  financials: LegacyFinancialPlan,
-) {
-  const blocked = new Set(
-    financials.blockedOffers.map((offer) => offer.legacyOfferId),
-  );
-  return new Set(
-    plan.records
-      .filter(
-        (record) =>
-          record.classification === 'NEEDS_FINANCIAL_REVIEW' &&
-          !blocked.has(record.offerId),
       )
       .map((record) => record.offerId),
   );

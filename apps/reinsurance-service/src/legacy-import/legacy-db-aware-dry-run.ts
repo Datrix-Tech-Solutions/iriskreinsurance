@@ -1088,8 +1088,10 @@ function eligibilityByOfferId(plan: LegacyImportPlan) {
   return new Map(
     plan.records.map((record) => [
       record.offerId,
-      record.classification === 'AUTO_SAFE' ||
-      record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED'
+      record.scopedEligibility !== 'FINANCIAL_UNRESOLVED' &&
+      record.classification !== 'DATA_MISMATCH' &&
+      (record.classification === 'AUTO_SAFE' ||
+        record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED')
         ? {
             eligible: true,
             reason:
@@ -1100,6 +1102,7 @@ function eligibilityByOfferId(plan: LegacyImportPlan) {
         : {
             eligible: false,
             reason:
+              record.scopedEligibility === 'FINANCIAL_UNRESOLVED' ||
               record.classification === 'NEEDS_FINANCIAL_REVIEW'
                 ? `phase-1-financial-review:${record.reasons.join(',')}`
                 : `phase-1-rejected:${record.reasons.join(',')}`,
