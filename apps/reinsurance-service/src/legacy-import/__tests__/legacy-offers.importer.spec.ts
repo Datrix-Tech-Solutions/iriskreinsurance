@@ -14,6 +14,45 @@ import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffer } from '../legacy-import.types';
 
 describe('LegacyOffersImporter', () => {
+  it('refuses a financially blocked offer before opening a transaction even with a malformed create plan', async () => {
+    const input = applyInput([offer({ payment_status: 'PAID' })]);
+    input.plan.records = input.plan.records.map((record) => ({
+      ...record,
+      action: 'create',
+      scopedEligibility: 'SCOPED_FINANCIAL_RESOLVED',
+    }));
+    input.historicalFinancials = financialPlan(
+      [premiumReceiptRecord('1', '700.00')],
+      [
+        {
+          legacyOfferId: '1',
+          reasons: ['missing-accepted-offer-financial-crosswalk'],
+        },
+      ],
+    );
+    const { prisma, transaction, tx } = prismaMock();
+    await expect(new LegacyOffersImporter(prisma).apply(input)).rejects.toThrow(
+      'Historical financial resolution incomplete for offer 1',
+    );
+    expect(transaction).not.toHaveBeenCalled();
+    expect(tx.legacyImportRun.create).not.toHaveBeenCalled();
+    expect(tx.placement.create).not.toHaveBeenCalled();
+    expect(tx.placementPayment.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a scoped-financial create plan without financial evidence', async () => {
+    const input = applyInput([offer({ payment_status: 'PAID' })]);
+    input.plan.records = input.plan.records.map((record) => ({
+      ...record,
+      action: 'create',
+      scopedEligibility: 'SCOPED_FINANCIAL_RESOLVED',
+    }));
+    const { prisma, transaction } = prismaMock();
+    await expect(new LegacyOffersImporter(prisma).apply(input)).rejects.toThrow(
+      'Scoped financial apply requires a financial plan.',
+    );
+    expect(transaction).not.toHaveBeenCalled();
+  });
   it('passes explicit interactive transaction options', async () => {
     const { prisma, transaction } = prismaMock();
 
@@ -1810,7 +1849,10 @@ function applyInput(sources: LegacyOffer[]) {
   };
 }
 
-function financialPlan(records: Array<Record<string, unknown>>) {
+function financialPlan(
+  records: Array<Record<string, unknown>>,
+  blockedOffers: Array<{ legacyOfferId: string; reasons: string[] }> = [],
+) {
   return {
     enabled: true,
     sourceDir: 'manager-source',
@@ -1820,7 +1862,7 @@ function financialPlan(records: Array<Record<string, unknown>>) {
       premiumReceipts: { create: 0, skip: 0, review: 0, conflict: 0 },
       reinsurerDisbursements: { create: 0, skip: 0, review: 0, conflict: 0 },
     },
-    blockedOffers: [],
+    blockedOffers,
     records,
     sourceFieldPolicy: [],
     warnings: [],

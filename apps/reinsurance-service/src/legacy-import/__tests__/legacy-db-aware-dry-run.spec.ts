@@ -56,6 +56,44 @@ describe('LegacyDbAwareDryRun', () => {
     expectNoWrites(writeFns);
   });
 
+  it('never plans business rows or dependencies for an AUTO_SAFE offer with unresolved financial evidence', async () => {
+    const writeFns = writeFunctionMocks();
+    const { prisma } = prismaMock(
+      [
+        [{ id: 'tenant-1', slug: 'acme-ghana', name: 'Acme Ghana' }],
+        [{ id: 'user-1', role: 'TENANT_ADMIN' }],
+        [{ count: 0 }],
+      ],
+      writeFns,
+    );
+    const offers = [offer()];
+    const plan = new LegacyOffersPlanGenerator().build({
+      tenantSlug: 'acme-ghana',
+      sourceFilePath: 'source.json',
+      sourceFileHash: 'source-hash',
+      offers,
+      mode: 'dry-run',
+      financiallyBlockedOfferIds: new Set(['1']),
+    });
+    const result = await new LegacyDbAwareDryRun(prisma).resolve({
+      tenantSlug: 'acme-ghana',
+      plan,
+      normalizedOffers: offers.map((source) =>
+        new LegacyOffersNormalizer().normalize(source),
+      ),
+    });
+    expect(result.resolution.plannedEntities.placements[0]).toMatchObject({
+      action: 'skip',
+    });
+    expect(
+      Object.values(result.resolution.plannedEntities)
+        .flat()
+        .some((row) => row.action === 'create'),
+    ).toBe(false);
+    expect(result.resolution.projectedCounts.legacyImportMaps.create).toBe(0);
+    expectNoWrites(writeFns);
+  });
+
   it('reads LegacyImportMap when tracking tables are available and never writes', async () => {
     const writeFns = writeFunctionMocks();
     const { prisma, legacyImportMapFindMany } = prismaMock(

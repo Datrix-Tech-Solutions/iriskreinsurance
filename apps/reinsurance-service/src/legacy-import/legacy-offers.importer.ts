@@ -98,6 +98,27 @@ export class LegacyOffersImporter {
       creatableOfferIds.has(offer.offerId),
     );
 
+    if (scope !== 'reference-only') {
+      const unresolved = input.historicalFinancials?.blockedOffers.find(
+        (offer) => creatableOfferIds.has(offer.legacyOfferId),
+      );
+      if (unresolved) {
+        throw new Error(
+          `Historical financial resolution incomplete for offer ${unresolved.legacyOfferId}: ${unresolved.reasons.join(',')}`,
+        );
+      }
+      if (
+        !input.historicalFinancials &&
+        input.plan.records.some(
+          (record) =>
+            creatableOfferIds.has(record.offerId) &&
+            record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED',
+        )
+      ) {
+        throw new Error('Scoped financial apply requires a financial plan.');
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const mapCache: LegacyImportMapCache = new Map();
       if (scope === 'placement-batch') {
@@ -1275,8 +1296,10 @@ function isScopedBusinessEligible(
   record: ApplyLegacyOffersInput['plan']['records'][number],
 ) {
   return (
-    record.classification === 'AUTO_SAFE' ||
-    record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED'
+    record.classification !== 'DATA_MISMATCH' &&
+    record.scopedEligibility !== 'FINANCIAL_UNRESOLVED' &&
+    (record.classification === 'AUTO_SAFE' ||
+      record.scopedEligibility === 'SCOPED_FINANCIAL_RESOLVED')
   );
 }
 

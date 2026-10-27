@@ -3,6 +3,7 @@ import * as path from 'path';
 import {
   LEGACY_TOLERANCES,
   LEGACY_SOURCE_SYSTEM,
+  LegacyImportPlan,
   NormalizedLegacyOffer,
 } from './legacy-import.types';
 import { sha256 } from './legacy-hash';
@@ -193,6 +194,11 @@ export class LegacyFinancialPlanner {
       if (input.excludedOfferIds?.has(offer.offerId)) continue;
       const crosswalk = offerRows.get(offer.offerId);
       if (!crosswalk) {
+        addBlockedReason(
+          blockedOffers,
+          offer.offerId,
+          'missing-accepted-offer-financial-crosswalk',
+        );
         warnings.push(
           `No accepted financial crosswalk for offer ${offer.offerId}`,
         );
@@ -200,6 +206,11 @@ export class LegacyFinancialPlanner {
       }
       const row = source.managerRows.get(crosswalk.sourceRow);
       if (!row) {
+        addBlockedReason(
+          blockedOffers,
+          offer.offerId,
+          'missing-manager-financial-source-row',
+        );
         warnings.push(`No manager row for offer ${offer.offerId}`);
         continue;
       }
@@ -497,6 +508,24 @@ function withExistingMap(
     reason: 'legacy-import-map-match',
     currentPaymentId: existing.currentId,
   };
+}
+
+export function scopedFinancialResolvedOfferIdsFor(
+  plan: Pick<LegacyImportPlan, 'records'>,
+  financials: LegacyFinancialPlan,
+) {
+  const blocked = new Set(
+    financials.blockedOffers.map((offer) => offer.legacyOfferId),
+  );
+  return new Set(
+    plan.records
+      .filter(
+        (record) =>
+          record.classification === 'NEEDS_FINANCIAL_REVIEW' &&
+          !blocked.has(record.offerId),
+      )
+      .map((record) => record.offerId),
+  );
 }
 
 function acceptedRowsByOffer(rows: CrosswalkRow[]) {
