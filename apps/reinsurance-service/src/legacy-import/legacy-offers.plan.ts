@@ -16,6 +16,8 @@ import { LegacyOffersValidator } from './legacy-offers.validator';
 import { resolveLegacyRiskClass } from './legacy-risk-taxonomy';
 
 export type ExistingImportMap = {
+  id?: string;
+  importRunId?: string;
   entityType: string;
   legacyId: string;
   currentModel: string;

@@ -1,3 +1,7 @@
+import {
+  readLegacyReferenceAliases,
+  LegacyReferenceAliasFile,
+} from '../legacy-reference-aliases';
 import { PrismaClient } from '../../../prisma/generated/client';
 import { LegacyClosedDateLookupReader } from '../legacy-closed-date-lookup.reader';
 import { LegacyDbAwareDryRun } from '../legacy-db-aware-dry-run';
@@ -25,6 +29,7 @@ import {
 
 type CliOptions = {
   source?: string;
+  referenceAliasFile?: string;
   closedDateLookupFile?: string;
   tenantSlug: string;
   tenantId?: string;
@@ -56,6 +61,12 @@ async function main() {
   }
   validateLifecycleOptions(options);
 
+  if (options.referenceAliasFile && !options.resolveDb) {
+    throw new Error('--reference-alias-file requires --resolve-db.');
+  }
+  const referenceAliases = options.referenceAliasFile
+    ? await readLegacyReferenceAliases(options.referenceAliasFile)
+    : undefined;
   const reader = new LegacyOffersReader();
   const file = await reader.read(options.source);
   const selection = selectLegacyOffersForImport({
@@ -139,6 +150,7 @@ async function main() {
         tenantSlug: options.tenantSlug,
         plan: scopedPlan,
         normalizedOffers,
+        referenceAliases,
       });
       const dbAwarePlan = new LegacyOffersPlanGenerator().build({
         tenantSlug: options.tenantSlug,
@@ -177,6 +189,12 @@ async function main() {
               dbAwarePlanWithResolutionSummary,
               historicalFinancials,
             ),
+            referenceAliasFile: referenceAliases
+              ? {
+                  sourceFilePath: referenceAliases.sourceFilePath,
+                  sourceFileHash: referenceAliases.sourceFileHash,
+                }
+              : undefined,
             dbResolution: resolved.resolution,
           },
           null,
@@ -214,6 +232,7 @@ async function main() {
       ? await buildDbAwarePlan({
           prisma,
           options,
+          referenceAliases,
           file,
           plan: scopedPlan,
           normalizedOffers,
@@ -226,6 +245,7 @@ async function main() {
     const result = await new LegacyOffersImporter(prisma).apply({
       tenantId: options.tenantId,
       tenantSlug: options.tenantSlug,
+      referenceAliases,
       importUserId: options.importUserId,
       sourceFilePath: file.sourceFilePath,
       sourceFileHash: file.sourceFileHash,
@@ -268,6 +288,7 @@ async function buildDbAwarePlan(input: {
     typeof selectLegacyOffersForImport
   >['normalizedOffers'];
   selectedOfferIds: string[];
+  referenceAliases?: LegacyReferenceAliasFile;
   batchSelection: ReturnType<typeof batchSelectionForPlan>;
   scopedFinancialResolvedOfferIds: Set<string>;
   financiallyBlockedOfferIds: Set<string>;
@@ -276,6 +297,7 @@ async function buildDbAwarePlan(input: {
     tenantSlug: input.options.tenantSlug,
     plan: input.plan,
     normalizedOffers: input.normalizedOffers,
+    referenceAliases: input.referenceAliases,
   });
   const dbAwarePlan = new LegacyOffersPlanGenerator().build({
     tenantSlug: input.options.tenantSlug,
@@ -403,7 +425,9 @@ function parseArgs(argv: string[]): CliOptions {
     const next = argv[index + 1];
     if (arg === '--source' || arg === '--source-file')
       options.source = requiredValue(arg, next, () => index++);
-    else if (arg === '--closed-date-lookup-file') {
+    else if (arg === '--reference-alias-file') {
+      options.referenceAliasFile = requiredValue(arg, next, () => index++);
+    } else if (arg === '--closed-date-lookup-file') {
       options.closedDateLookupFile = requiredValue(arg, next, () => index++);
     } else if (arg === '--tenant-slug') {
       options.tenantSlug = requiredValue(arg, next, () => index++);

@@ -1,3 +1,4 @@
+import { referenceAliasFixture } from './legacy-reference-aliases.fixture';
 import { PrismaClient } from '../../../prisma/generated/client';
 import {
   LEGACY_IMPORT_EXTENDED_TRANSACTION_OPTIONS,
@@ -14,6 +15,133 @@ import { LegacyOffersPlanGenerator } from '../legacy-offers.plan';
 import { LegacyOffer } from '../legacy-import.types';
 
 describe('LegacyOffersImporter', () => {
+  describe('approved reference-only field aliases', () => {
+    function setup(sourceLabel = 'VEHICLE MAKE') {
+      const fixture = referenceAliasFixture();
+      const source = offer({
+        offer_id: '1567',
+        classofbusiness: {
+          class_of_business_id: '1',
+          business_name: 'Motor',
+          business_details: JSON.stringify([{ keydetail: sourceLabel }]),
+        },
+        offer_detail: {
+          policy_number: 'SYNTHETIC-ALIAS',
+          insured_by: 'Synthetic Insured',
+          currency: 'GHS',
+          offer_details: JSON.stringify([
+            { keydetail: sourceLabel, value: 'Truck' },
+          ]),
+        },
+      });
+      const referenceAliases = { ...fixture.file, tenantId: 'tenant-1' };
+      const currentField = { ...fixture.currentField, tenantId: 'tenant-1' };
+      const riskType = { ...fixture.riskType, tenantId: 'tenant-1' };
+      const mock = prismaMock({
+        existingMaps: {
+          ...completeReferenceMaps(),
+          risk_class: { motor: riskType.riskClassId },
+          risk_type: { '1': riskType.id },
+          risk_type_field: {
+            '1:vehicle_make': {
+              currentId: currentField.id,
+              rawHash: fixture.map.rawHash,
+            },
+          },
+        },
+        existingRecords: {
+          riskType: [riskType],
+          riskTypeField: [currentField],
+        },
+      });
+      const originalFindUnique =
+        mock.tx.legacyImportMap.findUnique.getMockImplementation()!;
+      mock.tx.legacyImportMap.findUnique.mockImplementation(
+        (query: unknown) => {
+          const where = legacyImportMapWhere(query);
+          return where.entityType === 'risk_type_field' &&
+            where.legacyId === fixture.alias.legacyId
+            ? Promise.resolve(fixture.map)
+            : originalFindUnique(query);
+        },
+      );
+      mock.tx.riskTypeField.findUnique.mockResolvedValue(currentField);
+      return {
+        ...mock,
+        fixture,
+        input: {
+          ...applyInput([source]),
+          scope: 'reference-only' as const,
+          referenceAliases,
+        },
+      };
+    }
+
+    it('reuses the approved field twice with zero field/map creates and preserves the canonical hash', async () => {
+      const { prisma, tx, fixture, input } = setup();
+      const before = JSON.stringify(fixture.map);
+      const importer = new LegacyOffersImporter(prisma);
+      for (let run = 0; run < 2; run += 1) {
+        const result = await importer.apply(input);
+        expect(result.created.riskTypeFields).toBe(0);
+        expect(result.created.legacyImportMaps).toBe(0);
+        expect(result.created.placements).toBe(0);
+        const summaryMatcher: unknown = expect.objectContaining({
+          referenceAliases: {
+            sourceFilePath: input.referenceAliases.sourceFilePath,
+            sourceFileHash: input.referenceAliases.sourceFileHash,
+            accepted: [
+              {
+                offerId: '1567',
+                legacyId: fixture.alias.legacyId,
+                alternateHash: fixture.alias.alternateHash,
+                canonicalHash: fixture.map.rawHash,
+                currentId: fixture.map.currentId,
+                evidenceReference: fixture.alias.evidenceReference,
+              },
+            ],
+          },
+        });
+        const dataMatcher: unknown = expect.objectContaining({
+          status: 'COMPLETED',
+          summary: summaryMatcher,
+        });
+        expect(tx.legacyImportRun.update).toHaveBeenNthCalledWith(
+          run + 1,
+          expect.objectContaining({ data: dataMatcher }),
+        );
+      }
+      expect(tx.riskTypeField.create).not.toHaveBeenCalled();
+      expect(tx.legacyImportMap.create).not.toHaveBeenCalled();
+      expect(tx.legacyImportMap.update).not.toHaveBeenCalled();
+      expect(tx.riskTypeField.update).not.toHaveBeenCalled();
+      expect(JSON.stringify(fixture.map)).toBe(before);
+      expect(fixture.map.rawHash).toBe(fixture.alias.canonicalHash);
+    });
+
+    it.each(['absent', 'unknown'] as const)(
+      'blocks reference-only apply with an %s alias',
+      async (kind) => {
+        const { prisma, tx, input } = setup(
+          kind === 'unknown' ? 'vehicle make' : undefined,
+        );
+        const referenceAliases =
+          kind === 'absent' ? undefined : input.referenceAliases;
+        await expect(
+          new LegacyOffersImporter(prisma).apply({
+            ...input,
+            referenceAliases,
+          }),
+        ).rejects.toThrow(
+          'Unapproved risk type field hash mismatch: 1:vehicle_make',
+        );
+        expect(tx.riskTypeField.create).not.toHaveBeenCalled();
+        expect(tx.legacyImportMap.create).not.toHaveBeenCalled();
+        expect(tx.legacyImportMap.update).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   it('refuses a financially blocked offer before opening a transaction even with a malformed create plan', async () => {
     const input = applyInput([offer({ payment_status: 'PAID' })]);
     input.plan.records = input.plan.records.map((record) => ({
@@ -198,7 +326,16 @@ describe('LegacyOffersImporter', () => {
       existingMaps: {
         currency: { GHS: 'currency-existing' },
         risk_type: { '1': 'risk-type-existing' },
-        risk_type_field: { '1:vehicle_make': 'risk-field-existing' },
+        risk_type_field: {
+          '1:vehicle_make': {
+            currentId: 'risk-field-existing',
+            rawHash: riskFieldDefinitionHash({
+              riskTypeLegacyId: '1',
+              key: 'Vehicle Make',
+              normalizedKey: 'vehicle_make',
+            }),
+          },
+        },
         insurer: { '15': 'cedant-existing' },
         reinsurer: { r1: 'reinsurer-existing' },
         offer: { [normalized.offerId]: 'placement-existing' },
@@ -412,8 +549,22 @@ describe('LegacyOffersImporter', () => {
       existingMaps: {
         ...completeReferenceMapsForClass('25'),
         risk_type_field: {
-          '25:vehicle_make': 'risk-field-25-vehicle-make',
-          '25:year_of_manufacture': 'risk-field-25-year',
+          '25:vehicle_make': {
+            currentId: 'risk-field-25-vehicle-make',
+            rawHash: riskFieldDefinitionHash({
+              riskTypeLegacyId: '25',
+              key: 'Vehicle Make',
+              normalizedKey: 'vehicle_make',
+            }),
+          },
+          '25:year_of_manufacture': {
+            currentId: 'risk-field-25-year',
+            rawHash: riskFieldDefinitionHash({
+              riskTypeLegacyId: '25',
+              key: 'Year of Manufacture',
+              normalizedKey: 'year_of_manufacture',
+            }),
+          },
         },
       },
     });
@@ -1449,8 +1600,22 @@ describe('LegacyOffersImporter', () => {
         risk_class: { bond: 'risk-class-bond' },
         risk_type: { '5': 'risk-type-retention-bond' },
         risk_type_field: {
-          '5:project_description': 'field-project',
-          '5:obligee_interest': 'field-obligee',
+          '5:project_description': {
+            currentId: 'field-project',
+            rawHash: riskFieldDefinitionHash({
+              riskTypeLegacyId: '5',
+              key: 'Project Description',
+              normalizedKey: 'project_description',
+            }),
+          },
+          '5:obligee_interest': {
+            currentId: 'field-obligee',
+            rawHash: riskFieldDefinitionHash({
+              riskTypeLegacyId: '5',
+              key: 'Obligee/Interest',
+              normalizedKey: 'obligee_interest',
+            }),
+          },
         },
         offer: { '1': 'placement-existing' },
         offer_participant: { p1: 'participant-existing' },

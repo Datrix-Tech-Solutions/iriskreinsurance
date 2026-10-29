@@ -1,3 +1,4 @@
+import type { LegacyReferenceAliasEvidence } from './legacy-reference-aliases';
 export const LEGACY_SOURCE_SYSTEM = 'legacy-irisk-graphql';
 
 export const LEGACY_TOLERANCES = {
@@ -303,6 +304,7 @@ export type LegacyDbProjectedCounts = {
 };
 
 export type LegacyDbPlannedEntity = {
+  referenceAliases?: LegacyReferenceAliasEvidence[];
   entityType: string;
   legacyId: string;
   action: LegacyDbPlanAction;
