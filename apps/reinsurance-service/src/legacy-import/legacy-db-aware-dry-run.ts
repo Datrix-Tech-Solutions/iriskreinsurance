@@ -1,3 +1,9 @@
+import {
+  approvedLegacyReferenceAlias,
+  assertLegacyAliasTenant,
+  LegacyReferenceAliasFile,
+  LegacyReferenceAliasEvidence,
+} from './legacy-reference-aliases';
 import { PrismaClient } from '../../prisma/generated/client';
 import { riskFieldDefinitionHash, sha256 } from './legacy-hash';
 import {
@@ -82,12 +88,14 @@ export class LegacyDbAwareDryRun {
     tenantSlug: string;
     plan: LegacyImportPlan;
     normalizedOffers: NormalizedLegacyOffer[];
+    referenceAliases?: LegacyReferenceAliasFile;
   }): Promise<{
     plan: LegacyImportPlan;
     resolution: LegacyDbAwareDryRunResolution;
     existingMaps: ExistingImportMap[];
   }> {
     const tenant = await this.resolveTenant(input.tenantSlug);
+    assertLegacyAliasTenant(input.referenceAliases, tenant.id);
     const importUserCandidate = await this.resolveImportUserCandidate(
       tenant.id,
     );
@@ -109,6 +117,7 @@ export class LegacyDbAwareDryRun {
 
     const resolution = await this.buildResolution({
       tenant,
+      referenceAliases: input.referenceAliases,
       importUserCandidate,
       trackingTablesAvailable,
       existingMaps,
@@ -193,6 +202,8 @@ export class LegacyDbAwareDryRun {
         legacyId: { in: legacyIds },
       },
       select: {
+        id: true,
+        importRunId: true,
         entityType: true,
         legacyId: true,
         currentModel: true,
@@ -210,6 +221,7 @@ export class LegacyDbAwareDryRun {
     existingMaps: ExistingImportMap[];
     plan: LegacyImportPlan;
     normalizedOffers: NormalizedLegacyOffer[];
+    referenceAliases?: LegacyReferenceAliasFile;
   }): Promise<LegacyDbAwareDryRunResolution> {
     const tenantId = input.tenant.id;
     const eligibility = eligibilityByOfferId(input.plan);
@@ -394,14 +406,26 @@ export class LegacyDbAwareDryRun {
           name: { in: riskTypes.map((riskType) => riskType.name) },
           archivedAt: null,
         },
-        select: { id: true, name: true, riskClassId: true },
+        select: { id: true, tenantId: true, name: true, riskClassId: true },
       }),
       this.prisma.riskTypeField.findMany({
         where: {
           tenantId,
           fieldKey: { in: riskTypeFields.map((field) => field.key) },
         },
-        select: { id: true, riskTypeId: true, fieldKey: true },
+        select: {
+          id: true,
+          tenantId: true,
+          riskTypeId: true,
+          fieldKey: true,
+          label: true,
+          section: true,
+          fieldType: true,
+          required: true,
+          options: true,
+          validationRules: true,
+          isActive: true,
+        },
       }),
       this.prisma.placement.findMany({
         where: {
@@ -434,6 +458,52 @@ export class LegacyDbAwareDryRun {
         map,
       ]),
     );
+    const approvedFieldAliases = new Map<
+      string,
+      LegacyReferenceAliasEvidence[]
+    >();
+    const unapprovedFieldAliases = new Set<string>();
+    if (input.referenceAliases) {
+      // Check every occurrence before identity deduplication can hide a mismatch.
+      for (const offer of eligibleOffers) {
+        for (const field of riskTypeFieldsForPlan(offer, input.plan)) {
+          const legacyId = `${offer.classId}:${field.normalizedKey}`;
+          const map = mapIndex.get(`risk_type_field:${legacyId}`);
+          const rawHash = riskFieldDefinitionHash({
+            riskTypeLegacyId: offer.classId,
+            key: field.key,
+            normalizedKey: field.normalizedKey,
+          });
+          if (!map || map.rawHash === rawHash) continue;
+          const parentMap = mapIndex.get(`risk_type:${offer.classId}`);
+          const riskClass = requireLegacyRiskClass(offer.className);
+          const evidence = approvedLegacyReferenceAlias({
+            file: input.referenceAliases,
+            tenantId,
+            offerId: offer.offerId,
+            riskTypeLegacyId: offer.classId,
+            field,
+            map,
+            currentField: existingRiskTypeFields.find(
+              (row) => row.id === map.currentId,
+            ),
+            riskType: existingRiskTypes.find(
+              (row) => row.id === parentMap?.currentId,
+            ),
+            expectedRiskTypeId: parentMap?.currentId,
+            expectedRiskClassId: mapIndex.get(
+              `risk_class:${legacyRiskClassLegacyId(riskClass)}`,
+            )?.currentId,
+          });
+          if (!evidence) unapprovedFieldAliases.add(legacyId);
+          else
+            approvedFieldAliases.set(legacyId, [
+              ...(approvedFieldAliases.get(legacyId) ?? []),
+              evidence,
+            ]);
+        }
+      }
+    }
     const isReferenceOnly =
       input.plan.batchSelection?.mode === 'reference-only';
     const existingCurrencyIndex = indexBy(
@@ -630,6 +700,8 @@ export class LegacyDbAwareDryRun {
         riskTypes: plannedRiskTypes,
         riskTypeFields: planRiskTypeFields({
           fields: riskTypeFields,
+          approvedFieldAliases,
+          unapprovedFieldAliases,
           mapIndex,
           plannedRiskTypeIndex,
           existingRiskTypeFieldIndex,
@@ -911,6 +983,8 @@ function legacyImportMapActionFor(entity: LegacyDbPlannedEntity) {
 
 function planRiskTypeFields(input: {
   fields: PlannedRiskTypeField[];
+  approvedFieldAliases: Map<string, LegacyReferenceAliasEvidence[]>;
+  unapprovedFieldAliases: Set<string>;
   mapIndex: Map<string, ExistingImportMap>;
   plannedRiskTypeIndex: Map<string, LegacyDbPlannedEntity>;
   existingRiskTypeFieldIndex: Map<string | undefined, ExistingEntity>;
@@ -928,8 +1002,25 @@ function planRiskTypeFields(input: {
         existing: undefined,
         currentModel: 'RiskTypeField',
       });
-      plannedCurrentFieldIndex.set(field.canonicalKey, mapped);
-      return mapped;
+      const evidence = input.approvedFieldAliases.get(field.legacyId);
+      const result: LegacyDbPlannedEntity = input.unapprovedFieldAliases.has(
+        field.legacyId,
+      )
+        ? {
+            ...mapped,
+            action: 'conflict',
+            reason: 'legacy-import-map-raw-hash-mismatch',
+          }
+        : evidence?.length
+          ? {
+              ...mapped,
+              action: 'skip',
+              reason: 'legacy-import-map-match',
+              referenceAliases: evidence,
+            }
+          : mapped;
+      plannedCurrentFieldIndex.set(field.canonicalKey, result);
+      return result;
     }
     const plannedCurrent = plannedCurrentFieldIndex.get(field.canonicalKey);
     if (plannedCurrent && plannedCurrent.action !== 'conflict') {

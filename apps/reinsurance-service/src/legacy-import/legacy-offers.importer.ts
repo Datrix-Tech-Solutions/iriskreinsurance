@@ -1,3 +1,9 @@
+import {
+  approvedLegacyReferenceAlias,
+  assertLegacyAliasTenant,
+  LegacyReferenceAliasFile,
+  LegacyReferenceAliasEvidence,
+} from './legacy-reference-aliases';
 import { randomUUID } from 'crypto';
 import {
   CounterpartyOrigin,
@@ -62,6 +68,7 @@ export type ApplyLegacyOffersInput = {
   normalizedOffers: NormalizedLegacyOffer[];
   closedDateLookup?: LegacyClosedDateLookup;
   historicalFinancials?: LegacyFinancialPlan;
+  referenceAliases?: LegacyReferenceAliasFile;
   scope?: 'fixture' | 'reference-only' | 'placement-batch';
 };
 
@@ -77,6 +84,7 @@ export class LegacyOffersImporter {
   constructor(private readonly prisma: PrismaClient) {}
 
   async apply(input: ApplyLegacyOffersInput): Promise<ApplyLegacyOffersResult> {
+    assertLegacyAliasTenant(input.referenceAliases, input.tenantId);
     const scope = input.scope ?? 'fixture';
     const financialOfferIds = new Set(
       input.historicalFinancials?.records
@@ -129,6 +137,12 @@ export class LegacyOffersImporter {
           offers,
         );
       }
+      const referenceAliasEvidence = await this.validateReferenceAliases(
+        tx,
+        mapCache,
+        input,
+        offers,
+      );
       const importRunId = randomUUID();
       await tx.legacyImportRun.create({
         data: {
@@ -139,7 +153,18 @@ export class LegacyOffersImporter {
           sourceFilePath: input.sourceFilePath,
           mode: 'apply',
           status: 'STARTED',
-          summary: input.plan as unknown as Prisma.InputJsonValue,
+          summary: {
+            ...input.plan,
+            ...(input.referenceAliases
+              ? {
+                  referenceAliases: {
+                    sourceFilePath: input.referenceAliases.sourceFilePath,
+                    sourceFileHash: input.referenceAliases.sourceFileHash,
+                    accepted: referenceAliasEvidence,
+                  },
+                }
+              : {}),
+          } as unknown as Prisma.InputJsonValue,
         },
       });
 
@@ -191,6 +216,7 @@ export class LegacyOffersImporter {
           importRunId,
           offer,
           created,
+          referenceAliasEvidence,
         );
         const cedantId = await this.ensureCedant(
           tx,
@@ -270,6 +296,15 @@ export class LegacyOffersImporter {
           finishedAt: new Date(),
           summary: {
             ...input.plan,
+            ...(input.referenceAliases
+              ? {
+                  referenceAliases: {
+                    sourceFilePath: input.referenceAliases.sourceFilePath,
+                    sourceFileHash: input.referenceAliases.sourceFileHash,
+                    accepted: referenceAliasEvidence,
+                  },
+                }
+              : {}),
             applyCreated: created,
           } as unknown as Prisma.InputJsonValue,
         },
@@ -349,6 +384,7 @@ export class LegacyOffersImporter {
     importRunId: string,
     offer: NormalizedLegacyOffer,
     created: Record<string, number>,
+    referenceAliasEvidence: LegacyReferenceAliasEvidence[],
   ) {
     const riskClassMapping = resolveLegacyRiskClass(offer.className);
     if (!riskClassMapping) {
@@ -373,6 +409,7 @@ export class LegacyOffersImporter {
         offer,
         mappedRiskType.currentId,
         created,
+        referenceAliasEvidence,
       );
       return mappedRiskType.currentId;
     }
@@ -466,6 +503,7 @@ export class LegacyOffersImporter {
       offer,
       riskType.id,
       created,
+      referenceAliasEvidence,
     );
     return riskType.id;
   }
@@ -478,6 +516,7 @@ export class LegacyOffersImporter {
     offer: NormalizedLegacyOffer,
     riskTypeId: string,
     created: Record<string, number>,
+    referenceAliasEvidence: LegacyReferenceAliasEvidence[],
   ) {
     const allFields = uniqueFields([
       ...riskTypeFieldsForScope(offer, input.scope),
@@ -491,7 +530,29 @@ export class LegacyOffersImporter {
         'risk_type_field',
         riskFieldLegacyId,
       );
-      if (mappedRiskField) continue;
+      if (mappedRiskField) {
+        const hash = riskFieldDefinitionHash({
+          riskTypeLegacyId: offer.classId,
+          key: field.key,
+          normalizedKey: field.normalizedKey,
+        });
+        if (
+          mappedRiskField.rawHash !== hash &&
+          !referenceAliasEvidence.some(
+            (evidence) =>
+              evidence.offerId === offer.offerId &&
+              evidence.legacyId === riskFieldLegacyId &&
+              evidence.alternateHash === hash &&
+              evidence.canonicalHash === mappedRiskField.rawHash &&
+              evidence.currentId === mappedRiskField.currentId,
+          )
+        ) {
+          throw new Error(
+            `Unapproved risk type field hash mismatch: ${riskFieldLegacyId}`,
+          );
+        }
+        continue;
+      }
       const existingField = await tx.riskTypeField.findFirst({
         where: {
           tenantId: input.tenantId,
@@ -1141,6 +1202,82 @@ export class LegacyOffersImporter {
     return payment.id;
   }
 
+  private async validateReferenceAliases(
+    tx: LegacyImportPrisma,
+    cache: LegacyImportMapCache,
+    input: ApplyLegacyOffersInput,
+    offers: NormalizedLegacyOffer[],
+  ): Promise<LegacyReferenceAliasEvidence[]> {
+    const accepted: LegacyReferenceAliasEvidence[] = [];
+    for (const offer of offers) {
+      for (const field of uniqueFields(
+        riskTypeFieldsForScope(offer, input.scope),
+      )) {
+        const legacyId = `${offer.classId}:${field.normalizedKey}`;
+        const map = await this.findMap(
+          tx,
+          cache,
+          input.tenantId,
+          'risk_type_field',
+          legacyId,
+        );
+        const hash = riskFieldDefinitionHash({
+          riskTypeLegacyId: offer.classId,
+          key: field.key,
+          normalizedKey: field.normalizedKey,
+        });
+        if (!map || map.rawHash === hash) continue;
+        if (!input.referenceAliases)
+          throw new Error(
+            `Unapproved risk type field hash mismatch: ${legacyId}`,
+          );
+        const parent = await this.findMap(
+          tx,
+          cache,
+          input.tenantId,
+          'risk_type',
+          offer.classId,
+        );
+        const mapping = resolveLegacyRiskClass(offer.className);
+        const parentClass = mapping
+          ? await this.findMap(
+              tx,
+              cache,
+              input.tenantId,
+              'risk_class',
+              legacyRiskClassLegacyId(mapping),
+            )
+          : null;
+        const [currentField, riskType] = await Promise.all([
+          tx.riskTypeField.findFirst({
+            where: { id: map.currentId, tenantId: input.tenantId },
+          }),
+          tx.riskType.findFirst({
+            where: { id: parent?.currentId ?? '', tenantId: input.tenantId },
+          }),
+        ]);
+        const evidence = approvedLegacyReferenceAlias({
+          file: input.referenceAliases,
+          tenantId: input.tenantId,
+          offerId: offer.offerId,
+          riskTypeLegacyId: offer.classId,
+          field,
+          map,
+          currentField: currentField ?? undefined,
+          riskType: riskType ?? undefined,
+          expectedRiskTypeId: parent?.currentId,
+          expectedRiskClassId: parentClass?.currentId,
+        });
+        if (!evidence)
+          throw new Error(
+            `Unapproved risk type field hash mismatch: ${legacyId}`,
+          );
+        accepted.push(evidence);
+      }
+    }
+    return accepted;
+  }
+
   private async findMap(
     tx: LegacyImportPrisma,
     mapCache: LegacyImportMapCache,
@@ -1310,6 +1447,8 @@ function transactionOptionsForScope(scope: ApplyLegacyOffersInput['scope']) {
 }
 
 export type LegacyImportMapRecord = {
+  id?: string;
+  importRunId?: string;
   currentId: string;
   currentModel: string;
   rawHash: string;

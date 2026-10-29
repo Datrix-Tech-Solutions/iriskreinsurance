@@ -1,3 +1,4 @@
+import { referenceAliasFixture } from './legacy-reference-aliases.fixture';
 import { PrismaClient } from '../../../prisma/generated/client';
 import { LegacyDbAwareDryRun } from '../legacy-db-aware-dry-run';
 import { riskFieldDefinitionHash, sha256 } from '../legacy-hash';
@@ -16,6 +17,192 @@ import {
 } from '../legacy-risk-taxonomy';
 
 describe('LegacyDbAwareDryRun', () => {
+  describe('approved reference-only field aliases', () => {
+    function setup(sourceLabel = 'VEHICLE MAKE') {
+      const fixture = referenceAliasFixture();
+      const writeFns = writeFunctionMocks();
+      const { prisma, legacyImportMapFindMany } = prismaMock([], writeFns);
+      // Stable local query results allow both resolves to use the same metadata.
+      (prisma.$queryRaw as jest.Mock).mockImplementation(
+        (parts: TemplateStringsArray) => {
+          const sql = parts.join(' ');
+          if (sql.includes('"Tenant"'))
+            return Promise.resolve([
+              { id: 'tenant-1', slug: 'acme-ghana', name: 'Synthetic Tenant' },
+            ]);
+          if (sql.includes('"User"'))
+            return Promise.resolve([
+              {
+                id: 'user-1',
+                email: 'synthetic@example.test',
+                role: 'TENANT_ADMIN',
+              },
+            ]);
+          return Promise.resolve([{ count: 2 }]);
+        },
+      );
+      const source = offer({
+        offer_id: '1567',
+        classofbusiness: {
+          class_of_business_id: '1',
+          business_name: 'Motor',
+          business_details: JSON.stringify([{ keydetail: sourceLabel }]),
+        },
+        offer_detail: {
+          policy_number: 'SYNTHETIC-ALIAS',
+          insured_by: 'Synthetic Insured',
+          currency: 'GHS',
+          offer_details: JSON.stringify([
+            { keydetail: sourceLabel, value: 'Truck' },
+          ]),
+        },
+      });
+      const normalized = new LegacyOffersNormalizer().normalize(source);
+      const riskClass = resolveLegacyRiskClass(normalized.className)!;
+      const currentField = { ...fixture.currentField, tenantId: 'tenant-1' };
+      const riskType = {
+        ...fixture.riskType,
+        tenantId: 'tenant-1',
+        name: normalized.className,
+      };
+      const maps = [
+        {
+          entityType: 'currency',
+          legacyId: 'GHS',
+          currentModel: 'Currency',
+          currentId: 'currency-1',
+          rawHash: sha256({ currency: 'GHS' }),
+        },
+        {
+          entityType: 'insurer',
+          legacyId: '15',
+          currentModel: 'Counterparty',
+          currentId: 'cedant-1',
+          rawHash: sha256(source.insurer),
+        },
+        {
+          entityType: 'reinsurer',
+          legacyId: 'r1',
+          currentModel: 'Counterparty',
+          currentId: 'reinsurer-1',
+          rawHash: sha256(source.offer_participant?.[0].reinsurer),
+        },
+        {
+          entityType: 'risk_class',
+          legacyId: 'motor',
+          currentModel: 'RiskClass',
+          currentId: riskType.riskClassId,
+          rawHash: riskClassDefinitionHash(riskClass),
+        },
+        {
+          entityType: 'risk_type',
+          legacyId: '1',
+          currentModel: 'RiskType',
+          currentId: riskType.id,
+          rawHash: riskTypeDefinitionHash({
+            legacyClassId: '1',
+            riskTypeName: normalized.className,
+            riskClass,
+          }),
+        },
+        {
+          ...fixture.map,
+          entityType: 'risk_type_field',
+          legacyId: fixture.alias.legacyId,
+        },
+      ];
+      legacyImportMapFindMany.mockResolvedValue(maps);
+      // Add only the metadata lookups used by the alias guard, within this new case.
+      Object.assign(prisma.riskTypeField, {
+        findUnique: jest.fn().mockResolvedValue(currentField),
+        findMany: jest.fn().mockResolvedValue([currentField]),
+      });
+      Object.assign(prisma.riskType, {
+        findFirst: jest.fn().mockResolvedValue(riskType),
+        findMany: jest.fn().mockResolvedValue([riskType]),
+      });
+      const plan = new LegacyOffersPlanGenerator().build({
+        tenantSlug: 'acme-ghana',
+        sourceFilePath: 'synthetic-offers.json',
+        sourceFileHash: 'synthetic-hash',
+        offers: [source],
+        mode: 'dry-run',
+        fixtureOfferIds: [],
+        batchSelection: {
+          mode: 'reference-only',
+          selectedOfferIds: ['1567'],
+          classification: 'AUTO_SAFE',
+        },
+      });
+      return {
+        prisma,
+        writeFns,
+        fixture,
+        maps,
+        input: {
+          tenantSlug: 'acme-ghana',
+          plan,
+          normalizedOffers: [normalized],
+          referenceAliases: { ...fixture.file, tenantId: 'tenant-1' },
+        },
+      };
+    }
+
+    it('reports approved alias metadata and zero map creates deterministically without writes', async () => {
+      const { prisma, input, writeFns, fixture, maps } = setup();
+      const before = JSON.stringify(maps);
+      const resolver = new LegacyDbAwareDryRun(prisma);
+      const first = await resolver.resolve(input);
+      const second = await resolver.resolve(input);
+      expect(second.resolution).toEqual(first.resolution);
+      expect(first.plan.counts.conflicts).toBe(0);
+      expect(first.resolution.plannedEntities.riskTypeFields).toEqual([
+        expect.objectContaining({
+          legacyId: fixture.alias.legacyId,
+          currentId: fixture.alias.currentId,
+          action: 'skip',
+        }),
+      ]);
+      expect(first.resolution.projectedCounts.riskTypeFields.create).toBe(0);
+      expect(first.resolution.projectedCounts.legacyImportMaps.create).toBe(0);
+      expect(
+        first.resolution.projectedCounts.legacyImportMaps.byEntityType
+          .risk_type_field.skip,
+      ).toBe(1);
+      expect(first.resolution.plannedEntities.placements).toEqual([]);
+      const metadata = JSON.stringify(first.resolution);
+      expect(metadata).toContain(fixture.alias.evidenceReference);
+      expect(metadata).toContain(fixture.alias.alternateHash);
+      expect(metadata).toContain(fixture.alias.canonicalHash);
+      expect(JSON.stringify(maps)).toBe(before);
+      expectNoWrites(writeFns);
+    });
+
+    it.each(['absent', 'unknown'] as const)(
+      'blocks dry-run with an %s alias and performs no writes',
+      async (kind) => {
+        const { prisma, input, writeFns } = setup(
+          kind === 'unknown' ? 'vehicle make' : undefined,
+        );
+        const referenceAliases =
+          kind === 'absent' ? undefined : input.referenceAliases;
+        const result = await new LegacyDbAwareDryRun(prisma).resolve({
+          ...input,
+          referenceAliases,
+        });
+        expect(result.plan.counts.conflicts).toBeGreaterThan(0);
+        expect(result.resolution.plannedEntities.riskTypeFields).toEqual([
+          expect.objectContaining({
+            legacyId: '1:vehicle_make',
+            action: 'conflict',
+            reason: 'legacy-import-map-raw-hash-mismatch',
+          }),
+        ]);
+        expectNoWrites(writeFns);
+      },
+    );
+  });
+
   it('performs read-only planning and continues when tracking tables are absent', async () => {
     const writeFns = writeFunctionMocks();
     const { prisma, legacyImportMapFindMany } = prismaMock(
