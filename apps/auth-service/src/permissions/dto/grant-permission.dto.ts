@@ -17,6 +17,7 @@ export enum PermissionAction {
   APPROVE = 'APPROVE',
   RUN = 'RUN',
   EXPORT = 'EXPORT',
+  IMPORT = 'IMPORT',
   ASSIGN = 'ASSIGN',
 }
 

@@ -44,7 +44,8 @@ export class HistoricalStatementsAccessGuard implements CanActivate {
       !required.every(
         (permission: unknown) =>
           permission === HistoricalStatementsPermission.VIEW ||
-          permission === HistoricalStatementsPermission.EXPORT,
+          permission === HistoricalStatementsPermission.EXPORT ||
+          permission === HistoricalStatementsPermission.IMPORT,
       )
     ) {
       throw new ForbiddenException('ARCHIVE_PERMISSION_DENIED');
@@ -55,7 +56,15 @@ export class HistoricalStatementsAccessGuard implements CanActivate {
     }
     if (!access.enabled) throw new ForbiddenException('ARCHIVE_NOT_ENABLED');
     if (
-      !access.canView ||
+      required.includes(HistoricalStatementsPermission.IMPORT) &&
+      (access.canImport !== true ||
+        !['TENANT_ADMIN', 'SUPER_ADMIN'].includes(user.role))
+    ) {
+      throw new ForbiddenException('ARCHIVE_IMPORT_DENIED');
+    }
+    if (
+      (!required.includes(HistoricalStatementsPermission.IMPORT) &&
+        !access.canView) ||
       (required.includes(HistoricalStatementsPermission.EXPORT) &&
         !access.canExport)
     ) {

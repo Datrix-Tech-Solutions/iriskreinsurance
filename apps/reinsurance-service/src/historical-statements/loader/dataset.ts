@@ -243,6 +243,9 @@ export async function validateDataset(options: {
   sourceRoot: string;
   matchFile?: string;
   tenantId?: string;
+  // HTTP uploads are not restricted to the original client's exact anomaly counts.
+  // The offline CLI retains its original certification gate by default.
+  sourceProfile?: 'original' | 'uploaded';
 }): Promise<ValidatedDataset> {
   const manifest = parseManifest(
     JSON.parse(await readFile(options.manifestFile, 'utf8')) as unknown,
@@ -275,28 +278,30 @@ export async function validateDataset(options: {
     throw new Error('Missing required approved match manifest');
   const observations = profile(files);
   const discrepancies: string[] = [];
-  for (const f of files) {
-    const expected =
-      EXPECTED_ROWS[f.input.year][f.input.kind === 'INSURER' ? 0 : 1];
-    if (f.rows.length !== expected)
-      discrepancies.push(
-        `${f.input.year}/${f.input.kind}: observed ${f.rows.length}, expected ${expected}`,
-      );
+  if (options.sourceProfile !== 'uploaded') {
+    for (const f of files) {
+      const expected =
+        EXPECTED_ROWS[f.input.year][f.input.kind === 'INSURER' ? 0 : 1];
+      if (f.rows.length !== expected)
+        discrepancies.push(
+          `${f.input.year}/${f.input.kind}: observed ${f.rows.length}, expected ${expected}`,
+        );
+    }
+    const expectedProfile = {
+      totalRows: 16521,
+      identicalGroups: 23,
+      identicalRows: 58,
+      negativeNumericCells: 38,
+      epochDateCells: 1664,
+      extremeYearCells: 17,
+      reversedCoverageRows: 178,
+    };
+    for (const [key, expected] of Object.entries(expectedProfile))
+      if (observations[key] !== expected)
+        discrepancies.push(
+          `${key}: observed ${observations[key]}, expected ${expected}`,
+        );
   }
-  const expectedProfile = {
-    totalRows: 16521,
-    identicalGroups: 23,
-    identicalRows: 58,
-    negativeNumericCells: 38,
-    epochDateCells: 1664,
-    extremeYearCells: 17,
-    reversedCoverageRows: 178,
-  };
-  for (const [key, expected] of Object.entries(expectedProfile))
-    if (observations[key] !== expected)
-      discrepancies.push(
-        `${key}: observed ${observations[key]}, expected ${expected}`,
-      );
   const contentManifestSha256 = sha({
     contractVersion: CONTRACT,
     datasetKey: manifest.datasetKey,

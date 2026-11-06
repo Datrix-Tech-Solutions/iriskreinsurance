@@ -100,7 +100,7 @@ export enum Permission {
 }
 
 // Maps each Permission to the resource:ACTION strings returned in effectivePermissions.
-// Action values match the backend PermissionAction enum: VIEW, CREATE, EDIT, DELETE, APPROVE, RUN, EXPORT, ASSIGN
+// Action values match the backend PermissionAction enum: VIEW, CREATE, EDIT, DELETE, APPROVE, RUN, EXPORT, IMPORT, ASSIGN
 export const PERMISSION_MAP: Record<string, string[]> = {
   // Tenant / Platform
   [Permission.READ_TENANT]: ['tenants:VIEW'],
@@ -264,7 +264,7 @@ export const RESOURCE_ACTIONS: Record<string, string[]> = {
   'operations.reinsurance.claims': ['VIEW', 'CREATE', 'EDIT', 'DELETE', 'APPROVE', 'EXPORT'],
   'operations.reinsurance.email': ['VIEW', 'CREATE', 'EDIT'],
   'operations.reinsurance.email-settings': ['VIEW', 'EDIT'],
-  'operations.reinsurance.historical-statements': ['VIEW', 'EXPORT'],
+  'operations.reinsurance.historical-statements': ['VIEW', 'EXPORT', 'IMPORT'],
   'operations.reinsurance.reports': ['VIEW', 'EXPORT'],
   'operations.reinsurance.settings': ['VIEW', 'CREATE', 'EDIT', 'DELETE'],
   'operations.reinsurance.taxes-levies': ['VIEW', 'CREATE', 'EDIT', 'DELETE'],

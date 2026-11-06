@@ -68,6 +68,7 @@ enum PermissionAction {
   APPROVE
   RUN
   EXPORT
+  IMPORT
   ASSIGN
 
   @@schema("w_auth")
