@@ -22,6 +22,8 @@ import {
   downloadBrokerageReportExcel,
 } from '@/hooks/reinsurance/useBrokerageReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
+import { BrokerageKpiCards } from '@/components/molecules/reinsurance/reports/BrokerageKpiCards';
+import { BrokerageCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/BrokerageCurrencySummaryCards';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import {
   datedReportFilename,
@@ -254,7 +256,7 @@ export function BrokerageReportTable() {
     setPage(1);
   };
 
-  const { rows, meta, isLoading } = useBrokerageReport(reportParams ?? {}, {
+  const { rows, summary, meta, isLoading } = useBrokerageReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
@@ -325,6 +327,15 @@ export function BrokerageReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
+      {reportParams && <BrokerageKpiCards summary={summary} isLoading={isLoading} />}
+      {reportParams && (
+        <BrokerageCurrencySummaryCards
+          summary={summary}
+          scope={reportParams.scope ?? 'reinsurer'}
+          isLoading={isLoading}
+        />
+      )}
+
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}

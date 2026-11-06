@@ -60,6 +60,21 @@ type BrokerageReportRawSummaryRow = {
   nicLevyPaid: SqlNumber;
 };
 
+type BrokerageReportRawKpiRow = {
+  cedantCount: bigint | number | string;
+  reinsurerCount: bigint | number | string;
+  closedCount: bigint | number | string;
+  openCount: bigint | number | string;
+  brokeragePaidCount: bigint | number | string;
+  brokeragePartCount: bigint | number | string;
+  brokerageOutstandingCount: bigint | number | string;
+};
+
+type BrokerageReportRawCountRow = {
+  key: string | null;
+  count: bigint | number | string;
+};
+
 type DateRange = {
   from?: Date;
   to?: Date;
@@ -88,10 +103,11 @@ export class BrokerageReportService {
       BrokerageReportRawSummaryRow[]
     >(this.summaryQuery(tenantId, query));
     const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+    const kpis = await this.findKpis(tenantId, query);
 
     return {
       items: rows.map((row) => this.toRowDto(row)),
-      summary: this.toSummaryDto(scope, summaryRows),
+      summary: { ...this.toSummaryDto(scope, summaryRows), ...kpis },
       meta: {
         page,
         limit,
@@ -167,6 +183,84 @@ export class BrokerageReportService {
       LIMIT ${limit}
       OFFSET ${offset}
     `;
+  }
+
+  /** Distinct counts and status breakdowns across ALL filtered placements (not just the page). */
+  private async findKpis(
+    tenantId: string,
+    query: QueryBrokerageReportDto,
+  ): Promise<
+    Pick<
+      BrokerageReportResponseDto['summary'],
+      | 'cedantCount'
+      | 'reinsurerCount'
+      | 'closedCount'
+      | 'openCount'
+      | 'paymentStatusCounts'
+      | 'brokerageCounts'
+    >
+  > {
+    const ctes = this.reportCtes(tenantId, query);
+    const [kpiRows, paymentRows] = await Promise.all([
+      this.prisma.$queryRaw<BrokerageReportRawKpiRow[]>(Prisma.sql`
+        ${ctes}
+        , placement_level AS (
+          SELECT
+            "placementId",
+            MAX("cedantId") AS "cedantId",
+            MAX("status"::text) AS "status",
+            SUM(COALESCE("brokerageAmount", 0)) AS "brokerage",
+            SUM(COALESCE("brokeragePaid", 0)) AS "brokeragePaid"
+          FROM filtered_participants
+          GROUP BY "placementId"
+        )
+        SELECT
+          COUNT(DISTINCT "cedantId") AS "cedantCount",
+          (
+            SELECT COUNT(DISTINCT fp."reinsurerId") FROM filtered_participants fp
+          ) AS "reinsurerCount",
+          COUNT(*) FILTER (WHERE "status" = 'CLOSED') AS "closedCount",
+          COUNT(*) FILTER (WHERE "status" <> 'CLOSED') AS "openCount",
+          COUNT(*) FILTER (
+            WHERE "brokerage" > 0.01 AND "brokeragePaid" >= "brokerage" - 0.01
+          ) AS "brokeragePaidCount",
+          COUNT(*) FILTER (
+            WHERE "brokeragePaid" > 0.01
+              AND NOT ("brokerage" > 0.01 AND "brokeragePaid" >= "brokerage" - 0.01)
+          ) AS "brokeragePartCount",
+          COUNT(*) FILTER (WHERE "brokeragePaid" <= 0.01) AS "brokerageOutstandingCount"
+        FROM placement_level
+      `),
+      this.prisma.$queryRaw<BrokerageReportRawCountRow[]>(Prisma.sql`
+        ${ctes}
+        , placement_status AS (
+          SELECT "placementId", MAX("paymentStatus") AS "paymentStatus"
+          FROM filtered_participants
+          GROUP BY "placementId"
+        )
+        SELECT "paymentStatus"::text AS "key", COUNT(*) AS "count"
+        FROM placement_status
+        GROUP BY "paymentStatus"
+      `),
+    ]);
+    const kpi = kpiRows[0];
+    const n = (value: bigint | number | string | undefined) =>
+      value === undefined ? 0 : this.toInteger(value);
+    return {
+      cedantCount: n(kpi?.cedantCount),
+      reinsurerCount: n(kpi?.reinsurerCount),
+      closedCount: n(kpi?.closedCount),
+      openCount: n(kpi?.openCount),
+      paymentStatusCounts: paymentRows.map((r) => ({
+        key: r.key ?? 'UNKNOWN',
+        count: this.toInteger(r.count),
+      })),
+      brokerageCounts: {
+        paid: n(kpi?.brokeragePaidCount),
+        part: n(kpi?.brokeragePartCount),
+        outstanding: n(kpi?.brokerageOutstandingCount),
+      },
+    };
   }
 
   private summaryQuery(
@@ -718,7 +812,15 @@ export class BrokerageReportService {
   private toSummaryDto(
     scope: BrokerageReportScope,
     rows: BrokerageReportRawSummaryRow[],
-  ): BrokerageReportResponseDto['summary'] {
+  ): Omit<
+    BrokerageReportResponseDto['summary'],
+    | 'cedantCount'
+    | 'reinsurerCount'
+    | 'closedCount'
+    | 'openCount'
+    | 'paymentStatusCounts'
+    | 'brokerageCounts'
+  > {
     const totalsByCurrency = rows.map((row) => this.toCurrencyTotalsDto(row));
     return {
       scope,

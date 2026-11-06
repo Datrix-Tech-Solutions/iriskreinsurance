@@ -58,6 +58,12 @@ export interface BrokerageReportSummary {
   scope: BrokerageReportScope;
   placementCount: number;
   participantCount: number;
+  cedantCount: number;
+  reinsurerCount: number;
+  closedCount: number;
+  openCount: number;
+  paymentStatusCounts: { key: string; count: number }[];
+  brokerageCounts: { paid: number; part: number; outstanding: number };
   totalsByCurrency: BrokerageReportCurrencyTotals[];
 }
 
@@ -107,6 +113,12 @@ const emptySummary: BrokerageReportSummary = {
   scope: 'reinsurer',
   placementCount: 0,
   participantCount: 0,
+  cedantCount: 0,
+  reinsurerCount: 0,
+  closedCount: 0,
+  openCount: 0,
+  paymentStatusCounts: [],
+  brokerageCounts: { paid: 0, part: 0, outstanding: 0 },
   totalsByCurrency: [],
 };
 

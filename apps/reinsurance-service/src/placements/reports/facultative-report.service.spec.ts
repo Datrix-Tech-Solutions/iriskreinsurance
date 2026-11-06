@@ -9,6 +9,8 @@ describe('FacultativeReportService', () => {
 
   beforeEach(() => {
     prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    // KPI queries (run after rows + summary) default to empty results.
+    prisma.$queryRaw.mockResolvedValue([]);
     service = new FacultativeReportService(
       prisma as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
@@ -115,7 +117,7 @@ describe('FacultativeReportService', () => {
       placementStatus: [PlacementStatus.CLOSED],
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -157,6 +159,12 @@ describe('FacultativeReportService', () => {
       totalOffers: 12,
       openOffers: 2,
       acceptanceRate: 83.33,
+      cedantCount: 0,
+      reinsurerCount: 0,
+      activeCount: 0,
+      expiredCount: 0,
+      statusCounts: [],
+      paymentStatusCounts: [],
       totalsByCurrency: [
         {
           currency: 'GHS',
@@ -221,6 +229,12 @@ describe('FacultativeReportService', () => {
         totalOffers: 0,
         openOffers: 0,
         acceptanceRate: 0,
+        cedantCount: 0,
+        reinsurerCount: 0,
+        activeCount: 0,
+        expiredCount: 0,
+        statusCounts: [],
+        paymentStatusCounts: [],
         totalsByCurrency: [],
       },
       meta: {

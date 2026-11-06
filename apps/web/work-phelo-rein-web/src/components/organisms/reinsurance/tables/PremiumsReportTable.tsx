@@ -25,6 +25,8 @@ import {
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { exportToCsv } from '@/lib/exportCsv';
+import { PremiumsKpiCards } from '@/components/molecules/reinsurance/reports/PremiumsKpiCards';
+import { PremiumsCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/PremiumsCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
 
 // Cedant-side premium payment status (has the cedant paid iRisk?).
@@ -401,7 +403,7 @@ export function PremiumsReportTable() {
     setPage(1);
   };
 
-  const { rows, isLoading, meta } = usePremiumsReport(reportParams ?? {}, {
+  const { rows, summary, isLoading, meta } = usePremiumsReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
@@ -497,6 +499,9 @@ export function PremiumsReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
+      {reportParams && <PremiumsKpiCards summary={summary} isLoading={isLoading} />}
+      {reportParams && <PremiumsCurrencySummaryCards summary={summary} isLoading={isLoading} />}
+
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}

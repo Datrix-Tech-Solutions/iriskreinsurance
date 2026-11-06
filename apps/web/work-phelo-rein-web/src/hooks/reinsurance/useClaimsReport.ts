@@ -82,6 +82,9 @@ export interface ClaimsReportCurrencyTotals {
   iriskShareAmount: number;
   bankConfirmedRecovery: number;
   outstandingRecovery: number;
+  reinsurerShareAmount: number;
+  reinsurerPaidAmount: number;
+  reinsurerOutstandingAmount: number;
 }
 
 export interface ClaimsReportSummary {
@@ -89,6 +92,15 @@ export interface ClaimsReportSummary {
   openClaims: number;
   closedClaims: number;
   recoveryRate: number;
+  claimCount: number;
+  cedantCount: number;
+  reinsurerCount: number;
+  notificationCount: number;
+  openCount: number;
+  closedCount: number;
+  pendingCount: number;
+  finalizedCount: number;
+  recoveryCounts: { outstanding: number; part: number; full: number };
   totalsByCurrency: ClaimsReportCurrencyTotals[];
 }
 
@@ -143,6 +155,15 @@ const emptySummary: ClaimsReportSummary = {
   openClaims: 0,
   closedClaims: 0,
   recoveryRate: 0,
+  claimCount: 0,
+  cedantCount: 0,
+  reinsurerCount: 0,
+  notificationCount: 0,
+  openCount: 0,
+  closedCount: 0,
+  pendingCount: 0,
+  finalizedCount: 0,
+  recoveryCounts: { outstanding: 0, part: 0, full: 0 },
   totalsByCurrency: [],
 };
 

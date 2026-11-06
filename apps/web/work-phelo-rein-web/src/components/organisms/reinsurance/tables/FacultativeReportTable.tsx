@@ -29,6 +29,7 @@ import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import { FacultativeKpiCards } from '@/components/molecules/reinsurance/reports/FacultativeKpiCards';
 import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
 
@@ -474,7 +475,7 @@ export function FacultativeReportTable() {
     setPage(1);
   };
 
-  const { rows, currencyTotals, isLoading, meta } = useFacultativeReport(reportParams ?? {}, {
+  const { rows, summary, currencyTotals, isLoading, meta } = useFacultativeReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
@@ -551,6 +552,7 @@ export function FacultativeReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
+      {reportParams && <FacultativeKpiCards summary={summary} isLoading={isLoading} />}
       {reportParams && <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />}
 
       <div className="flex-1 min-h-0">

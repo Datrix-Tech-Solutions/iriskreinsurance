@@ -9,6 +9,7 @@ import {
   BanknoteArrowDown,
   BanknoteArrowUp,
   HandCoins,
+  Archive,
 } from 'lucide-react';
 import { ReportCard } from '@/components/molecules/shared/ReportCard';
 
@@ -85,6 +86,14 @@ export default function ReinsuranceReportsPage() {
           title="Brokerage"
           description="Brokerage earned and withholding across placements."
           onClick={() => router.push(`${base}/brokerage`)}
+        />
+
+        <ReportCard
+          icon={<Archive className="w-6 h-6" />}
+          iconClassName="bg-slate-600 text-slate-100"
+          title="Legacy Data"
+          description="Historical insurer and reinsurer statements, 2021–2025."
+          onClick={() => router.push(`${base}/legacy-data`)}
         />
       </div>
     </div>

@@ -72,6 +72,32 @@ type ClaimsReportRawSummaryRow = {
   closedClaims: bigint | number | string;
 };
 
+type ClaimsReportRawKpiRow = {
+  claimCount: bigint | number | string;
+  cedantCount: bigint | number | string;
+  reinsurerCount: bigint | number | string;
+  notificationCount: bigint | number | string;
+  openCount: bigint | number | string;
+  closedCount: bigint | number | string;
+  pendingCount: bigint | number | string;
+  finalizedCount: bigint | number | string;
+  recoveryOutstanding: bigint | number | string;
+  recoveryPart: bigint | number | string;
+  recoveryFull: bigint | number | string;
+};
+
+type ClaimsReportRawReinsurerTotalsRow = {
+  currency: string | null;
+  reinsurerShareAmount: SqlNumber;
+  reinsurerPaidAmount: SqlNumber;
+  reinsurerOutstandingAmount: SqlNumber;
+};
+
+type ClaimsReportBaseCurrencyTotals = Omit<
+  ClaimsReportCurrencyTotalsDto,
+  'reinsurerShareAmount' | 'reinsurerPaidAmount' | 'reinsurerOutstandingAmount'
+>;
+
 type DateRange = {
   from?: Date;
   to?: Date;
@@ -100,10 +126,24 @@ export class ClaimsReportService {
       ClaimsReportRawSummaryRow[]
     >(this.summaryQuery(tenantId, query));
     const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+    const { kpis, reinsurerTotals } = await this.findKpis(tenantId, query);
+    const baseSummary = this.toSummaryDto(scope, summaryRows);
 
     return {
       items: rows.map((row) => this.toRowDto(row)),
-      summary: this.toSummaryDto(scope, summaryRows),
+      summary: {
+        ...baseSummary,
+        ...kpis,
+        totalsByCurrency: baseSummary.totalsByCurrency.map((row) => {
+          const re = reinsurerTotals.get(row.currency);
+          return {
+            ...row,
+            reinsurerShareAmount: re?.share ?? 0,
+            reinsurerPaidAmount: re?.paid ?? 0,
+            reinsurerOutstandingAmount: re?.outstanding ?? 0,
+          };
+        }),
+      },
       meta: {
         page,
         limit,
@@ -182,6 +222,110 @@ export class ClaimsReportService {
       LIMIT ${limit}
       OFFSET ${offset}
     `;
+  }
+
+  /** Distinct counts and status breakdowns across ALL filtered claims (not just the page). */
+  private async findKpis(
+    tenantId: string,
+    query: QueryClaimsReportDto,
+  ): Promise<{
+    kpis: Pick<
+      ClaimsReportResponseDto['summary'],
+      | 'claimCount'
+      | 'cedantCount'
+      | 'reinsurerCount'
+      | 'notificationCount'
+      | 'openCount'
+      | 'closedCount'
+      | 'pendingCount'
+      | 'finalizedCount'
+      | 'recoveryCounts'
+    >;
+    reinsurerTotals: Map<
+      string,
+      { share: number; paid: number; outstanding: number }
+    >;
+  }> {
+    const scope = query.scope ?? 'general';
+    const table =
+      scope === 'cedant'
+        ? Prisma.sql`filtered_claims`
+        : Prisma.sql`filtered_reinsurers`;
+    const ctes = this.reportCtes(tenantId, query);
+
+    const [kpiRows, reinsurerRows] = await Promise.all([
+      this.prisma.$queryRaw<ClaimsReportRawKpiRow[]>(Prisma.sql`
+        ${ctes}
+        , claim_level AS (
+          SELECT DISTINCT
+            "claimId", "cedantId", "bucket", "claimState", "recoveryStatus"
+          FROM ${table}
+        )
+        SELECT
+          COUNT(*) AS "claimCount",
+          COUNT(DISTINCT "cedantId") AS "cedantCount",
+          (
+            SELECT COUNT(DISTINCT fr."reinsurerId")
+            FROM filtered_reinsurers fr
+          ) AS "reinsurerCount",
+          COUNT(*) FILTER (WHERE "bucket" = 'notification') AS "notificationCount",
+          COUNT(*) FILTER (WHERE "bucket" = 'open') AS "openCount",
+          COUNT(*) FILTER (WHERE "bucket" = 'closed') AS "closedCount",
+          COUNT(*) FILTER (WHERE "claimState"::text = 'PENDING') AS "pendingCount",
+          COUNT(*) FILTER (WHERE "claimState"::text = 'FINALIZED') AS "finalizedCount",
+          COUNT(*) FILTER (
+            WHERE "claimState"::text = 'FINALIZED' AND "recoveryStatus" = 'outstanding'
+          ) AS "recoveryOutstanding",
+          COUNT(*) FILTER (
+            WHERE "claimState"::text = 'FINALIZED' AND "recoveryStatus" = 'part'
+          ) AS "recoveryPart",
+          COUNT(*) FILTER (
+            WHERE "claimState"::text = 'FINALIZED' AND "recoveryStatus" = 'full'
+          ) AS "recoveryFull"
+        FROM claim_level
+      `),
+      this.prisma.$queryRaw<ClaimsReportRawReinsurerTotalsRow[]>(Prisma.sql`
+        ${ctes}
+        SELECT
+          COALESCE("currency", 'UNKNOWN') AS "currency",
+          SUM(COALESCE("reinsurerShareAmount", 0)) AS "reinsurerShareAmount",
+          SUM(COALESCE("reinsurerPaidAmount", 0)) AS "reinsurerPaidAmount",
+          SUM(COALESCE("reinsurerOutstandingAmount", 0)) AS "reinsurerOutstandingAmount"
+        FROM filtered_reinsurers
+        GROUP BY COALESCE("currency", 'UNKNOWN')
+      `),
+    ]);
+
+    const kpi = kpiRows[0];
+    const n = (value: bigint | number | string | undefined) =>
+      value === undefined ? 0 : this.toInteger(value);
+    return {
+      kpis: {
+        claimCount: n(kpi?.claimCount),
+        cedantCount: n(kpi?.cedantCount),
+        reinsurerCount: n(kpi?.reinsurerCount),
+        notificationCount: n(kpi?.notificationCount),
+        openCount: n(kpi?.openCount),
+        closedCount: n(kpi?.closedCount),
+        pendingCount: n(kpi?.pendingCount),
+        finalizedCount: n(kpi?.finalizedCount),
+        recoveryCounts: {
+          outstanding: n(kpi?.recoveryOutstanding),
+          part: n(kpi?.recoveryPart),
+          full: n(kpi?.recoveryFull),
+        },
+      },
+      reinsurerTotals: new Map(
+        reinsurerRows.map((r) => [
+          r.currency ?? 'UNKNOWN',
+          {
+            share: this.toMoneyNumber(r.reinsurerShareAmount),
+            paid: this.toMoneyNumber(r.reinsurerPaidAmount),
+            outstanding: this.toMoneyNumber(r.reinsurerOutstandingAmount),
+          },
+        ]),
+      ),
+    };
   }
 
   private summaryQuery(
@@ -674,7 +818,19 @@ export class ClaimsReportService {
   private toSummaryDto(
     scope: ClaimsReportScope,
     rows: ClaimsReportRawSummaryRow[],
-  ): ClaimsReportResponseDto['summary'] {
+  ): Omit<
+    ClaimsReportResponseDto['summary'],
+    | 'claimCount'
+    | 'cedantCount'
+    | 'reinsurerCount'
+    | 'notificationCount'
+    | 'openCount'
+    | 'closedCount'
+    | 'pendingCount'
+    | 'finalizedCount'
+    | 'recoveryCounts'
+    | 'totalsByCurrency'
+  > & { totalsByCurrency: ClaimsReportBaseCurrencyTotals[] } {
     const totalsByCurrency = rows.map((row) => this.toCurrencyTotalsDto(row));
     const openClaims = totalsByCurrency.reduce(
       (sum, row, index) => sum + this.toInteger(rows[index]?.openClaims ?? 0),
@@ -699,7 +855,7 @@ export class ClaimsReportService {
 
   private toCurrencyTotalsDto(
     row: ClaimsReportRawSummaryRow,
-  ): ClaimsReportCurrencyTotalsDto {
+  ): ClaimsReportBaseCurrencyTotals {
     return {
       currency: row.currency ?? 'UNKNOWN',
       claimCount: this.toInteger(row.claimCount),

@@ -22,6 +22,8 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         currencies={currencies}
         isLoading={loading}
         emptyMessage="No data for the selected filters"
+        className="h-auto"
+        compactEmpty
       />
       <CurrencyAmountListCard
         title="Total Fac Premium"
@@ -30,6 +32,8 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         currencies={currencies}
         isLoading={loading}
         emptyMessage="No data for the selected filters"
+        className="h-auto"
+        compactEmpty
       />
       <CurrencyAmountListCard
         title="Total Brokerage"
@@ -38,6 +42,8 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         currencies={currencies}
         isLoading={loading}
         emptyMessage="No data for the selected filters"
+        className="h-auto"
+        compactEmpty
       />
       <CurrencyAmountListCard
         title="Total Commission"
@@ -46,6 +52,8 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         currencies={currencies}
         isLoading={loading}
         emptyMessage="No data for the selected filters"
+        className="h-auto"
+        compactEmpty
       />
       <CurrencyAmountListCard
         title="Total NIC Levy"
@@ -54,6 +62,8 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         currencies={currencies}
         isLoading={loading}
         emptyMessage="No data for the selected filters"
+        className="h-auto"
+        compactEmpty
       />
       <CurrencyAmountListCard
         title="Total WHT"
@@ -62,6 +72,8 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         currencies={currencies}
         isLoading={loading}
         emptyMessage="No data for the selected filters"
+        className="h-auto"
+        compactEmpty
       />
     </div>
   );

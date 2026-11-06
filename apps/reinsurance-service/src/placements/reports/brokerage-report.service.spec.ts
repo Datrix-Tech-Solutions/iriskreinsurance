@@ -9,6 +9,8 @@ describe('BrokerageReportService', () => {
 
   beforeEach(() => {
     prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    // KPI queries (run after rows + summary) default to empty results.
+    prisma.$queryRaw.mockResolvedValue([]);
     service = new BrokerageReportService(
       prisma as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
@@ -124,6 +126,12 @@ describe('BrokerageReportService', () => {
       scope: 'reinsurer',
       placementCount: 1,
       participantCount: 2,
+      cedantCount: 0,
+      reinsurerCount: 0,
+      closedCount: 0,
+      openCount: 0,
+      paymentStatusCounts: [],
+      brokerageCounts: { paid: 0, part: 0, outstanding: 0 },
       totalsByCurrency: [
         {
           currency: 'GHS',
@@ -192,6 +200,12 @@ describe('BrokerageReportService', () => {
         scope: 'cedant',
         placementCount: 0,
         participantCount: 0,
+        cedantCount: 0,
+        reinsurerCount: 0,
+        closedCount: 0,
+        openCount: 0,
+        paymentStatusCounts: [],
+        brokerageCounts: { paid: 0, part: 0, outstanding: 0 },
         totalsByCurrency: [],
       },
       meta: {

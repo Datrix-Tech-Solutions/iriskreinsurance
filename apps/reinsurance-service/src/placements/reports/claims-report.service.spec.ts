@@ -9,6 +9,8 @@ describe('ClaimsReportService', () => {
 
   beforeEach(() => {
     prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    // KPI queries (run after rows + summary) default to empty results.
+    prisma.$queryRaw.mockResolvedValue([]);
     service = new ClaimsReportService(
       prisma as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
@@ -62,7 +64,7 @@ describe('ClaimsReportService', () => {
       bucket: ['open'],
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -114,6 +116,15 @@ describe('ClaimsReportService', () => {
       openClaims: 3,
       closedClaims: 1,
       recoveryRate: 25,
+      claimCount: 0,
+      cedantCount: 0,
+      reinsurerCount: 0,
+      notificationCount: 0,
+      openCount: 0,
+      closedCount: 0,
+      pendingCount: 0,
+      finalizedCount: 0,
+      recoveryCounts: { outstanding: 0, part: 0, full: 0 },
       totalsByCurrency: [
         {
           currency: 'GHS',
@@ -122,6 +133,9 @@ describe('ClaimsReportService', () => {
           iriskShareAmount: 14000,
           bankConfirmedRecovery: 7000,
           outstandingRecovery: 7000,
+          reinsurerShareAmount: 0,
+          reinsurerPaidAmount: 0,
+          reinsurerOutstandingAmount: 0,
         },
         {
           currency: 'USD',
@@ -130,6 +144,9 @@ describe('ClaimsReportService', () => {
           iriskShareAmount: 900,
           bankConfirmedRecovery: 0,
           outstandingRecovery: 900,
+          reinsurerShareAmount: 0,
+          reinsurerPaidAmount: 0,
+          reinsurerOutstandingAmount: 0,
         },
       ],
     });
@@ -228,6 +245,15 @@ describe('ClaimsReportService', () => {
         openClaims: 0,
         closedClaims: 0,
         recoveryRate: 0,
+        claimCount: 0,
+        cedantCount: 0,
+        reinsurerCount: 0,
+        notificationCount: 0,
+        openCount: 0,
+        closedCount: 0,
+        pendingCount: 0,
+        finalizedCount: 0,
+        recoveryCounts: { outstanding: 0, part: 0, full: 0 },
         totalsByCurrency: [],
       },
       meta: {
