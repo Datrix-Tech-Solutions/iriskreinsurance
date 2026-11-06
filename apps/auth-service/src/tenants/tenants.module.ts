@@ -11,16 +11,25 @@ import { TenantIntegrationInternalController } from './tenant-integration-intern
 import { TenantDocumentProfileService } from './tenant-document-profile.service';
 import { RabbitMQModule } from '../messaging/rabbitmq.module';
 import { AuditModule } from '../audit/audit.module';
+import { HistoricalStatementsEntitlementController } from './historical-statements-entitlement.controller';
+import { HistoricalStatementsEntitlementService } from './historical-statements-entitlement.service';
+import { HistoricalStatementsJwtGuard } from './historical-statements-jwt.guard';
+import { PermissionsModule } from '../permissions/permissions.module';
+import { HistoricalStatementsJwtStrategy } from '../auth/strategies/historical-statements-jwt.strategy';
 
 @Module({
-  imports: [RabbitMQModule, AuditModule],
+  imports: [RabbitMQModule, AuditModule, PermissionsModule],
   controllers: [
+    HistoricalStatementsEntitlementController,
     TenantsController,
     TenantDocumentProfileController,
     TenantDocumentProfileInternalController,
     TenantIntegrationInternalController,
   ],
   providers: [
+    HistoricalStatementsEntitlementService,
+    HistoricalStatementsJwtGuard,
+    HistoricalStatementsJwtStrategy,
     TenantLifecycleService,
     TenantConfigService,
     TenantAdminService,

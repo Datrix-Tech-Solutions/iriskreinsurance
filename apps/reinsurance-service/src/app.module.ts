@@ -5,6 +5,7 @@ import { ReinsuranceAccountingIntegrationModule } from './accounting-integration
 import { CounterpartiesModule } from './counterparties/counterparties.module';
 import { EmailModule } from './email/email.module';
 import { HealthModule } from './health/health.module';
+import { HistoricalStatementsModule } from './historical-statements/historical-statements.module';
 import { PlacementsModule } from './placements/placements.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { BusinessClassSettingsModule } from './settings/business-class-settings.module';
@@ -17,6 +18,7 @@ import { ReinsuranceChargeSettingsModule } from './settings/reinsurance-charge-s
     PrismaModule,
     ReinsuranceAccountingIntegrationModule,
     HealthModule,
+    HistoricalStatementsModule,
     AccessModule,
     CounterpartiesModule,
     PlacementsModule,

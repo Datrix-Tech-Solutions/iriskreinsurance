@@ -264,6 +264,7 @@ export const RESOURCE_ACTIONS: Record<string, string[]> = {
   'operations.reinsurance.claims': ['VIEW', 'CREATE', 'EDIT', 'DELETE', 'APPROVE', 'EXPORT'],
   'operations.reinsurance.email': ['VIEW', 'CREATE', 'EDIT'],
   'operations.reinsurance.email-settings': ['VIEW', 'EDIT'],
+  'operations.reinsurance.historical-statements': ['VIEW', 'EXPORT'],
   'operations.reinsurance.reports': ['VIEW', 'EXPORT'],
   'operations.reinsurance.settings': ['VIEW', 'CREATE', 'EDIT', 'DELETE'],
   'operations.reinsurance.taxes-levies': ['VIEW', 'CREATE', 'EDIT', 'DELETE'],
@@ -323,6 +324,7 @@ export const PERMISSION_UI_VISIBLE_RESOURCES = new Set([
   'operations.reinsurance.claims',
   'operations.reinsurance.email',
   'operations.reinsurance.email-settings',
+  'operations.reinsurance.historical-statements',
   'operations.reinsurance.reports',
   'operations.reinsurance.settings',
 ]);
