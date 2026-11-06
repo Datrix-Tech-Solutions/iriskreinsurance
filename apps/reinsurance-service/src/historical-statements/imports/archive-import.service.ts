@@ -472,6 +472,15 @@ export class ArchiveImportService {
       const job = await this.job(identity, id);
       if (confirmation.datasetVersion !== job.datasetVersion)
         throw new ConflictException('ARCHIVE_DATASET_VERSION_CHANGED');
+      // The staging worker persists READY before its task wrapper releases the
+      // active slot. A client that reacts to READY must not hit that tail, so
+      // wait (bounded) for the worker to finish releasing it.
+      for (
+        let i = 0;
+        i < 200 && job.status === 'READY' && this.active.has(id);
+        i++
+      )
+        await new Promise((resolve) => setTimeout(resolve, 5));
       const state = await this.reconcile(identity, job);
       if (state === 'PUBLISHED') {
         // Only the claim owner may repair a stale receipt. Never race the
