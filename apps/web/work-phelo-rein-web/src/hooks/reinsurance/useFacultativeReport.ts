@@ -107,10 +107,21 @@ export interface FacultativeReportCurrencyTotals {
   commission: number;
 }
 
+export interface FacultativeReportCount {
+  key: string;
+  count: number;
+}
+
 export interface FacultativeReportSummary {
   totalOffers: number;
   openOffers: number;
   acceptanceRate: number;
+  cedantCount: number;
+  reinsurerCount: number;
+  activeCount: number;
+  expiredCount: number;
+  statusCounts: FacultativeReportCount[];
+  paymentStatusCounts: FacultativeReportCount[];
   totalsByCurrency: FacultativeReportCurrencyTotals[];
 }
 
@@ -202,6 +213,12 @@ export function useFacultativeReport(
     totalOffers: 0,
     openOffers: 0,
     acceptanceRate: 0,
+    cedantCount: 0,
+    reinsurerCount: 0,
+    activeCount: 0,
+    expiredCount: 0,
+    statusCounts: [],
+    paymentStatusCounts: [],
     totalsByCurrency: [],
   };
 

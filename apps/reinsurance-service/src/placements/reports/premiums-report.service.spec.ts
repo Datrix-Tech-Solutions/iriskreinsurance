@@ -9,6 +9,8 @@ describe('PremiumsReportService', () => {
 
   beforeEach(() => {
     prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    // KPI queries (run after rows + summary) default to empty results.
+    prisma.$queryRaw.mockResolvedValue([]);
     service = new PremiumsReportService(
       prisma as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
@@ -94,7 +96,7 @@ describe('PremiumsReportService', () => {
       dateBasis: 'INCEPTION_DATE',
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -133,6 +135,12 @@ describe('PremiumsReportService', () => {
     expect(result.summary).toEqual({
       placementCount: 12,
       participantCount: 20,
+      cedantCount: 0,
+      reinsurerCount: 0,
+      closedCount: 0,
+      openCount: 0,
+      paymentStatusCounts: [],
+      settlementCounts: { paid: 0, part: 0, outstanding: 0 },
       totalsByCurrency: [
         {
           currency: 'GHS',

@@ -131,6 +131,26 @@ export class ClaimsReportCurrencyTotalsDto {
 
   @ApiProperty()
   outstandingRecovery!: number;
+
+  @ApiProperty()
+  reinsurerShareAmount!: number;
+
+  @ApiProperty()
+  reinsurerPaidAmount!: number;
+
+  @ApiProperty()
+  reinsurerOutstandingAmount!: number;
+}
+
+export class ClaimsReportRecoveryCountsDto {
+  @ApiProperty()
+  outstanding!: number;
+
+  @ApiProperty()
+  part!: number;
+
+  @ApiProperty()
+  full!: number;
 }
 
 export class ClaimsReportSummaryDto {
@@ -148,6 +168,33 @@ export class ClaimsReportSummaryDto {
       'Share of finalized open/closed claims that are fully recovered from reinsurers.',
   })
   recoveryRate!: number;
+
+  @ApiProperty()
+  claimCount!: number;
+
+  @ApiProperty()
+  cedantCount!: number;
+
+  @ApiProperty()
+  reinsurerCount!: number;
+
+  @ApiProperty()
+  notificationCount!: number;
+
+  @ApiProperty()
+  openCount!: number;
+
+  @ApiProperty()
+  closedCount!: number;
+
+  @ApiProperty()
+  pendingCount!: number;
+
+  @ApiProperty()
+  finalizedCount!: number;
+
+  @ApiProperty({ type: ClaimsReportRecoveryCountsDto })
+  recoveryCounts!: ClaimsReportRecoveryCountsDto;
 
   @ApiProperty({ type: [ClaimsReportCurrencyTotalsDto] })
   totalsByCurrency!: ClaimsReportCurrencyTotalsDto[];

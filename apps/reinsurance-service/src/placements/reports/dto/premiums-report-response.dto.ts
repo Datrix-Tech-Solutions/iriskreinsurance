@@ -182,12 +182,49 @@ export class PremiumReportCurrencyTotalsDto {
   reinsurerOutstanding!: number;
 }
 
+export class PremiumReportCountDto {
+  @ApiProperty()
+  key!: string;
+
+  @ApiProperty()
+  count!: number;
+}
+
+export class PremiumReportSettlementCountsDto {
+  @ApiProperty()
+  paid!: number;
+
+  @ApiProperty()
+  part!: number;
+
+  @ApiProperty()
+  outstanding!: number;
+}
+
 export class PremiumReportSummaryDto {
   @ApiProperty()
   placementCount!: number;
 
   @ApiProperty()
   participantCount!: number;
+
+  @ApiProperty()
+  cedantCount!: number;
+
+  @ApiProperty()
+  reinsurerCount!: number;
+
+  @ApiProperty()
+  closedCount!: number;
+
+  @ApiProperty()
+  openCount!: number;
+
+  @ApiProperty({ type: [PremiumReportCountDto] })
+  paymentStatusCounts!: PremiumReportCountDto[];
+
+  @ApiProperty({ type: PremiumReportSettlementCountsDto })
+  settlementCounts!: PremiumReportSettlementCountsDto;
 
   @ApiProperty({ type: [PremiumReportCurrencyTotalsDto] })
   totalsByCurrency!: PremiumReportCurrencyTotalsDto[];

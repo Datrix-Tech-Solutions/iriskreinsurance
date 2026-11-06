@@ -115,6 +115,25 @@ export class BrokerageReportCurrencyTotalsDto {
   nicLevyPaid!: number;
 }
 
+export class BrokerageReportCountDto {
+  @ApiProperty()
+  key!: string;
+
+  @ApiProperty()
+  count!: number;
+}
+
+export class BrokerageReportBrokerageCountsDto {
+  @ApiProperty()
+  paid!: number;
+
+  @ApiProperty()
+  part!: number;
+
+  @ApiProperty()
+  outstanding!: number;
+}
+
 export class BrokerageReportSummaryDto {
   @ApiProperty({ enum: ['cedant', 'reinsurer'] })
   scope!: BrokerageReportScope;
@@ -124,6 +143,24 @@ export class BrokerageReportSummaryDto {
 
   @ApiProperty()
   participantCount!: number;
+
+  @ApiProperty()
+  cedantCount!: number;
+
+  @ApiProperty()
+  reinsurerCount!: number;
+
+  @ApiProperty()
+  closedCount!: number;
+
+  @ApiProperty()
+  openCount!: number;
+
+  @ApiProperty({ type: [BrokerageReportCountDto] })
+  paymentStatusCounts!: BrokerageReportCountDto[];
+
+  @ApiProperty({ type: BrokerageReportBrokerageCountsDto })
+  brokerageCounts!: BrokerageReportBrokerageCountsDto;
 
   @ApiProperty({ type: [BrokerageReportCurrencyTotalsDto] })
   totalsByCurrency!: BrokerageReportCurrencyTotalsDto[];

@@ -105,9 +105,20 @@ export interface PremiumsReportCurrencyTotals {
   reinsurerOutstanding: number;
 }
 
+export interface PremiumsReportCount {
+  key: string;
+  count: number;
+}
+
 export interface PremiumsReportSummary {
   placementCount: number;
   participantCount: number;
+  cedantCount: number;
+  reinsurerCount: number;
+  closedCount: number;
+  openCount: number;
+  paymentStatusCounts: PremiumsReportCount[];
+  settlementCounts: { paid: number; part: number; outstanding: number };
   totalsByCurrency: PremiumsReportCurrencyTotals[];
   /** Backwards-compatible first-currency summary for older report surfaces. */
   totalCollected: number;
@@ -216,6 +227,12 @@ export function usePremiumsReport(
       result.data?.summary ?? {
         placementCount: 0,
         participantCount: 0,
+        cedantCount: 0,
+        reinsurerCount: 0,
+        closedCount: 0,
+        openCount: 0,
+        paymentStatusCounts: [],
+        settlementCounts: { paid: 0, part: 0, outstanding: 0 },
         totalsByCurrency: [],
       },
     ),

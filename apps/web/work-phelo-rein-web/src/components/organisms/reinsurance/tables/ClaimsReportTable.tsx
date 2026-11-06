@@ -21,6 +21,8 @@ import {
   downloadClaimsReportCsv,
   downloadClaimsReportExcel,
 } from '@/hooks/reinsurance/useClaimsReport';
+import { ClaimsKpiCards } from '@/components/molecules/reinsurance/reports/ClaimsKpiCards';
+import { ClaimsCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ClaimsCurrencySummaryCards';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import {
   datedReportFilename,
@@ -309,7 +311,7 @@ export function ClaimsReportTable() {
     setPage(1);
   };
 
-  const { rows, isLoading, meta } = useClaimsReport(reportParams ?? {}, {
+  const { rows, summary, isLoading, meta } = useClaimsReport(reportParams ?? {}, {
     enabled: reportParams !== null,
   });
 
@@ -379,6 +381,15 @@ export function ClaimsReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
+      {reportParams && <ClaimsKpiCards summary={summary} isLoading={isLoading} />}
+      {reportParams && (
+        <ClaimsCurrencySummaryCards
+          summary={summary}
+          scope={reportParams.scope ?? 'general'}
+          isLoading={isLoading}
+        />
+      )}
+
       <div className="flex-1 min-h-0">
         <DataTable
           columns={columns}

@@ -184,6 +184,14 @@ export class FacultativeReportCurrencyTotalsDto {
   commission!: number;
 }
 
+export class FacultativeReportCountDto {
+  @ApiProperty()
+  key!: string;
+
+  @ApiProperty()
+  count!: number;
+}
+
 export class FacultativeReportSummaryDto {
   @ApiProperty()
   totalOffers!: number;
@@ -193,6 +201,24 @@ export class FacultativeReportSummaryDto {
 
   @ApiProperty()
   acceptanceRate!: number;
+
+  @ApiProperty()
+  cedantCount!: number;
+
+  @ApiProperty()
+  reinsurerCount!: number;
+
+  @ApiProperty()
+  activeCount!: number;
+
+  @ApiProperty()
+  expiredCount!: number;
+
+  @ApiProperty({ type: [FacultativeReportCountDto] })
+  statusCounts!: FacultativeReportCountDto[];
+
+  @ApiProperty({ type: [FacultativeReportCountDto] })
+  paymentStatusCounts!: FacultativeReportCountDto[];
 
   @ApiProperty({ type: [FacultativeReportCurrencyTotalsDto] })
   totalsByCurrency!: FacultativeReportCurrencyTotalsDto[];

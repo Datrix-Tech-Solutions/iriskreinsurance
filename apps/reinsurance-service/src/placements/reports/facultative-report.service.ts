@@ -91,6 +91,18 @@ type FacultativeReportRawSummaryRow = {
   acceptedOffers: bigint | number | string;
 };
 
+type FacultativeReportRawKpiRow = {
+  cedantCount: bigint | number | string;
+  reinsurerCount: bigint | number | string;
+  activeCount: bigint | number | string;
+  expiredCount: bigint | number | string;
+};
+
+type FacultativeReportRawCountRow = {
+  key: string | null;
+  count: bigint | number | string;
+};
+
 @Injectable()
 export class FacultativeReportService {
   constructor(
@@ -113,10 +125,11 @@ export class FacultativeReportService {
       FacultativeReportRawSummaryRow[]
     >(this.summaryQuery(tenantId, query));
     const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+    const kpis = await this.findKpis(tenantId, query);
 
     return {
       items: rows.map((row) => this.toRowDto(row)),
-      summary: this.toSummaryDto(summaryRows),
+      summary: { ...this.toSummaryDto(summaryRows), ...kpis },
       meta: {
         page,
         limit,
@@ -198,6 +211,67 @@ export class FacultativeReportService {
       LIMIT ${limit}
       OFFSET ${offset}
     `;
+  }
+
+  /** Distinct counts and status breakdowns across ALL filtered rows (not just the page). */
+  private async findKpis(
+    tenantId: string,
+    query: QueryFacultativeReportDto,
+  ): Promise<
+    Pick<
+      FacultativeReportResponseDto['summary'],
+      | 'cedantCount'
+      | 'reinsurerCount'
+      | 'activeCount'
+      | 'expiredCount'
+      | 'statusCounts'
+      | 'paymentStatusCounts'
+    >
+  > {
+    const ctes = this.reportCtes(tenantId, query);
+    const [kpiRows, statusRows, paymentRows] = await Promise.all([
+      this.prisma.$queryRaw<FacultativeReportRawKpiRow[]>(Prisma.sql`
+        ${ctes}
+        SELECT
+          (SELECT COUNT(DISTINCT f."cedantId") FROM filtered_rows f) AS "cedantCount",
+          (
+            SELECT COUNT(DISTINCT re.elem ->> 'reinsurerId')
+            FROM filtered_rows f
+            CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
+          ) AS "reinsurerCount",
+          (SELECT COUNT(*) FROM filtered_rows f
+            WHERE f."inceptionDate" IS NOT NULL AND f."expiryDate" IS NOT NULL
+              AND f."inceptionDate" <= NOW() AND f."expiryDate" >= NOW()) AS "activeCount",
+          (SELECT COUNT(*) FROM filtered_rows f
+            WHERE f."expiryDate" < NOW()) AS "expiredCount"
+      `),
+      this.prisma.$queryRaw<FacultativeReportRawCountRow[]>(Prisma.sql`
+        ${ctes}
+        SELECT f."status"::text AS "key", COUNT(*) AS "count"
+        FROM filtered_rows f
+        GROUP BY f."status"
+      `),
+      this.prisma.$queryRaw<FacultativeReportRawCountRow[]>(Prisma.sql`
+        ${ctes}
+        SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
+        FROM filtered_rows f
+        GROUP BY f."paymentStatus"
+      `),
+    ]);
+    const kpi = kpiRows[0];
+    const toCounts = (rows: FacultativeReportRawCountRow[]) =>
+      rows.map((r) => ({
+        key: r.key ?? 'UNKNOWN',
+        count: this.toInteger(r.count),
+      }));
+    return {
+      cedantCount: kpi ? this.toInteger(kpi.cedantCount) : 0,
+      reinsurerCount: kpi ? this.toInteger(kpi.reinsurerCount) : 0,
+      activeCount: kpi ? this.toInteger(kpi.activeCount) : 0,
+      expiredCount: kpi ? this.toInteger(kpi.expiredCount) : 0,
+      statusCounts: toCounts(statusRows),
+      paymentStatusCounts: toCounts(paymentRows),
+    };
   }
 
   private summaryQuery(

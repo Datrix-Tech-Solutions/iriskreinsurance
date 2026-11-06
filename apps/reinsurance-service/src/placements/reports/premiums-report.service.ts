@@ -71,6 +71,21 @@ type PremiumReportRawRow = {
   totalCount: bigint | number | string;
 };
 
+type PremiumReportRawKpiRow = {
+  cedantCount: bigint | number | string;
+  reinsurerCount: bigint | number | string;
+  closedCount: bigint | number | string;
+  openCount: bigint | number | string;
+  settlementPaid: bigint | number | string;
+  settlementPart: bigint | number | string;
+  settlementOutstanding: bigint | number | string;
+};
+
+type PremiumReportRawCountRow = {
+  key: string | null;
+  count: bigint | number | string;
+};
+
 type PremiumReportRawSummaryRow = {
   currency: string | null;
   placementCount: bigint | number | string;
@@ -138,10 +153,11 @@ export class PremiumsReportService {
     >(this.summaryQuery(tenantId, query));
 
     const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+    const kpis = await this.findKpis(tenantId, query);
 
     return {
       items: rows.map((row) => this.toRowDto(row)),
-      summary: this.toSummaryDto(summaryRows),
+      summary: { ...this.toSummaryDto(summaryRows), ...kpis },
       meta: {
         page,
         limit,
@@ -230,6 +246,85 @@ export class PremiumsReportService {
       LIMIT ${limit}
       OFFSET ${offset}
     `;
+  }
+
+  /** Distinct counts and status breakdowns across ALL filtered rows (not just the page). */
+  private async findKpis(
+    tenantId: string,
+    query: QueryPremiumsReportDto,
+  ): Promise<
+    Pick<
+      PremiumsReportResponseDto['summary'],
+      | 'cedantCount'
+      | 'reinsurerCount'
+      | 'closedCount'
+      | 'openCount'
+      | 'paymentStatusCounts'
+      | 'settlementCounts'
+    >
+  > {
+    const ctes = this.reportCtes(tenantId, query);
+    const [kpiRows, paymentRows] = await Promise.all([
+      this.prisma.$queryRaw<PremiumReportRawKpiRow[]>(Prisma.sql`
+        ${ctes}
+        SELECT
+          (SELECT COUNT(DISTINCT f."cedantId") FROM filtered_rows f) AS "cedantCount",
+          (
+            SELECT COUNT(DISTINCT re.elem ->> 'reinsurerId')
+            FROM filtered_rows f
+            CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
+          ) AS "reinsurerCount",
+          (SELECT COUNT(*) FROM filtered_rows f WHERE f."status" = 'CLOSED') AS "closedCount",
+          (SELECT COUNT(*) FROM filtered_rows f WHERE f."status" <> 'CLOSED') AS "openCount",
+          s."settlementPaid",
+          s."settlementPart",
+          s."settlementOutstanding"
+        FROM (
+          SELECT
+            COUNT(*) FILTER (
+              WHERE COALESCE((re.elem ->> 'paidAmount')::numeric, 0) > 0.01
+                AND COALESCE((re.elem ->> 'netPremium')::numeric, 0) > 0.01
+                AND COALESCE((re.elem ->> 'paidAmount')::numeric, 0)
+                      >= COALESCE((re.elem ->> 'netPremium')::numeric, 0) - 0.01
+            ) AS "settlementPaid",
+            COUNT(*) FILTER (
+              WHERE COALESCE((re.elem ->> 'paidAmount')::numeric, 0) > 0.01
+                AND NOT (
+                  COALESCE((re.elem ->> 'netPremium')::numeric, 0) > 0.01
+                  AND COALESCE((re.elem ->> 'paidAmount')::numeric, 0)
+                        >= COALESCE((re.elem ->> 'netPremium')::numeric, 0) - 0.01
+                )
+            ) AS "settlementPart",
+            COUNT(*) FILTER (
+              WHERE COALESCE((re.elem ->> 'paidAmount')::numeric, 0) <= 0.01
+            ) AS "settlementOutstanding"
+          FROM filtered_rows f
+          CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
+        ) s
+      `),
+      this.prisma.$queryRaw<PremiumReportRawCountRow[]>(Prisma.sql`
+        ${ctes}
+        SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
+        FROM filtered_rows f
+        GROUP BY f."paymentStatus"
+      `),
+    ]);
+    const kpi = kpiRows[0];
+    return {
+      cedantCount: kpi ? this.toInteger(kpi.cedantCount) : 0,
+      reinsurerCount: kpi ? this.toInteger(kpi.reinsurerCount) : 0,
+      closedCount: kpi ? this.toInteger(kpi.closedCount) : 0,
+      openCount: kpi ? this.toInteger(kpi.openCount) : 0,
+      paymentStatusCounts: paymentRows.map((r) => ({
+        key: r.key ?? 'UNKNOWN',
+        count: this.toInteger(r.count),
+      })),
+      settlementCounts: {
+        paid: kpi ? this.toInteger(kpi.settlementPaid) : 0,
+        part: kpi ? this.toInteger(kpi.settlementPart) : 0,
+        outstanding: kpi ? this.toInteger(kpi.settlementOutstanding) : 0,
+      },
+    };
   }
 
   private summaryQuery(

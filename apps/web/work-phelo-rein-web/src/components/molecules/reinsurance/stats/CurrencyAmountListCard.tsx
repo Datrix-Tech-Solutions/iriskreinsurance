@@ -56,6 +56,8 @@ interface CurrencyAmountListCardProps {
   subAmountsByCode?: Map<string, number>;
   /** Caption shown before the sub-amount (e.g. "Outstanding"). Required for the sub-line to render. */
   subLabel?: string;
+  /** Show a one-line empty message instead of the large illustration, so empty cards don't set the row height. */
+  compactEmpty?: boolean;
 }
 
 export function CurrencyAmountListCard({
@@ -68,6 +70,7 @@ export function CurrencyAmountListCard({
   className,
   subAmountsByCode,
   subLabel,
+  compactEmpty,
 }: CurrencyAmountListCardProps) {
   const rows = currencies
     .map((c) => ({
@@ -81,12 +84,16 @@ export function CurrencyAmountListCard({
     <div className={cn(transparentCardClass('flex flex-col gap-3 py-5 h-80'), className)}>
       <h3 className="text-sm font-semibold text-blue-900">{title}</h3>
       <div className="flex-1 min-h-0 overflow-y-auto -mx-3 px-3">
-        <DataList
-          columns={buildColumns(columnLabel, subLabel)}
-          data={rows}
-          isLoading={isLoading}
-          emptyMessage={emptyMessage}
-        />
+        {!isLoading && rows.length === 0 && compactEmpty ? (
+          <p className="py-2 text-sm text-gray-400">{emptyMessage}</p>
+        ) : (
+          <DataList
+            columns={buildColumns(columnLabel, subLabel)}
+            data={rows}
+            isLoading={isLoading}
+            emptyMessage={emptyMessage}
+          />
+        )}
       </div>
     </div>
   );
