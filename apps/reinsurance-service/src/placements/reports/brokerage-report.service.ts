@@ -812,7 +812,15 @@ export class BrokerageReportService {
   private toSummaryDto(
     scope: BrokerageReportScope,
     rows: BrokerageReportRawSummaryRow[],
-  ): BrokerageReportResponseDto['summary'] {
+  ): Omit<
+    BrokerageReportResponseDto['summary'],
+    | 'cedantCount'
+    | 'reinsurerCount'
+    | 'closedCount'
+    | 'openCount'
+    | 'paymentStatusCounts'
+    | 'brokerageCounts'
+  > {
     const totalsByCurrency = rows.map((row) => this.toCurrencyTotalsDto(row));
     return {
       scope,

@@ -93,6 +93,11 @@ type ClaimsReportRawReinsurerTotalsRow = {
   reinsurerOutstandingAmount: SqlNumber;
 };
 
+type ClaimsReportBaseCurrencyTotals = Omit<
+  ClaimsReportCurrencyTotalsDto,
+  'reinsurerShareAmount' | 'reinsurerPaidAmount' | 'reinsurerOutstandingAmount'
+>;
+
 type DateRange = {
   from?: Date;
   to?: Date;
@@ -813,7 +818,19 @@ export class ClaimsReportService {
   private toSummaryDto(
     scope: ClaimsReportScope,
     rows: ClaimsReportRawSummaryRow[],
-  ): ClaimsReportResponseDto['summary'] {
+  ): Omit<
+    ClaimsReportResponseDto['summary'],
+    | 'claimCount'
+    | 'cedantCount'
+    | 'reinsurerCount'
+    | 'notificationCount'
+    | 'openCount'
+    | 'closedCount'
+    | 'pendingCount'
+    | 'finalizedCount'
+    | 'recoveryCounts'
+    | 'totalsByCurrency'
+  > & { totalsByCurrency: ClaimsReportBaseCurrencyTotals[] } {
     const totalsByCurrency = rows.map((row) => this.toCurrencyTotalsDto(row));
     const openClaims = totalsByCurrency.reduce(
       (sum, row, index) => sum + this.toInteger(rows[index]?.openClaims ?? 0),
@@ -838,7 +855,7 @@ export class ClaimsReportService {
 
   private toCurrencyTotalsDto(
     row: ClaimsReportRawSummaryRow,
-  ): ClaimsReportCurrencyTotalsDto {
+  ): ClaimsReportBaseCurrencyTotals {
     return {
       currency: row.currency ?? 'UNKNOWN',
       claimCount: this.toInteger(row.claimCount),

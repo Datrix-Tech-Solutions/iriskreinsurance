@@ -1060,7 +1060,15 @@ export class PremiumsReportService {
 
   private toSummaryDto(
     rows: PremiumReportRawSummaryRow[],
-  ): PremiumsReportResponseDto['summary'] {
+  ): Omit<
+    PremiumsReportResponseDto['summary'],
+    | 'cedantCount'
+    | 'reinsurerCount'
+    | 'closedCount'
+    | 'openCount'
+    | 'paymentStatusCounts'
+    | 'settlementCounts'
+  > {
     const totalsByCurrency = rows.map((row) => this.toCurrencyTotalsDto(row));
     return {
       placementCount: totalsByCurrency.reduce(

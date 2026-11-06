@@ -938,7 +938,15 @@ export class FacultativeReportService {
 
   private toSummaryDto(
     rows: FacultativeReportRawSummaryRow[],
-  ): FacultativeReportResponseDto['summary'] {
+  ): Omit<
+    FacultativeReportResponseDto['summary'],
+    | 'cedantCount'
+    | 'reinsurerCount'
+    | 'activeCount'
+    | 'expiredCount'
+    | 'statusCounts'
+    | 'paymentStatusCounts'
+  > {
     const totalsByCurrency = rows.map((row) => this.toCurrencyTotalsDto(row));
     const totalOffers = totalsByCurrency.reduce(
       (sum, row) => sum + row.placementCount,
