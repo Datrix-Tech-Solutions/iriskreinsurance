@@ -16,6 +16,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
 import {
   ArchiveImportService,
   ImportIdentity,
@@ -355,7 +356,10 @@ describe('Archive upload orchestration (synthetic files only)', () => {
       },
     );
     executor.execute.mockResolvedValue({ loadId, outcome: 'IDEMPOTENT_SKIP' });
-    executor.status.mockResolvedValue({ status: 'SUPERSEDED' });
+    executor.status.mockResolvedValue({
+      status: 'SUPERSEDED',
+      datasetVersion: first.datasetVersion,
+    });
     const second = await ready();
     expect(second.datasetVersion).toBe(first.datasetVersion);
     expect(second).toMatchObject({
@@ -400,6 +404,219 @@ describe('Archive upload orchestration (synthetic files only)', () => {
     await service.publish(identity, result.importId, dto);
     expect(executor.execute).toHaveBeenCalledTimes(2);
   });
+  function signal() {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+  function publicationCleanup(id: string) {
+    const finished = signal(),
+      path = join(root, tenantId, id, 'publication-request.lock');
+    const realUnlink = fs.unlink;
+    const spy = jest.spyOn(fs, 'unlink').mockImplementation(async (file) => {
+      await realUnlink(file);
+      if (String(file) === path) finished.resolve();
+    });
+    return {
+      finished: finished.promise,
+      restore: () => spy.mockRestore(),
+      path,
+    };
+  }
+  it('rejects another publication while the first job is active before database commit', async () => {
+    const result = await ready(),
+      entered = signal(),
+      proceed = signal();
+    const cleanup = publicationCleanup(result.importId);
+    const dto = {
+      datasetVersion: result.datasetVersion,
+      approvalRef: 'Synthetic confirmation',
+    };
+    executor.execute.mockImplementationOnce(async () => {
+      entered.resolve();
+      await proceed.promise;
+      published = true;
+      current = loadId;
+      return { loadId, outcome: 'PUBLISHED' };
+    });
+    try {
+      await service.publish(identity, result.importId, dto);
+      await entered.promise;
+      expect((await service.status(identity, result.importId)).status).toBe(
+        'PUBLISHING',
+      );
+      const otherInstance = new ArchiveImportService(
+        access as unknown as HistoricalStatementsAccessClient,
+        executor as unknown as ArchiveImportExecutor,
+      );
+      await expect(
+        otherInstance.publish(identity, result.importId, dto),
+      ).rejects.toThrow('ARCHIVE_IMPORT_BUSY');
+      expect(executor.execute).toHaveBeenCalledTimes(2);
+      expect(await fs.stat(cleanup.path)).toBeDefined();
+    } finally {
+      proceed.resolve();
+      await cleanup.finished;
+      cleanup.restore();
+    }
+    expect((await service.publish(identity, result.importId, dto)).status).toBe(
+      'PUBLISHED',
+    );
+    expect(executor.execute).toHaveBeenCalledTimes(2);
+  });
+  it('keeps published responses idempotent during delayed filesystem persistence without releasing claims', async () => {
+    const result = await ready(),
+      entered = signal(),
+      persist = signal();
+    const dto = {
+      datasetVersion: result.datasetVersion,
+      approvalRef: 'Synthetic confirmation',
+    };
+    const statusPath = join(root, tenantId, result.importId, 'status.json');
+    const cleanup = publicationCleanup(result.importId);
+    const realRename = fs.rename;
+    let paused = false;
+    const rename = jest
+      .spyOn(fs, 'rename')
+      .mockImplementation(async (from, to) => {
+        if (String(to) === statusPath && !paused) {
+          const state = JSON.parse(await readFile(from, 'utf8')) as {
+            status?: string;
+          };
+          if (state.status === 'PUBLISHED') {
+            paused = true;
+            entered.resolve();
+            await persist.promise;
+          }
+        }
+        await realRename(from, to);
+      });
+    try {
+      await service.publish(identity, result.importId, dto);
+      await entered.promise;
+      expect(
+        (JSON.parse(await readFile(statusPath, 'utf8')) as { status: string })
+          .status,
+      ).toBe('PUBLISHING');
+      expect((await service.status(identity, result.importId)).status).toBe(
+        'PUBLISHED',
+      );
+      expect(
+        await service.publish(identity, result.importId, dto),
+      ).toMatchObject({ status: 'PUBLISHED', datasetId: loadId });
+      const otherInstance = new ArchiveImportService(
+        access as unknown as HistoricalStatementsAccessClient,
+        executor as unknown as ArchiveImportExecutor,
+      );
+      expect(
+        await otherInstance.publish(identity, result.importId, dto),
+      ).toMatchObject({ status: 'PUBLISHED', datasetId: loadId });
+      expect(await fs.stat(cleanup.path)).toBeDefined();
+      expect(
+        await fs.stat(join(root, tenantId, result.importId, 'execution.lock')),
+      ).toBeDefined();
+      expect(
+        (JSON.parse(await readFile(statusPath, 'utf8')) as { status: string })
+          .status,
+      ).toBe('PUBLISHING');
+      const foreignTenant = randomUUID(),
+        foreignUser = randomUUID();
+      access.getAccess.mockResolvedValue({
+        tenantId: foreignTenant,
+        userId: foreignUser,
+        enabled: true,
+        canImport: true,
+      });
+      const reads = executor.status.mock.calls.length;
+      await expect(
+        otherInstance.publish(
+          {
+            ...identity,
+            actor: {
+              tenantId: foreignTenant,
+              userId: foreignUser,
+              tenantSlug: 'other',
+            },
+          },
+          result.importId,
+          dto,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(executor.status).toHaveBeenCalledTimes(reads);
+      access.getAccess.mockResolvedValue({
+        tenantId,
+        userId,
+        enabled: true,
+        canImport: true,
+      });
+      expect(executor.execute).toHaveBeenCalledTimes(2);
+    } finally {
+      persist.resolve();
+      await cleanup.finished;
+      rename.mockRestore();
+      cleanup.restore();
+    }
+    expect(
+      (JSON.parse(await readFile(statusPath, 'utf8')) as { status: string })
+        .status,
+    ).toBe('PUBLISHED');
+    expect((await service.publish(identity, result.importId, dto)).status).toBe(
+      'PUBLISHED',
+    );
+    expect(executor.execute).toHaveBeenCalledTimes(2);
+  });
+  it('reconciles a stale PUBLISHING receipt before readiness checks and persists completed publication', async () => {
+    const result = await ready(),
+      cleanup = publicationCleanup(result.importId);
+    const dto = {
+      datasetVersion: result.datasetVersion,
+      approvalRef: 'Synthetic confirmation',
+    };
+    try {
+      await service.publish(identity, result.importId, dto);
+      await cleanup.finished;
+    } finally {
+      cleanup.restore();
+    }
+    const path = join(root, tenantId, result.importId, 'status.json');
+    const completed = JSON.parse(await readFile(path, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    await writeFile(
+      path,
+      JSON.stringify({ ...completed, status: 'PUBLISHING' }),
+    );
+    expect((await service.status(identity, result.importId)).status).toBe(
+      'PUBLISHED',
+    );
+    expect((await service.publish(identity, result.importId, dto)).status).toBe(
+      'PUBLISHED',
+    );
+    expect(
+      (JSON.parse(await readFile(path, 'utf8')) as { status: string }).status,
+    ).toBe('PUBLISHED');
+    expect(executor.execute).toHaveBeenCalledTimes(2);
+  });
+  it('rejects a mismatched canonical version even when the database reports publication', async () => {
+    const result = await ready();
+    executor.status.mockResolvedValue({
+      status: 'PUBLISHED',
+      datasetVersion: 'another-version',
+    });
+    await expect(service.status(identity, result.importId)).rejects.toThrow(
+      'ARCHIVE_IMPORT_STATE_CHANGED',
+    );
+    await expect(
+      service.publish(identity, result.importId, {
+        datasetVersion: result.datasetVersion,
+        approvalRef: 'Synthetic',
+      }),
+    ).rejects.toThrow('ARCHIVE_IMPORT_STATE_CHANGED');
+    expect(executor.execute).toHaveBeenCalledTimes(1);
+  });
   it('serializes simultaneous publication requests', async () => {
     const result = await ready(),
       dto = { datasetVersion: result.datasetVersion, approvalRef: 'Synthetic' };
@@ -407,7 +624,18 @@ describe('Archive upload orchestration (synthetic files only)', () => {
       service.publish(identity, result.importId, dto),
       service.publish(identity, result.importId, dto),
     ]);
-    expect(attempts.filter((a) => a.status === 'fulfilled')).toHaveLength(1);
+    expect(
+      attempts.filter(
+        (a) => a.status === 'fulfilled' && a.value.status === 'PUBLISHING',
+      ),
+    ).toHaveLength(1);
+    for (const attempt of attempts) {
+      if (attempt.status === 'fulfilled') {
+        expect(['PUBLISHING', 'PUBLISHED']).toContain(attempt.value.status);
+        expect(attempt.value.datasetId).toBe(loadId);
+      } else
+        expect(attempt.reason as unknown).toBeInstanceOf(ConflictException);
+    }
     await settled(result.importId);
     expect(executor.execute).toHaveBeenCalledTimes(2);
   });
