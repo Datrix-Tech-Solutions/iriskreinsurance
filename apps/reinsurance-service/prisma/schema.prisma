@@ -1562,3 +1562,253 @@ model CounterpartyAddress {
   @@index([tenantId, counterpartyId])
   @@schema("reinsurance")
 }
+
+// Isolated immutable historical statements; no operational business relations.
+enum HistoricalStatementLoadStatus {
+  STAGING
+  READY
+  PUBLISHED
+  SUPERSEDED
+  FAILED
+  ROLLED_BACK
+  @@schema("reinsurance")
+}
+
+enum HistoricalStatementKind {
+  INSURER
+  REINSURER
+  @@schema("reinsurance")
+}
+
+enum HistoricalStatementLinkBasis {
+  SUPPLIED_AUTHORITATIVE
+  APPROVED_CANDIDATE
+  @@schema("reinsurance")
+}
+
+model HistoricalStatementLoad {
+  id                    String @id @default(uuid())
+  tenantId              String
+  datasetKey            String
+  datasetVersion        String
+  contentManifestSha256 String
+  matchManifestSha256   String?
+  contractVersion       String
+  parserVersion         String
+  loaderVersion         String
+  status                HistoricalStatementLoadStatus @default(STAGING)
+  sourceManifest        Json
+  validationSummary     Json
+  progress              Json
+  lifecycleEvents       Json
+  createdByUserId       String
+  publishedByUserId     String?
+  rolledBackByUserId    String?
+  publicationApprovalRef String?
+  rollbackReason        String?
+  supersededByLoadId    String?
+  startedAt             DateTime @default(now())
+  readyAt               DateTime?
+  publishedAt           DateTime?
+  supersededAt          DateTime?
+  failedAt              DateTime?
+  rolledBackAt          DateTime?
+  errorSummary          Json?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  files                 HistoricalStatementFile[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, datasetKey, datasetVersion])
+  @@unique([tenantId, datasetKey, contentManifestSha256])
+  @@index([tenantId, datasetKey, status, createdAt])
+  @@map("historical_statement_load")
+  @@schema("reinsurance")
+}
+
+model HistoricalStatementFile {
+  id                  String @id @default(uuid())
+  tenantId            String
+  loadId              String
+  kind                HistoricalStatementKind
+  year                Int
+  originalFileName    String
+  byteSize            BigInt
+  sha256              String
+  sheetName           String
+  sheetXmlPath        String
+  headerSha256        String
+  headerCells         Json
+  workbookMetadata    Json
+  physicalRowCount    Int
+  businessRowCount    Int
+  sourceColumnCount   Int
+  rawStorageProvider  String
+  rawStorageKey       String
+  createdByUserId     String
+  importedAt          DateTime @default(now())
+  createdAt           DateTime @default(now())
+  load                HistoricalStatementLoad @relation(fields: [tenantId, loadId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
+  insurerRows         HistoricalInsurerStatement[]
+  reinsurerRows       HistoricalReinsurerStatement[]
+
+  @@unique([tenantId, loadId, id, year])
+  @@unique([tenantId, loadId, kind, year, sheetName])
+  @@unique([tenantId, loadId, sha256, sheetName])
+  @@index([tenantId, loadId, kind, year])
+  @@map("historical_statement_file")
+  @@schema("reinsurance")
+}
+
+model HistoricalInsurerStatement {
+  id                String @id @default(uuid())
+  tenantId          String
+  loadId            String
+  fileId            String
+  year              Int
+  sourceRow         Int
+  rowSha256         String
+  rawCells          Json
+  qualityFlags      Json
+  policySearch      String
+  insuredSearch     String
+  businessSearch    String
+  counterpartySearch String
+  reinsuredSearch   String
+  searchText        String
+  createdByUserId   String
+  importedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  policyNumber                String?
+  insurerName                 String?
+  insuredName                 String?
+  businessName                String?
+  offerDate                   DateTime? @db.Date
+  closedDate                  DateTime? @db.Date
+  startDate                   DateTime? @db.Date
+  endDate                     DateTime? @db.Date
+  currency                    String?
+  sumInsured100               Decimal? @db.Decimal(30, 12)
+  premium100                  Decimal? @db.Decimal(30, 12)
+  facShare                    Decimal? @db.Decimal(30, 12)
+  facSumInsured               Decimal? @db.Decimal(30, 12)
+  facPremium                  Decimal? @db.Decimal(30, 12)
+  paidFacPremium              Decimal? @db.Decimal(30, 12)
+  insurerCommissionPercent    Decimal? @db.Decimal(30, 12)
+  paidCommission              Decimal? @db.Decimal(30, 12)
+  netPremiumDueBroker         Decimal? @db.Decimal(30, 12)
+  netPremiumDueBrokerPaid     Decimal? @db.Decimal(30, 12)
+  brokerage                   Decimal? @db.Decimal(30, 12)
+  brokeragePaid               Decimal? @db.Decimal(30, 12)
+  wht                         Decimal? @db.Decimal(30, 12)
+  paidWht                     Decimal? @db.Decimal(30, 12)
+  nicLevy                     Decimal? @db.Decimal(30, 12)
+  paidNic                     Decimal? @db.Decimal(30, 12)
+  netPremiumDueReinsurer      Decimal? @db.Decimal(30, 12)
+  netPremiumPaid              Decimal? @db.Decimal(30, 12)
+  offerStatus                 String?
+  paymentStatus               String?
+  matchId           String?
+  links             HistoricalStatementLink[] @relation("HistoricalInsurerLinks")
+  file              HistoricalStatementFile @relation(fields: [tenantId, loadId, fileId, year], references: [tenantId, loadId, id, year], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([tenantId, loadId, id])
+  @@unique([tenantId, loadId, fileId, sourceRow])
+  @@index([tenantId, loadId, year, id])
+  @@index([tenantId, loadId, policySearch, id])
+  @@index([tenantId, loadId, counterpartySearch, id])
+  @@index([tenantId, loadId, currency, id])
+  @@index([tenantId, loadId, offerStatus, paymentStatus, id])
+  @@index([tenantId, loadId, closedDate, id])
+  @@unique([tenantId, loadId, matchId])
+  @@map("historical_insurer_statement")
+  @@schema("reinsurance")
+}
+
+model HistoricalReinsurerStatement {
+  id                String @id @default(uuid())
+  tenantId          String
+  loadId            String
+  fileId            String
+  year              Int
+  sourceRow         Int
+  rowSha256         String
+  rawCells          Json
+  qualityFlags      Json
+  policySearch      String
+  insuredSearch     String
+  businessSearch    String
+  counterpartySearch String
+  reinsuredSearch   String
+  searchText        String
+  createdByUserId   String
+  importedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  policyNumber                String?
+  reinsurerName               String?
+  insuredName                 String?
+  businessName                String?
+  reinsuredName               String?
+  offerDate                   DateTime? @db.Date
+  closedDate                  DateTime? @db.Date
+  startDate                   DateTime? @db.Date
+  endDate                     DateTime? @db.Date
+  currency                    String?
+  sumInsured100               Decimal? @db.Decimal(30, 12)
+  premium100                  Decimal? @db.Decimal(30, 12)
+  facShare                    Decimal? @db.Decimal(30, 12)
+  facSumInsured               Decimal? @db.Decimal(30, 12)
+  facPremium                  Decimal? @db.Decimal(30, 12)
+  paidFacPremium              Decimal? @db.Decimal(30, 12)
+  insurerCommissionAmount     Decimal? @db.Decimal(30, 12)
+  paidCommission              Decimal? @db.Decimal(30, 12)
+  brokerage                   Decimal? @db.Decimal(30, 12)
+  brokeragePaid               Decimal? @db.Decimal(30, 12)
+  wht                         Decimal? @db.Decimal(30, 12)
+  paidWhtFirst                Decimal? @db.Decimal(30, 12)
+  paidWhtSecond               Decimal? @db.Decimal(30, 12)
+  nicLevy                     Decimal? @db.Decimal(30, 12)
+  paidNic                     Decimal? @db.Decimal(30, 12)
+  netPremiumDueReinsurer      Decimal? @db.Decimal(30, 12)
+  netPremiumPaid              Decimal? @db.Decimal(30, 12)
+  offerStatus                 String?
+  paymentStatus               String?
+  links             HistoricalStatementLink[] @relation("HistoricalReinsurerLinks")
+  file              HistoricalStatementFile @relation(fields: [tenantId, loadId, fileId, year], references: [tenantId, loadId, id, year], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([tenantId, loadId, id])
+  @@unique([tenantId, loadId, fileId, sourceRow])
+  @@index([tenantId, loadId, year, id])
+  @@index([tenantId, loadId, policySearch, id])
+  @@index([tenantId, loadId, counterpartySearch, id])
+  @@index([tenantId, loadId, currency, id])
+  @@index([tenantId, loadId, offerStatus, paymentStatus, id])
+  @@index([tenantId, loadId, closedDate, id])
+  @@map("historical_reinsurer_statement")
+  @@schema("reinsurance")
+}
+
+model HistoricalStatementLink {
+  id                 String @id @default(uuid())
+  tenantId           String
+  loadId             String
+  matchId            String
+  insurerRowId       String
+  reinsurerRowId     String
+  basis              HistoricalStatementLinkBasis
+  approvalRef        String
+  evidence           Json
+  evidenceSha256     String
+  approvedByUserId   String
+  approvedAt         DateTime
+  createdByUserId    String
+  createdAt          DateTime @default(now())
+  insurerRow         HistoricalInsurerStatement @relation("HistoricalInsurerLinks", fields: [tenantId, loadId, insurerRowId], references: [tenantId, loadId, id], onDelete: Restrict, onUpdate: Restrict)
+  reinsurerRow       HistoricalReinsurerStatement @relation("HistoricalReinsurerLinks", fields: [tenantId, loadId, reinsurerRowId], references: [tenantId, loadId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([tenantId, loadId, reinsurerRowId])
+  @@index([tenantId, loadId, insurerRowId, id])
+  @@index([tenantId, loadId, matchId, id])
+  @@map("historical_statement_link")
+  @@schema("reinsurance")
+}

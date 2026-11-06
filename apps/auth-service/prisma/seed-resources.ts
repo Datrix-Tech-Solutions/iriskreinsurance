@@ -187,7 +187,8 @@ export const RESOURCES = [
   {
     name: 'operations.reinsurance.accounting-operations',
     module: 'OPERATIONS',
-    description: 'Reinsurance Accounting integration operational diagnostics and support actions',
+    description:
+      'Reinsurance Accounting integration operational diagnostics and support actions',
   },
   {
     name: 'operations.reinsurance.placements',
@@ -289,6 +290,11 @@ export const RESOURCES = [
     name: 'operations.reinsurance.email-settings',
     module: 'OPERATIONS',
     description: 'Broker mailbox integration settings',
+  },
+  {
+    name: 'operations.reinsurance.historical-statements',
+    module: 'OPERATIONS',
+    description: 'Read and export historical reinsurance statements',
   },
   {
     name: 'operations.reinsurance.reports',

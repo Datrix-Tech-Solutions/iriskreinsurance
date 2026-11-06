@@ -76,6 +76,7 @@ enum PermissionAction {
 // ── Tenant ─────────────────────────────────────────────────────────────────
 
 model Tenant {
+  historicalStatementsEnabled Boolean @default(false)
   id             String       @id @default(uuid())
   name           String
   slug           String       @unique

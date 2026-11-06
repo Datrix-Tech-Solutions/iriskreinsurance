@@ -984,6 +984,44 @@ export class PermissionsService {
     };
   }
 
+  // Archive-only resolution; generic permission semantics above stay unchanged.
+  async getHistoricalStatementsPermissions(tenantId: string, userId: string) {
+    const resourceName = 'operations.reinsurance.historical-statements';
+    const [direct, assignments] = await Promise.all([
+      this.prisma.userPermission.findMany({
+        where: { tenantId, userId },
+        include: { resource: true },
+      }),
+      this.prisma.userPermissionSet.findMany({
+        where: { userId, permissionSet: { isActive: true, tenantId } },
+        include: {
+          permissionSet: {
+            include: { resources: { include: { resource: true } } },
+          },
+        },
+      }),
+    ]);
+    const now = new Date();
+    const grants = [
+      ...direct.filter(
+        (grant) =>
+          grant.isActive && (!grant.expiresAt || grant.expiresAt > now),
+      ),
+      ...assignments.flatMap(
+        (assignment) => assignment.permissionSet.resources,
+      ),
+    ];
+    const effectivePermissions = grants
+      .filter(
+        (grant) =>
+          grant.resource.name === resourceName &&
+          grant.resource.isActive === true &&
+          (grant.action === 'VIEW' || grant.action === 'EXPORT'),
+      )
+      .map((grant) => `${resourceName}:${grant.action}`);
+    return { effectivePermissions: [...new Set(effectivePermissions)].sort() };
+  }
+
   // ── History ────────────────────────────────────────────────────────────────
 
   async getPermissionHistory(tenantId: string, userId: string) {

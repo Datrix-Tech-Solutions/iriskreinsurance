@@ -107,6 +107,10 @@ const RESOURCE_ENTITLEMENTS: Record<string, ResourceEntitlement> = {
     moduleKey: 'operations',
     featurePath: ['operations', 'reinsurance'],
   },
+  'operations.reinsurance.historical-statements': {
+    moduleKey: 'operations',
+    featurePath: ['operations', 'reinsurance'],
+  },
   'operations.reinsurance.reports': {
     moduleKey: 'operations',
     featurePath: ['operations', 'reinsurance'],

@@ -11,6 +11,7 @@ describe('permission entitlements', () => {
   };
 
   it.each([
+    'operations.reinsurance.historical-statements',
     'operations.reinsurance.facultative-offers.create-offer',
     'operations.reinsurance.facultative-offers.edit-offer',
     'operations.reinsurance.facultative-offers.partial-edit',

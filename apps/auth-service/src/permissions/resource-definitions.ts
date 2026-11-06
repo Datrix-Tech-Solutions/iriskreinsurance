@@ -282,6 +282,11 @@ export const RESOURCES = [
     description: 'Broker mailbox integration settings',
   },
   {
+    name: 'operations.reinsurance.historical-statements',
+    module: 'OPERATIONS',
+    description: 'Read and export historical reinsurance statements',
+  },
+  {
     name: 'operations.reinsurance.reports',
     module: 'OPERATIONS',
     description: 'Reinsurance operational reports',
