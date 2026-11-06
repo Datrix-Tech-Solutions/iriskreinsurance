@@ -408,19 +408,32 @@ export class ArchiveImportService {
       }
     }
   }
+  // The database commits publication before the worker flushes its receipt.
+  // Both endpoints must expose the same completion state; polling is read-only.
+  private async reconcile(identity: ImportIdentity, job: ImportJob) {
+    if (!job.datasetId) return undefined;
+    job.currentPublishedDatasetId = await this.executor.currentPublication(
+      identity.actor,
+    );
+    const load = await this.executor.status(identity.actor, job.datasetId);
+    if (load.datasetVersion !== job.datasetVersion)
+      throw new ConflictException('ARCHIVE_IMPORT_STATE_CHANGED');
+    if (load.status === 'PUBLISHED') {
+      job.status = 'PUBLISHED';
+      job.errors = [];
+    } else if (load.status === 'SUPERSEDED') job.status = 'SUPERSEDED';
+    else if (
+      job.status === 'PUBLISHED' ||
+      job.status === 'SUPERSEDED' ||
+      (load.status !== 'READY' && job.status === 'READY')
+    )
+      job.status = 'FAILED';
+    return load.status;
+  }
   async status(identity: ImportIdentity, id: string) {
     await this.authorize(identity);
     const job = await this.job(identity, id);
-    if (job.datasetId) {
-      job.currentPublishedDatasetId = await this.executor.currentPublication(
-        identity.actor,
-      );
-      const load = await this.executor.status(identity.actor, job.datasetId);
-      if (load.status === 'PUBLISHED') job.status = 'PUBLISHED';
-      else if (load.status === 'SUPERSEDED') job.status = 'SUPERSEDED';
-      else if (load.status !== 'READY' && job.status === 'READY')
-        job.status = 'FAILED';
-    }
+    await this.reconcile(identity, job);
     return this.response(job);
   }
   async publish(
@@ -433,34 +446,48 @@ export class ArchiveImportService {
     const initial = await this.job(identity, id);
     if (confirmation.datasetVersion !== initial.datasetVersion)
       throw new ConflictException('ARCHIVE_DATASET_VERSION_CHANGED');
-    if (initial.status === 'PUBLISHED') return this.status(identity, id);
+    const initialState = await this.reconcile(identity, initial);
     const dir = await this.directory(identity.actor.tenantId, id),
       claimPath = join(dir, 'publication-request.lock');
     let claim: Awaited<ReturnType<typeof open>>;
     try {
       claim = await open(claimPath, 'wx', 0o600);
-    } catch {
+    } catch (error) {
+      if (
+        initialState === 'PUBLISHED' &&
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ) {
+        // A completed worker may still own this claim while persisting its
+        // receipt. Return the canonical result without writing or enqueueing.
+        return this.response(initial);
+      }
       throw new ConflictException('ARCHIVE_IMPORT_BUSY');
     }
     let queued = false;
     let reserved = false;
     try {
       const job = await this.job(identity, id);
-      if (job.status !== 'READY' || !job.datasetId || this.active.has(id))
-        throw new ConflictException('ARCHIVE_IMPORT_NOT_READY');
-      if (this.active.size >= 4)
-        throw new HttpException('ARCHIVE_IMPORT_QUEUE_FULL', 429);
-      const load = await this.executor.status(identity.actor, job.datasetId);
-      if (load.status === 'PUBLISHED') {
-        job.status = 'PUBLISHED';
+      if (confirmation.datasetVersion !== job.datasetVersion)
+        throw new ConflictException('ARCHIVE_DATASET_VERSION_CHANGED');
+      const state = await this.reconcile(identity, job);
+      if (state === 'PUBLISHED') {
+        // Only the claim owner may repair a stale receipt. Never race the
+        // publishing worker's final save or change the canonical dataset.
         await this.save(job);
         return this.response(job);
       }
       if (
-        load.status !== 'READY' ||
-        load.datasetVersion !== confirmation.datasetVersion
+        job.status !== 'READY' ||
+        state !== 'READY' ||
+        !job.datasetId ||
+        this.active.has(id)
       )
-        throw new ConflictException('ARCHIVE_IMPORT_STATE_CHANGED');
+        throw new ConflictException('ARCHIVE_IMPORT_NOT_READY');
+      if (this.active.size >= 4)
+        throw new HttpException('ARCHIVE_IMPORT_QUEUE_FULL', 429);
       const currentLoadId = await this.executor.currentPublication(
         identity.actor,
       );
