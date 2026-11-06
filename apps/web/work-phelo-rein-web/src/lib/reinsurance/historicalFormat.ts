@@ -28,3 +28,8 @@ export function fmtSourceDate(value: string | null | undefined): string {
   if (!monthName) return value;
   return `${day} ${monthName} ${year}${suffix}`;
 }
+
+/** Thousands-grouped integer count. */
+export function fmtCount(value: number): string {
+  return Math.trunc(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
