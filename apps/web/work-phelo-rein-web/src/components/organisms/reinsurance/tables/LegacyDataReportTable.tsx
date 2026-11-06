@@ -2,12 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
-import { Badge } from '@/components/atoms/Badge';
 import { DatePicker } from '@/components/atoms/DatePicker';
 import { SearchSelect } from '@/components/atoms/SearchSelect';
+import { Button } from '@/components/atoms/Button';
+import { HistoricalImportModal } from '@/components/organisms/reinsurance/HistoricalImportModal';
+import { useHistoricalAccess } from '@/hooks/reinsurance/useHistoricalImport';
 import { usePermissionRule } from '@/hooks/hr/usePermission';
 import {
   HISTORICAL_STATEMENTS_EXPORT,
+  HistoricalInsurerRow,
+  HistoricalReinsurerRow,
   HistoricalStatementFilters,
   HistoricalStatementKind,
   HistoricalStatementListParams,
@@ -41,114 +45,95 @@ const Muted = () => <span className="text-gray-400">—</span>;
 const text = (value: string | null | undefined) => value || <Muted />;
 const money = (value: string | null | undefined) => (value == null ? <Muted /> : fmtDecimal(value));
 
-const WarningBadge = ({ row }: { row: Row }) =>
-  row.qualityWarnings.length ? (
-    <span title={row.qualityWarnings.map((w) => w.code).join(', ')}>
-      <Badge label={`${row.qualityWarnings.length}`} variant="warning" />
-    </span>
-  ) : (
-    <Muted />
-  );
+const col = (
+  key: string,
+  label: string,
+  render: (r: Row) => React.ReactNode,
+  width = '100px',
+  numeric = false,
+): ReportColumn => ({ key, label, width, className: numeric ? 'text-right' : undefined, render });
 
-const COMMON_HEAD: ReportColumn[] = [
-  { key: 'year', label: 'Year', width: '40px', render: (r) => r.year },
-  {
-    key: 'policyNumber',
-    label: 'Policy Number',
-    width: '130px',
-    render: (r) => <span className="font-medium text-gray-900">{text(r.policyNumber)}</span>,
-  },
+const dec = (key: string, label: string, get: (r: Row) => string | null | undefined, width = '100px') =>
+  col(key, label, (r) => money(get(r)), width, true);
+
+const policyCol = col(
+  'policyNumber',
+  'Policy Number',
+  (r) => <span className="font-medium text-gray-900">{text(r.policyNumber)}</span>,
+  '130px',
+);
+
+const sharedHead: ReportColumn[] = [
+  col('insured', 'Insured', (r) => text(r.insuredName), '120px'),
+  col('business', 'Business Name', (r) => text(r.businessName), '110px'),
+  col('offerDate', 'Offer Date', (r) => fmtSourceDate(r.offerDate), '80px'),
+  col('closedDate', 'Date Closed', (r) => fmtSourceDate(r.closedDate), '80px'),
+  col('startDate', 'Start Date', (r) => fmtSourceDate(r.startDate), '80px'),
+  col('endDate', 'End Date', (r) => fmtSourceDate(r.endDate), '80px'),
+  col('currency', 'Currency', (r) => text(r.currency), '50px'),
+  dec('sumInsured100', '100% Sum Insured', (r) => r.sumInsured100, '110px'),
+  dec('premium100', '100% Premium', (r) => r.premium100),
+  dec('facShare', 'Fac. Share', (r) => r.facShare, '70px'),
+  dec('facPremium', 'Fac. Premium', (r) => r.facPremium),
+  dec('paidFacPremium', 'Paid Fac. Premium', (r) => r.paidFacPremium, '110px'),
 ];
 
-const COMMON_TAIL: ReportColumn[] = [
-  { key: 'insured', label: 'Insured', width: '120px', render: (r) => text(r.insuredName) },
-  { key: 'business', label: 'Business Name', width: '110px', render: (r) => text(r.businessName) },
-  { key: 'offerDate', label: 'Offer Date', width: '80px', render: (r) => fmtSourceDate(r.offerDate) },
-  {
-    key: 'closedDate',
-    label: 'Date Closed',
-    width: '80px',
-    render: (r) => fmtSourceDate(r.closedDate),
-  },
-  { key: 'currency', label: 'Currency', width: '50px', render: (r) => text(r.currency) },
-  {
-    key: 'facPremium',
-    label: 'Fac. Premium',
-    width: '100px',
-    className: 'text-right',
-    render: (r) => money(r.facPremium),
-  },
-  {
-    key: 'paidFacPremium',
-    label: 'Paid Fac. Premium',
-    width: '110px',
-    className: 'text-right',
-    render: (r) => money(r.paidFacPremium),
-  },
-  {
-    key: 'brokerage',
-    label: 'Brokerage',
-    width: '90px',
-    className: 'text-right',
-    render: (r) => money(r.brokerage),
-  },
-  {
-    key: 'brokeragePaid',
-    label: 'Brokerage Paid',
-    width: '100px',
-    className: 'text-right',
-    render: (r) => money(r.brokeragePaid),
-  },
-  {
-    key: 'netDueReinsurer',
-    label: 'Net Premium Due Reinsurer',
-    width: '130px',
-    className: 'text-right',
-    render: (r) => money(r.netPremiumDueReinsurer),
-  },
-  {
-    key: 'netPaid',
-    label: 'Net Premium Paid',
-    width: '110px',
-    className: 'text-right',
-    render: (r) => money(r.netPremiumPaid),
-  },
-  { key: 'offerStatus', label: 'Offer Status', width: '80px', render: (r) => text(r.offerStatus) },
-  {
-    key: 'paymentStatus',
-    label: 'Payment Status',
-    width: '90px',
-    render: (r) => text(r.paymentStatus),
-  },
-  { key: 'warnings', label: 'Warnings', width: '50px', render: (r) => <WarningBadge row={r} /> },
+const sharedTail: ReportColumn[] = [
+  dec('brokerage', 'Brokerage', (r) => r.brokerage, '90px'),
+  dec('brokeragePaid', 'Brokerage Paid', (r) => r.brokeragePaid),
+  dec('wht', 'WHT', (r) => r.wht, '80px'),
 ];
+
+const nicAndNet: ReportColumn[] = [
+  dec('nicLevy', 'NIC Levy', (r) => r.nicLevy, '80px'),
+  dec('paidNic', 'Paid NIC', (r) => r.paidNic, '80px'),
+  dec('netDueReinsurer', 'Net Premium Due Reinsurer', (r) => r.netPremiumDueReinsurer, '130px'),
+  dec('netPaid', 'Net Premium Paid', (r) => r.netPremiumPaid, '110px'),
+  col('offerStatus', 'Offer Status', (r) => text(r.offerStatus), '80px'),
+  col('paymentStatus', 'Payment Status', (r) => text(r.paymentStatus), '90px'),
+];
+
+const insurerOnly = <T,>(r: Row, get: (x: HistoricalInsurerRow) => T): T | null =>
+  r.kind === 'INSURER' ? get(r) : null;
+const reinsurerOnly = <T,>(r: Row, get: (x: HistoricalReinsurerRow) => T): T | null =>
+  r.kind === 'REINSURER' ? get(r) : null;
 
 const COLUMNS_BY_KIND: Record<HistoricalStatementKind, ReportColumn[]> = {
   INSURER: [
-    ...COMMON_HEAD,
-    {
-      key: 'insurer',
-      label: 'Insurer',
-      width: '120px',
-      render: (r) => text(r.kind === 'INSURER' ? r.insurerName : null),
-    },
-    ...COMMON_TAIL,
+    policyCol,
+    col('insurer', 'Insurer', (r) => text(insurerOnly(r, (x) => x.insurerName)), '120px'),
+    ...sharedHead,
+    dec('commissionPct', "Insurer's Commission (%)", (r) => insurerOnly(r, (x) => x.insurerCommissionPercent), '110px'),
+    dec('paidCommission', 'Paid Commission', (r) => r.paidCommission),
+    dec('netDueBroker', 'Net Premium Due Broker', (r) => insurerOnly(r, (x) => x.netPremiumDueBroker), '130px'),
+    dec('netDueBrokerPaid', 'Net Premium Due Broker Paid', (r) => insurerOnly(r, (x) => x.netPremiumDueBrokerPaid), '140px'),
+    ...sharedTail,
+    dec('paidWht', 'Paid WHT', (r) => insurerOnly(r, (x) => x.paidWht), '80px'),
+    ...nicAndNet,
   ],
   REINSURER: [
-    ...COMMON_HEAD,
-    {
-      key: 'reinsurer',
-      label: 'Reinsurer',
-      width: '120px',
-      render: (r) => text(r.kind === 'REINSURER' ? r.reinsurerName : null),
-    },
-    {
-      key: 'reinsured',
-      label: 'Reinsured',
-      width: '120px',
-      render: (r) => text(r.kind === 'REINSURER' ? r.reinsuredName : null),
-    },
-    ...COMMON_TAIL,
+    policyCol,
+    col('reinsurer', 'Reinsurer', (r) => text(reinsurerOnly(r, (x) => x.reinsurerName)), '120px'),
+    col('insured', 'Insured', (r) => text(r.insuredName), '120px'),
+    col('business', 'Business Name', (r) => text(r.businessName), '110px'),
+    col('reinsured', 'Reinsured', (r) => text(reinsurerOnly(r, (x) => x.reinsuredName)), '120px'),
+    col('offerDate', 'Offer Date', (r) => fmtSourceDate(r.offerDate), '80px'),
+    col('closedDate', 'Date Closed', (r) => fmtSourceDate(r.closedDate), '80px'),
+    col('startDate', 'Start Date', (r) => fmtSourceDate(r.startDate), '80px'),
+    col('endDate', 'End Date', (r) => fmtSourceDate(r.endDate), '80px'),
+    col('currency', 'Currency', (r) => text(r.currency), '50px'),
+    dec('sumInsured100', '100% Sum Insured', (r) => r.sumInsured100, '110px'),
+    dec('premium100', '100% Premium', (r) => r.premium100),
+    dec('facShare', 'Fac. Share', (r) => r.facShare, '70px'),
+    dec('facSumInsured', 'Fac. Sum Insured', (r) => r.facSumInsured, '110px'),
+    dec('facPremium', 'Fac. Premium', (r) => r.facPremium),
+    dec('paidFacPremium', 'Paid Fac. Premium', (r) => r.paidFacPremium, '110px'),
+    dec('commissionAmt', 'Insurer Commission', (r) => reinsurerOnly(r, (x) => x.insurerCommissionAmount), '110px'),
+    dec('paidCommission', 'Paid Commission', (r) => r.paidCommission),
+    ...sharedTail,
+    dec('paidWhtFirst', 'Paid WHT (1)', (r) => reinsurerOnly(r, (x) => x.paidWhtFirst), '90px'),
+    dec('paidWhtSecond', 'Paid WHT (2)', (r) => reinsurerOnly(r, (x) => x.paidWhtSecond), '90px'),
+    ...nicAndNet,
   ],
 };
 
@@ -156,6 +141,8 @@ type StagedFilters = Omit<HistoricalStatementFilters, 'datasetId'>;
 
 export function LegacyDataReportTable() {
   const canExport = usePermissionRule(HISTORICAL_STATEMENTS_EXPORT);
+  const canImport = useHistoricalAccess().data?.canImport === true;
+  const [importOpen, setImportOpen] = useState(false);
 
   const [selectedDatasetId, setSelectedDatasetId] = useState('');
   const [kind, setKind] = useState<HistoricalStatementKind>('INSURER');
@@ -283,7 +270,16 @@ export function LegacyDataReportTable() {
               ? [{ label: 'Excel', onClick: handleExport }]
               : undefined
           }
-          toolbarTrailing={rowsPerPageControl}
+          toolbarTrailing={
+            <>
+              {canImport && (
+                <Button size="sm" variant="outline" onClick={() => setImportOpen(true)}>
+                  Import
+                </Button>
+              )}
+              {rowsPerPageControl}
+            </>
+          }
           extraFilters={
             <div className="flex w-full items-center gap-2 flex-wrap">
               <div className="w-52">
@@ -367,6 +363,14 @@ export function LegacyDataReportTable() {
           noInternalScroll
         />
       </div>
+
+      {canImport && (
+        <HistoricalImportModal
+          isOpen={importOpen}
+          onClose={() => setImportOpen(false)}
+          onPublished={(id) => handleDatasetChange(id)}
+        />
+      )}
 
       <HistoricalStatementDetailModal
         row={selected}
