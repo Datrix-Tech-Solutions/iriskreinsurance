@@ -284,7 +284,8 @@ export const RESOURCES = [
   {
     name: 'operations.reinsurance.historical-statements',
     module: 'OPERATIONS',
-    description: 'Read and export historical reinsurance statements',
+    description:
+      'Read, export and administratively import historical reinsurance statements',
   },
   {
     name: 'operations.reinsurance.reports',

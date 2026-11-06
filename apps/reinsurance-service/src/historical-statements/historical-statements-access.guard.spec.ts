@@ -45,6 +45,26 @@ describe('HistoricalStatementsAccessGuard', () => {
     getAccess.mockReset().mockResolvedValue(decision);
   });
 
+  it('requires fresh IMPORT permission and an administrator for upload/status/publication', async () => {
+    getAccess.mockResolvedValue({ ...decision, canImport: true });
+    await expect(guard.canActivate(context([Permission.IMPORT]))).resolves.toBe(
+      true,
+    );
+    getAccess.mockResolvedValue({ ...decision, canImport: false });
+    await expect(
+      guard.canActivate(context([Permission.IMPORT])),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    getAccess.mockResolvedValue({ ...decision, canImport: true });
+    await expect(
+      guard.canActivate(
+        context([Permission.IMPORT], {
+          user: { id: 'user-1', tenantId: 'tenant-1', role: 'EMPLOYEE' },
+          headers: { authorization: 'Bearer token' },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('forwards the original cookie selected by the JWT guard and ignores tenant headers', async () => {
     await expect(guard.canActivate(context())).resolves.toBe(true);
     expect(getAccess).toHaveBeenCalledWith('original-cookie-jwt');

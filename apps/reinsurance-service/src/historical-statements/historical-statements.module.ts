@@ -1,3 +1,9 @@
+import {
+  ArchiveImportController,
+  ArchiveIncomingCleanupInterceptor,
+} from './imports/archive-import.controller';
+import { ArchiveImportService } from './imports/archive-import.service';
+import { ArchiveImportExecutor } from './imports/archive-import.executor';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -10,8 +16,11 @@ import { HistoricalStatementsController } from './historical-statements.controll
 
 @Module({
   imports: [AuthModule, ConfigModule, PrismaModule],
-  controllers: [HistoricalStatementsController],
+  controllers: [HistoricalStatementsController, ArchiveImportController],
   providers: [
+    ArchiveImportService,
+    ArchiveImportExecutor,
+    ArchiveIncomingCleanupInterceptor,
     HistoricalStatementsRepository,
     HistoricalStatementsService,
     HistoricalStatementsAccessClient,

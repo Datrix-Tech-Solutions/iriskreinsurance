@@ -20,7 +20,10 @@ import {
   Plan,
 } from './lifecycle';
 import { sha, ValidatedDataset, SHEET } from './source-contract';
-import { syntheticDataset } from './test-fixtures';
+import { syntheticDataset, workbook } from './test-fixtures';
+import { ConfigService } from '@nestjs/config';
+import { ArchiveImportExecutor } from '../imports/archive-import.executor';
+import { bytesSha, CONTRACT } from './source-contract';
 import { validateDataset } from './dataset';
 
 const url = process.env.ARCHIVE_LOADER_TEST_DATABASE_URL;
@@ -541,4 +544,176 @@ suite('Archive loader disposable database lifecycle', () => {
     },
     180000,
   );
+  it('stages and atomically publishes uploaded synthetic workbooks through restricted executor roles', async () => {
+    // Proposed Auth permission migration is additive, exercised only here.
+    await admin.query(
+      `CREATE TYPE w_auth."PermissionAction" AS ENUM ('VIEW','CREATE','EDIT','DELETE','APPROVE','RUN','EXPORT','ASSIGN')`,
+    );
+    await admin.query(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../../auth-service/prisma/migrations/20261106160000_add_historical_statement_import_permission/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
+    const enumValues = await admin.query<{ action: string }>(
+      `SELECT unnest(enum_range(NULL::w_auth."PermissionAction"))::text AS action`,
+    );
+    expect(enumValues.rows.map((row) => row.action)).toContain('IMPORT');
+    const root = await mkdtemp(join(tmpdir(), 'archive-api-db-'));
+    const files = [];
+    for (let year = 2021; year <= 2025; year++)
+      for (const kind of ['INSURER', 'REINSURER'] as const) {
+        const bytes = workbook(kind, `api-${kind}-${year}`),
+          path = `${kind}-${year}.xlsx`;
+        await writeFile(join(root, path), bytes);
+        files.push({ path, kind, year, sha256: bytesSha(bytes) });
+      }
+    await writeFile(
+      join(root, 'manifest.json'),
+      JSON.stringify({
+        contractVersion: CONTRACT,
+        datasetKey: 'historical-statements-2021-2025',
+        datasetVersion: 'synthetic-api-v1',
+        tenantId: actor.tenantId,
+        allUnlinked: true,
+        files,
+      }),
+    );
+    const data = await validateDataset({
+      sourceRoot: root,
+      manifestFile: join(root, 'manifest.json'),
+      sourceProfile: 'uploaded',
+    });
+    expect(data.discrepancies).toEqual([]);
+    const identityPath = join(root, 'identity.json');
+    await writeFile(
+      identityPath,
+      JSON.stringify({ ...identity, purpose: 'ARCHIVE' }),
+    );
+    const settings: Record<string, string> = {
+      ARCHIVE_DATABASE_IDENTITY_FILE: identityPath,
+      ARCHIVE_READ_DATABASE_URL: `postgresql://${identity.readRole}:synthetic_archive_only@${identity.host}:${identity.port}/${identity.database}`,
+      ARCHIVE_WRITE_DATABASE_URL: `postgresql://${identity.role}:synthetic_archive_only@${identity.host}:${identity.port}/${identity.database}`,
+    };
+    const executor = new ArchiveImportExecutor(new ConfigService(settings));
+    const currentActor = {
+      tenantId: actor.tenantId,
+      tenantSlug: actor.tenantSlug,
+      userId: actor.userId,
+    };
+    await admin.query(
+      `UPDATE w_auth."Tenant" SET "historicalStatementsEnabled"=true WHERE id=$1`,
+      [actor.tenantId],
+    );
+    try {
+      await executor.preflight(currentActor);
+      expect(await executor.existingVersion(data, currentActor)).toBeNull();
+      const operationalBefore = await admin.query(
+        `SELECT (SELECT count(*) FROM reinsurance."Placement")::int AS placements,(SELECT count(*) FROM reinsurance."PlacementPayment")::int AS payments`,
+      );
+      const stagePlan = await executor.plan(data, currentActor, true);
+      const staged = await executor.execute(
+        data,
+        stagePlan,
+        'Synthetic upload: staging only',
+      );
+      expect(staged.outcome).toBe('READY_UNPUBLISHED');
+      expect(await executor.existingVersion(data, currentActor)).toBe(
+        'synthetic-api-v1',
+      );
+      expect((await executor.status(currentActor, staged.loadId)).status).toBe(
+        'READY',
+      );
+      expect(await executor.currentPublication(currentActor)).toBeNull();
+      const publishPlan = await executor.plan(data, currentActor, false);
+      await executor.execute(
+        data,
+        publishPlan,
+        'Synthetic explicit all-unlinked approval',
+      );
+      expect((await executor.status(currentActor, staged.loadId)).status).toBe(
+        'PUBLISHED',
+      );
+      const rows = await admin.query(
+        `SELECT (SELECT count(*) FROM reinsurance.historical_insurer_statement WHERE "loadId"=$1)::int AS insurers,(SELECT count(*) FROM reinsurance.historical_reinsurer_statement WHERE "loadId"=$1)::int AS reinsurers`,
+        [staged.loadId],
+      );
+      expect(rows.rows[0]).toEqual({ insurers: 10, reinsurers: 10 });
+      const replacementRoot = join(root, 'replacement');
+      await import('node:fs/promises').then((fs) => fs.mkdir(replacementRoot));
+      const replacementFiles = [];
+      for (const file of files) {
+        const bytes = workbook(
+          file.kind,
+          `replacement-${file.kind}-${file.year}`,
+        );
+        await writeFile(join(replacementRoot, file.path), bytes);
+        replacementFiles.push({ ...file, sha256: bytesSha(bytes) });
+      }
+      await writeFile(
+        join(replacementRoot, 'manifest.json'),
+        JSON.stringify({
+          ...data.manifest,
+          datasetVersion: 'synthetic-api-v2',
+          files: replacementFiles,
+        }),
+      );
+      const replacementData = await validateDataset({
+        sourceRoot: replacementRoot,
+        manifestFile: join(replacementRoot, 'manifest.json'),
+        sourceProfile: 'uploaded',
+      });
+      const replacementStage = await executor.plan(
+        replacementData,
+        currentActor,
+        true,
+      );
+      const replacement = await executor.execute(
+        replacementData,
+        replacementStage,
+        'Synthetic replacement staging only',
+      );
+      expect((await executor.status(currentActor, staged.loadId)).status).toBe(
+        'PUBLISHED',
+      );
+      expect(
+        (await executor.status(currentActor, replacement.loadId)).status,
+      ).toBe('READY');
+      await expect(
+        executor.execute(
+          replacementData,
+          await executor.plan(replacementData, currentActor, false),
+          'Unconfirmed replacement',
+        ),
+      ).rejects.toThrow('ARCHIVE_EXPLICIT_REPLACEMENT_REQUIRED');
+      const repeat = await executor.plan(data, currentActor, false);
+      expect(
+        (await executor.execute(data, repeat, 'Synthetic retry')).outcome,
+      ).toBe('IDEMPOTENT_SKIP');
+      expect(
+        await admin
+          .query<{
+            placements: number;
+            payments: number;
+          }>(
+            `SELECT (SELECT count(*) FROM reinsurance."Placement")::int AS placements,(SELECT count(*) FROM reinsurance."PlacementPayment")::int AS payments`,
+          )
+          .then((r) => r.rows),
+      ).toEqual(operationalBefore.rows);
+      await expect(
+        executor.status(
+          { ...currentActor, tenantId: 'other-tenant' },
+          staged.loadId,
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await admin.query(
+        `UPDATE w_auth."Tenant" SET "historicalStatementsEnabled"=false WHERE id=$1`,
+        [actor.tenantId],
+      );
+    }
+  }, 60000);
 });

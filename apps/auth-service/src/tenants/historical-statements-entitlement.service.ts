@@ -75,6 +75,8 @@ export class HistoricalStatementsEntitlementService {
         enabled,
         canView,
         canExport: canView && (admin || grants.includes(`${RESOURCE}:EXPORT`)),
+        // Administrative import cannot be delegated to a non-administrator.
+        canImport: enabled && admin,
       };
     });
   }

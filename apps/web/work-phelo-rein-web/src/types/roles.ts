@@ -7,6 +7,7 @@ export type PermissionAction =
   | 'APPROVE'
   | 'RUN'
   | 'EXPORT'
+  | 'IMPORT'
   | 'ASSIGN';
 
 // ── Resource ──────────────────────────────────────────────

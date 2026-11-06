@@ -14,6 +14,7 @@ export interface HistoricalStatementsAccess {
   enabled: boolean;
   canView: boolean;
   canExport: boolean;
+  canImport?: boolean;
 }
 
 export const HISTORICAL_ACCESS_TIMEOUT_MS = 2000;
@@ -32,7 +33,8 @@ function isAccess(value: unknown): value is HistoricalStatementsAccess {
     record.userId.length > 0 &&
     typeof record.enabled === 'boolean' &&
     typeof record.canView === 'boolean' &&
-    typeof record.canExport === 'boolean'
+    typeof record.canExport === 'boolean' &&
+    (record.canImport === undefined || typeof record.canImport === 'boolean')
   );
 }
 

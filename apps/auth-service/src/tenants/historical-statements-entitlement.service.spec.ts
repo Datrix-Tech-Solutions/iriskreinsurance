@@ -126,6 +126,7 @@ describe('HistoricalStatementsEntitlementService', () => {
       enabled: true,
       canView: false,
       canExport: false,
+      canImport: false,
     });
     expect(permissions.getHistoricalStatementsPermissions).toHaveBeenCalledWith(
       'tenant',
@@ -152,6 +153,24 @@ describe('HistoricalStatementsEntitlementService', () => {
     await expect(service.getAccess(identity)).resolves.toMatchObject({
       canView,
       canExport,
+    });
+  });
+
+  it('does not let an IMPORT grant or stale admin claim authorize a non-administrator', async () => {
+    user.role = 'EMPLOYEE';
+    permissions.getHistoricalStatementsPermissions.mockResolvedValue({
+      effectivePermissions: [`${resource}:IMPORT`],
+    });
+    await expect(service.getAccess(identity)).resolves.toMatchObject({
+      canImport: false,
+    });
+    user.role = 'TENANT_ADMIN';
+    await expect(service.getAccess(identity)).resolves.toMatchObject({
+      canImport: true,
+    });
+    user.tenant.historicalStatementsEnabled = false;
+    await expect(service.getAccess(identity)).resolves.toMatchObject({
+      canImport: false,
     });
   });
 

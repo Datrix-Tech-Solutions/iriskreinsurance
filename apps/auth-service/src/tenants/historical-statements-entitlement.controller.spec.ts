@@ -137,6 +137,7 @@ describe('Historical statements entitlement HTTP contract', () => {
       enabled: false,
       canView: false,
       canExport: false,
+      canImport: false,
     });
     expect(result.headers['cache-control']).toBe('private,no-store');
     expect(result.headers.vary).toBe('Cookie,Authorization');

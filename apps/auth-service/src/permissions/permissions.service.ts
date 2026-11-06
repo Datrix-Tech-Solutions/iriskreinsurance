@@ -1016,7 +1016,9 @@ export class PermissionsService {
         (grant) =>
           grant.resource.name === resourceName &&
           grant.resource.isActive === true &&
-          (grant.action === 'VIEW' || grant.action === 'EXPORT'),
+          (grant.action === 'VIEW' ||
+            grant.action === 'EXPORT' ||
+            grant.action === 'IMPORT'),
       )
       .map((grant) => `${resourceName}:${grant.action}`);
     return { effectivePermissions: [...new Set(effectivePermissions)].sort() };
