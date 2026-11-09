@@ -13,6 +13,12 @@ export interface ModuleOption {
   description: string;
   enabled?: boolean;
   icon?: React.ReactNode;
+  /**
+   * Feature backed by its own endpoint rather than featureConfig. Toggling calls
+   * onToggle immediately; it is excluded from the "at least one feature" check
+   * and from the saved feature set.
+   */
+  external?: { onToggle: (enabled: boolean) => void; pending?: boolean };
 }
 
 export interface Module {
@@ -114,7 +120,7 @@ export function ModuleConfiguration({
     const errors: Record<string, string> = {};
     modules.forEach((m) => {
       if (m.enabled && m.options && m.options.length > 0) {
-        const hasEnabled = m.options.some((o) => o.enabled);
+        const hasEnabled = m.options.some((o) => !o.external && o.enabled);
         if (!hasEnabled) {
           errors[m.id] = `${m.name} is enabled but has no features selected.`;
         }
@@ -215,7 +221,13 @@ export function ModuleConfiguration({
                     </div>
                     <Toggle
                       enabled={opt.enabled ?? false}
-                      onChange={(v) => handleOptionToggle(liveModule.id, opt.key, v)}
+                      onChange={(v) => {
+                        if (opt.external) {
+                          if (!opt.external.pending) opt.external.onToggle(v);
+                          return;
+                        }
+                        handleOptionToggle(liveModule.id, opt.key, v);
+                      }}
                     />
                   </div>
                 ))}
