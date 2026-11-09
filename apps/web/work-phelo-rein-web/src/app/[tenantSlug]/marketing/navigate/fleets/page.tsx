@@ -44,7 +44,7 @@ export default function FleetsPage() {
         isOpen={panelOpen}
         onClose={() => setPanelOpen(false)}
         onSubmit={(data) => {
-          console.log('Add fleet:', data);
+          console.log('Add fleet', data);
           setPanelOpen(false);
         }}
       />
