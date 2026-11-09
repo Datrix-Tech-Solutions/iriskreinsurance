@@ -72,3 +72,27 @@ export function useUpdateReinsuranceAccountingTenantIntegration(tenantId: string
     },
   });
 }
+
+/** Platform entitlement for historical statement import (super admin only; audited server-side). */
+export function useUpdateHistoricalStatementsEntitlement(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      api
+        .patch<{ tenantId: string; enabled: boolean }>(
+          `/auth/tenants/${tenantId}/historical-statements-entitlement`,
+          {
+            enabled,
+            reason: enabled
+              ? 'Enabled from tenant Module Configuration'
+              : 'Disabled from tenant Module Configuration',
+          },
+        )
+        .then((r) => r.data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tenant', tenantId] });
+      qc.invalidateQueries({ queryKey: ['tenants'] });
+      qc.invalidateQueries({ queryKey: ['auth', 'historical-statements-access'] });
+    },
+  });
+}

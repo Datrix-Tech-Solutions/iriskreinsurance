@@ -12,7 +12,11 @@ import {
 } from '@/hooks/useTenants';
 import { useToast } from '@/hooks/useToast';
 import { useQueryClient } from '@tanstack/react-query';
-import { useUpdateModules, useUpdateFeatures } from '@/hooks/useModuleConfig';
+import {
+  useUpdateModules,
+  useUpdateFeatures,
+  useUpdateHistoricalStatementsEntitlement,
+} from '@/hooks/useModuleConfig';
 import Link from 'next/link';
 import { CompanyHeader } from '@/components/organisms/shared/CompanyHeader';
 import { CompanyInfoCard } from '@/components/organisms/shared/CompanyInfoCard';
@@ -39,6 +43,7 @@ export default function CompanyDetailPage({ params }: { params: Promise<{ id: st
   const queryClient = useQueryClient();
   const updateModules = useUpdateModules(id);
   const updateFeatures = useUpdateFeatures(id);
+  const updateHistorical = useUpdateHistoricalStatementsEntitlement(id);
   const { mutate: resendInvite, isPending: isResendingInvite } = useResendInvite();
   const toast = useToast();
 
@@ -64,13 +69,42 @@ export default function CompanyDetailPage({ params }: { params: Promise<{ id: st
       DEFAULT_MODULES.map((m) => ({
         ...m,
         enabled: moduleConfig[m.key] ?? false,
-        options: m.options?.map((o) => ({
-          ...o,
-          enabled: featureConfig[m.key]?.[o.key] ?? false,
-        })),
+        options: [
+          ...(m.options ?? []).map((o) => ({
+            ...o,
+            enabled: featureConfig[m.key]?.[o.key] ?? false,
+          })),
+          ...(m.key === 'operations'
+            ? [
+                {
+                  key: 'historicalStatementsImport',
+                  label: 'Historical Statements Import',
+                  description:
+                    'Allow tenant admins to upload legacy statements. Requires Reinsurance Operations.',
+                  enabled: tenant?.historicalStatementsEnabled === true,
+                  external: {
+                    pending: updateHistorical.isPending,
+                    onToggle: (enabled: boolean) =>
+                      updateHistorical.mutate(enabled, {
+                        onSuccess: () =>
+                          toast.success(
+                            `Historical statements import ${enabled ? 'enabled' : 'disabled'}`,
+                          ),
+                        onError: () => toast.error('Failed to update historical statements import'),
+                      }),
+                  },
+                },
+              ]
+            : []),
+        ],
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [JSON.stringify(moduleConfig), JSON.stringify(featureConfig)],
+    [
+      JSON.stringify(moduleConfig),
+      JSON.stringify(featureConfig),
+      tenant?.historicalStatementsEnabled,
+      updateHistorical.isPending,
+    ],
   );
 
   const auditLogs = auditData?.logs ?? [];
@@ -182,10 +216,12 @@ export default function CompanyDetailPage({ params }: { params: Promise<{ id: st
               updatedModules.forEach((m) => {
                 if (m.options && m.enabled) {
                   const features = Object.fromEntries(
-                    m.options.map((o) => [
-                      o.key,
-                      (o as { key: string; enabled?: boolean }).enabled ?? false,
-                    ]),
+                    m.options
+                      .filter((o) => !o.external)
+                      .map((o) => [
+                        o.key,
+                        (o as { key: string; enabled?: boolean }).enabled ?? false,
+                      ]),
                   );
                   updateFeatures.mutate({ module: m.key, features });
                 }
