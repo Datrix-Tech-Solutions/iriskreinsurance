@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
@@ -474,12 +475,10 @@ export function FacultativeReportTable() {
     setPage(1);
   };
 
-  const { rows, summary, currencyTotals, isLoading, meta } = useFacultativeReport(
-    reportParams ?? {},
-    {
+  const { rows, summary, currencyTotals, isLoading, isError, error, refetch, meta } =
+    useFacultativeReport(reportParams ?? {}, {
       enabled: reportParams !== null,
-    },
-  );
+    });
 
   const handleRunFilter = () => {
     setReportParams({
@@ -554,8 +553,10 @@ export function FacultativeReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
-      {reportParams && <FacultativeKpiCards summary={summary} isLoading={isLoading} />}
-      {reportParams && <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />}
+      {reportParams && !isError && <FacultativeKpiCards summary={summary} isLoading={isLoading} />}
+      {reportParams && !isError && (
+        <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />
+      )}
 
       <div className="flex-1 min-h-0">
         <DataTable
@@ -564,11 +565,16 @@ export function FacultativeReportTable() {
           headerClassName="text-[8px]"
           rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
+          errorContent={
+            reportParams && isError ? (
+              <ReportQueryError error={error} onRetry={() => void refetch()} />
+            ) : undefined
+          }
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.placementId}`)
           }
           exportOptions={
-            reportParams && displayRows.length > 0
+            reportParams && !isError && displayRows.length > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -707,7 +713,7 @@ export function FacultativeReportTable() {
               : 'Select a date field, date range, and click Run Filter to generate the report'
           }
           currentPage={page}
-          totalPages={Math.max(meta.totalPages, 1)}
+          totalPages={isError ? 0 : Math.max(meta.totalPages, 1)}
           onPageChange={handlePageChange}
           noInternalScroll
         />

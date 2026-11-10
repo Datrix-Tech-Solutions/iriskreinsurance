@@ -57,6 +57,41 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  reports-postgres:
+    name: Reinsurers Report PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: reports_test
+          POSTGRES_PASSWORD: reports_test
+          POSTGRES_DB: irisk_reports_test_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reports_test -d irisk_reports_test_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Execute real PostgreSQL report queries
+        run: npm run test:unit --workspace=apps/reinsurance-service -- --runInBand --runTestsByPath src/placements/reports/reinsurers-report.database.spec.ts
+        env:
+          REPORTS_TEST_DATABASE_URL: postgresql://reports_test:reports_test@127.0.0.1:5432/irisk_reports_test_ci
+
   web:
     name: Web Lint & Build
     runs-on: ubuntu-latest
@@ -79,6 +114,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Report error regressions
+        run: npm test -- --runInBand
 
       - name: Build
         run: npm run build

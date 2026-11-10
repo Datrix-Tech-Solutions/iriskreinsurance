@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { FacultativeStatus } from '@/types/reinsurance';
@@ -125,7 +125,7 @@ export const cedantsReportKey = (params: CedantsReportParams = {}) =>
 export function useCedantsReport(
   params: CedantsReportParams,
   options: { enabled?: boolean } = {},
-): {
+): Pick<UseQueryResult<CedantsReportResponse>, 'isError' | 'error' | 'refetch'> & {
   rows: CedantReportRow[];
   summary: CedantsReportSummary;
   meta: CedantsReportMeta;
@@ -162,6 +162,9 @@ export function useCedantsReport(
     },
     currencyTotals: toCurrencyTotals(summary),
     isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
   };
 }
 

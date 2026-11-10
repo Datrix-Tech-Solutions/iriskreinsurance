@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
@@ -403,9 +404,12 @@ export function PremiumsReportTable() {
     setPage(1);
   };
 
-  const { rows, summary, isLoading, meta } = usePremiumsReport(reportParams ?? {}, {
-    enabled: reportParams !== null,
-  });
+  const { rows, summary, isLoading, isError, error, refetch, meta } = usePremiumsReport(
+    reportParams ?? {},
+    {
+      enabled: reportParams !== null,
+    },
+  );
 
   const handleRunFilter = () => {
     const nextPage = 1;
@@ -499,8 +503,10 @@ export function PremiumsReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
-      {reportParams && <PremiumsKpiCards summary={summary} isLoading={isLoading} />}
-      {reportParams && <PremiumsCurrencySummaryCards summary={summary} isLoading={isLoading} />}
+      {reportParams && !isError && <PremiumsKpiCards summary={summary} isLoading={isLoading} />}
+      {reportParams && !isError && (
+        <PremiumsCurrencySummaryCards summary={summary} isLoading={isLoading} />
+      )}
 
       <div className="flex-1 min-h-0">
         <DataTable
@@ -509,11 +515,16 @@ export function PremiumsReportTable() {
           headerClassName="text-[8px]"
           rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
+          errorContent={
+            reportParams && isError ? (
+              <ReportQueryError error={error} onRetry={() => void refetch()} />
+            ) : undefined
+          }
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
           exportOptions={
-            reportParams && displayRows.length > 0
+            reportParams && !isError && displayRows.length > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -654,7 +665,7 @@ export function PremiumsReportTable() {
               : 'Select a period and click Run Filter to generate the report'
           }
           currentPage={page}
-          totalPages={Math.max(1, meta.totalPages)}
+          totalPages={isError ? 0 : Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}
           noInternalScroll
         />
