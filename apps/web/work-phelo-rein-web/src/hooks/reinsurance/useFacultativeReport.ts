@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { FacultativeStatus } from '@/types/reinsurance';
@@ -190,7 +190,7 @@ export const facultativeReportKey = (params: FacultativeReportParams = {}) =>
 export function useFacultativeReport(
   params: FacultativeReportParams,
   options: { enabled?: boolean } = {},
-): {
+): Pick<UseQueryResult<FacultativeReportResponse>, 'isError' | 'error' | 'refetch'> & {
   rows: FacultativeReportRow[];
   summary: FacultativeReportSummary;
   meta: FacultativeReportMeta;
@@ -233,6 +233,9 @@ export function useFacultativeReport(
     },
     currencyTotals: toCurrencyTotals(summary),
     isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
   };
 }
 

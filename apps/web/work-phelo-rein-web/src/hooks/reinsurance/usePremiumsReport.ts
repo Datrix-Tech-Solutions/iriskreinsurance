@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 
@@ -203,7 +203,7 @@ function normalizeSummary(summary: PremiumsReportResponse['summary']): PremiumsR
 export function usePremiumsReport(
   params: PremiumsReportParams,
   options: { enabled?: boolean } = {},
-): {
+): Pick<UseQueryResult<PremiumsReportResponse>, 'isError' | 'error' | 'refetch'> & {
   rows: PremiumReportRow[];
   summary: PremiumsReportSummary;
   meta: PremiumsReportMeta;
@@ -243,6 +243,9 @@ export function usePremiumsReport(
       totalPages: 0,
     },
     isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
   };
 }
 

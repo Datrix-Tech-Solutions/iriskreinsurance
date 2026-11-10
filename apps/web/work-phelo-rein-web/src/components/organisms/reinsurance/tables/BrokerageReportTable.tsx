@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
@@ -259,9 +260,12 @@ export function BrokerageReportTable() {
     setPage(1);
   };
 
-  const { rows, summary, meta, isLoading } = useBrokerageReport(reportParams ?? {}, {
-    enabled: reportParams !== null,
-  });
+  const { rows, summary, meta, isLoading, isError, error, refetch } = useBrokerageReport(
+    reportParams ?? {},
+    {
+      enabled: reportParams !== null,
+    },
+  );
 
   const handleRunFilter = () => {
     const nextPage = 1;
@@ -331,8 +335,8 @@ export function BrokerageReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
-      {reportParams && <BrokerageKpiCards summary={summary} isLoading={isLoading} />}
-      {reportParams && (
+      {reportParams && !isError && <BrokerageKpiCards summary={summary} isLoading={isLoading} />}
+      {reportParams && !isError && (
         <BrokerageCurrencySummaryCards
           summary={summary}
           scope={reportParams.scope ?? 'reinsurer'}
@@ -347,11 +351,16 @@ export function BrokerageReportTable() {
           headerClassName="text-[8px]"
           rowClassName="text-[10px]"
           isLoading={reportParams !== null && isLoading}
+          errorContent={
+            reportParams && isError ? (
+              <ReportQueryError error={error} onRetry={() => void refetch()} />
+            ) : undefined
+          }
           onRowClick={(row) =>
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
           exportOptions={
-            reportParams && rows.length > 0
+            reportParams && !isError && rows.length > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -475,7 +484,7 @@ export function BrokerageReportTable() {
           }
           rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
           currentPage={page}
-          totalPages={meta.totalPages}
+          totalPages={isError ? 0 : meta.totalPages}
           onPageChange={handlePageChange}
           noInternalScroll
         />

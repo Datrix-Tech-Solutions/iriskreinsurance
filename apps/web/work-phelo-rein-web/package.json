@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "jest --config jest.config.cjs"
   },
   "dependencies": {
     "@azure/msal-browser": "^5.17.3",
@@ -41,13 +42,16 @@
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.15.9",
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^29.5.12",
     "@types/js-cookie": "^3.0.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "^16.2.5",
+    "jest": "^29.7.0",
     "tailwindcss": "^4",
+    "ts-jest": "^29.2.0",
     "typescript": "^5"
   }
 }

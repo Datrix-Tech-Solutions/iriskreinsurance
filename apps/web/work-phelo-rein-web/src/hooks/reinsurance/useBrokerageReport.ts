@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { PremiumReportDateBasis, PremiumsReportParams } from './usePremiumsReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
@@ -125,7 +125,7 @@ const emptySummary: BrokerageReportSummary = {
 export function useBrokerageReport(
   params: BrokerageReportParams,
   options: { enabled?: boolean } = {},
-): {
+): Pick<UseQueryResult<BrokerageReportResponse>, 'isError' | 'error' | 'refetch'> & {
   rows: BrokerageReportRow[];
   summary: BrokerageReportSummary;
   meta: BrokerageReportMeta;
@@ -156,6 +156,9 @@ export function useBrokerageReport(
       totalPages: 0,
     },
     isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
   };
 }
 

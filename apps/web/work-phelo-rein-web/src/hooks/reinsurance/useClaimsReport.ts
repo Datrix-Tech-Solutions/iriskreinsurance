@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ClaimState } from '@/types/reinsurance';
 
@@ -170,7 +170,7 @@ const emptySummary: ClaimsReportSummary = {
 export function useClaimsReport(
   params: ClaimsReportParams,
   options: { enabled?: boolean } = {},
-): {
+): Pick<UseQueryResult<ClaimsReportResponse>, 'isError' | 'error' | 'refetch'> & {
   rows: ClaimReportRow[];
   summary: ClaimsReportSummary;
   meta: ClaimsReportMeta;
@@ -201,6 +201,9 @@ export function useClaimsReport(
       totalPages: 0,
     },
     isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
   };
 }
 

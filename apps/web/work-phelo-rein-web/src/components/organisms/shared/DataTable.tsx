@@ -29,6 +29,8 @@ interface DataTableProps<T extends { id: string | number }> {
   columns: Column<T>[];
   data: T[];
   isLoading?: boolean;
+  /** Replaces report rows/empty state on failure while keeping toolbar controls available. */
+  errorContent?: React.ReactNode;
   emptyMessage?: string;
   emptyImage?: React.ReactNode;
   searchPlaceholder?: string;
@@ -196,6 +198,7 @@ export function DataTable<T extends { id: string | number }>({
   columns,
   data,
   isLoading,
+  errorContent,
   emptyMessage = 'No items found',
   emptyImage,
   searchPlaceholder = 'Search...',
@@ -414,7 +417,9 @@ export function DataTable<T extends { id: string | number }>({
             <div
               className={noInternalScroll ? '' : 'flex-1 min-h-0 overflow-y-auto overflow-x-hidden'}
             >
-              {isLoading ? (
+              {errorContent ? (
+                errorContent
+              ) : isLoading ? (
                 <div className="h-full flex items-center justify-center">
                   <div className="flex flex-col items-center gap-4">
                     <div className="relative w-8 h-8">

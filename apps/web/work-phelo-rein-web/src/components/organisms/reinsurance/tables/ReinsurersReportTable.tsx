@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
@@ -79,9 +80,12 @@ export function ReinsurersReportTable() {
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
   const { data: currencyOptions = [] } = useCurrencyOptions();
 
-  const { rows, currencyTotals, isLoading, meta } = useReinsurersReport(reportParams ?? {}, {
-    enabled: reportParams !== null,
-  });
+  const { rows, currencyTotals, isLoading, isError, error, refetch, meta } = useReinsurersReport(
+    reportParams ?? {},
+    {
+      enabled: reportParams !== null,
+    },
+  );
 
   const handleRunFilter = () => {
     const nextPage = 1;
@@ -183,7 +187,9 @@ export function ReinsurersReportTable() {
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
-      {reportParams && <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />}
+      {reportParams && !isError && (
+        <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />
+      )}
 
       <div className="flex-1 min-h-0">
         <DataTable
@@ -206,8 +212,13 @@ export function ReinsurersReportTable() {
             ) : undefined
           }
           isLoading={reportParams !== null && isLoading}
+          errorContent={
+            reportParams && isError ? (
+              <ReportQueryError error={error} onRetry={() => void refetch()} />
+            ) : undefined
+          }
           exportOptions={
-            reportParams && data.length > 0
+            reportParams && !isError && data.length > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -306,7 +317,7 @@ export function ReinsurersReportTable() {
           }
           rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
           currentPage={page}
-          totalPages={Math.max(1, meta.totalPages)}
+          totalPages={isError ? 0 : Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}
           noInternalScroll
         />
