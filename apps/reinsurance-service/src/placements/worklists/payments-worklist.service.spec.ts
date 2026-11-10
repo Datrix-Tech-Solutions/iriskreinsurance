@@ -119,9 +119,16 @@ describe('ReinsurancePaymentsWorklistService', () => {
 
     const calls = prisma.$queryRaw.mock.calls as Array<[unknown]>;
     const firstArg = calls[0]?.[0];
-    const sql = Array.isArray(firstArg)
-      ? firstArg.join('')
-      : ((firstArg as { sql?: string } | undefined)?.sql ?? '');
+    // The CTEs live in a nested Prisma.Sql fragment, so flatten the values too.
+    const flatten = (arg: unknown): string => {
+      if (Array.isArray(arg)) return arg.join('');
+      const fragment = arg as { sql?: string; values?: unknown[] } | undefined;
+      return fragment?.sql ?? '';
+    };
+    const templateValues = calls[0]?.slice(1) ?? [];
+    const sql = [firstArg, ...templateValues]
+      .map((arg) => flatten(arg))
+      .join('');
     expect(sql).toContain('"mandatoryDeductions"');
     expect(sql).toContain('"effectiveSettlementCredit"');
     expect(sql).toContain(
