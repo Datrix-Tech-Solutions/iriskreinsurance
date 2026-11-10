@@ -73,6 +73,81 @@ export class ReinsurancePaymentsWorklistService {
       : Prisma.empty;
 
     const rows = await this.prisma.$queryRaw<PaymentWorklistRawRow[]>`
+      ${this.rowsCtes(tenantId, { cedantPredicate, placementIdsPredicate, searchPredicate })},
+      filtered AS (
+        SELECT *
+        FROM rows
+        WHERE TRUE
+          ${statusPredicate}
+      ),
+      counted AS (
+        SELECT
+          filtered.*,
+          COUNT(*) OVER() AS "totalCount"
+        FROM filtered
+      )
+      SELECT *
+      FROM counted
+      ORDER BY "sortDate" DESC, "placementId" ASC
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `;
+
+    // Endorsements amend the policy without touching the base Placement row, so raw
+    // sumInsured / premium / facultativeOffer never move. Resolve the canonical effective
+    // view for the endorsed placements on this page and overlay it below; everything else
+    // keeps its base terms.
+    const endorsedPlacementIds = rows
+      .filter((row) => row.hasNonVoidEndorsement)
+      .map((row) => row.placementId);
+    const effectiveTermsByPlacement = new Map<
+      string,
+      EffectivePlacementTerms
+    >();
+    await Promise.all(
+      [...new Set(endorsedPlacementIds)].map(async (placementId) => {
+        try {
+          const view = await this.effectiveViewService.getEffectiveView(
+            tenantId,
+            placementId,
+          );
+          effectiveTermsByPlacement.set(placementId, {
+            sumInsured: view.effectiveTotals.sumInsured,
+            premium: view.effectiveTotals.premium,
+            facultativeOfferPercent:
+              view.effectiveTotals.facultativeOfferPercent,
+          });
+        } catch {
+          // Fall back to base terms for this row rather than failing the worklist.
+        }
+      }),
+    );
+
+    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+    return {
+      items: rows.map((row) =>
+        this.toDto(row, effectiveTermsByPlacement.get(row.placementId)),
+      ),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  private rowsCtes(
+    tenantId: string,
+    predicates: {
+      cedantPredicate: Prisma.Sql;
+      placementIdsPredicate: Prisma.Sql;
+      searchPredicate: Prisma.Sql;
+    },
+  ): Prisma.Sql {
+    const { cedantPredicate, placementIdsPredicate, searchPredicate } =
+      predicates;
+    return Prisma.sql`
       WITH base_placements AS (
         SELECT
           p."id",
@@ -258,68 +333,27 @@ export class ReinsurancePaymentsWorklistService {
         LEFT JOIN accepted_counts ac ON ac."placementId" = bp."id"
         LEFT JOIN obligations ob ON ob."placementId" = bp."id"
         LEFT JOIN payment_totals pt ON pt."placementId" = bp."id"
-      ),
-      filtered AS (
-        SELECT *
-        FROM rows
-        WHERE TRUE
-          ${statusPredicate}
-      ),
-      counted AS (
-        SELECT
-          filtered.*,
-          COUNT(*) OVER() AS "totalCount"
-        FROM filtered
-      )
-      SELECT *
-      FROM counted
-      ORDER BY "sortDate" DESC, "placementId" ASC
-      LIMIT ${limit}
-      OFFSET ${offset}
     `;
+  }
 
-    // Endorsements amend the policy without touching the base Placement row, so raw
-    // sumInsured / premium / facultativeOffer never move. Resolve the canonical effective
-    // view for the endorsed placements on this page and overlay it below; everything else
-    // keeps its base terms.
-    const endorsedPlacementIds = rows
-      .filter((row) => row.hasNonVoidEndorsement)
-      .map((row) => row.placementId);
-    const effectiveTermsByPlacement = new Map<
-      string,
-      EffectivePlacementTerms
-    >();
-    await Promise.all(
-      [...new Set(endorsedPlacementIds)].map(async (placementId) => {
-        try {
-          const view = await this.effectiveViewService.getEffectiveView(
-            tenantId,
-            placementId,
-          );
-          effectiveTermsByPlacement.set(placementId, {
-            sumInsured: view.effectiveTotals.sumInsured,
-            premium: view.effectiveTotals.premium,
-            facultativeOfferPercent:
-              view.effectiveTotals.facultativeOfferPercent,
-          });
-        } catch {
-          // Fall back to base terms for this row rather than failing the worklist.
-        }
-      }),
-    );
-
-    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
-    return {
-      items: rows.map((row) =>
-        this.toDto(row, effectiveTermsByPlacement.get(row.placementId)),
-      ),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+  /**
+   * Ids of every active placement whose derived payment status is one of
+   * `statuses`. Uses the same CTEs as the worklist so a filter can never
+   * disagree with the status badge shown on the row.
+   */
+  async findPlacementIdsByPaymentStatus(
+    tenantId: string,
+    statuses: readonly string[],
+  ): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ placementId: string }[]>`
+      ${this.rowsCtes(tenantId, {
+        cedantPredicate: Prisma.empty,
+        placementIdsPredicate: Prisma.empty,
+        searchPredicate: Prisma.empty,
+      })}
+      SELECT "placementId" FROM rows WHERE "paymentStatus" IN (${Prisma.join([...statuses])})
+    `;
+    return rows.map((row) => row.placementId);
   }
 
   private statusPredicate(status?: PaymentWorklistStatusFilter) {

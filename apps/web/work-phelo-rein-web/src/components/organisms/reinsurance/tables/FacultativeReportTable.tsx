@@ -51,7 +51,6 @@ const LIFECYCLE_OPTIONS: { value: FacultativeReportLifecycle; label: string }[] 
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
-  { value: 'Pending', label: 'Pending' },
   { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Paid', label: 'Paid' },
 ];
@@ -475,9 +474,12 @@ export function FacultativeReportTable() {
     setPage(1);
   };
 
-  const { rows, summary, currencyTotals, isLoading, meta } = useFacultativeReport(reportParams ?? {}, {
-    enabled: reportParams !== null,
-  });
+  const { rows, summary, currencyTotals, isLoading, meta } = useFacultativeReport(
+    reportParams ?? {},
+    {
+      enabled: reportParams !== null,
+    },
+  );
 
   const handleRunFilter = () => {
     setReportParams({

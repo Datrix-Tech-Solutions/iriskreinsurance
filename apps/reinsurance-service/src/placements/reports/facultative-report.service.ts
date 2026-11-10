@@ -307,7 +307,7 @@ export class FacultativeReportService {
       tenantId,
     );
     const statusPredicate = query.placementStatus?.length
-      ? Prisma.sql`AND p."status" IN (${Prisma.join(query.placementStatus)})`
+      ? Prisma.sql`AND p."status"::text IN (${Prisma.join(query.placementStatus)})`
       : Prisma.empty;
     const currencyPredicate = query.currency?.length
       ? Prisma.sql`AND p."currency" IN (${Prisma.join(query.currency)})`

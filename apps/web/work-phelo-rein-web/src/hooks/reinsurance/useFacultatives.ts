@@ -94,11 +94,15 @@ export interface FacultativesPageParams {
   search?: string;
   status?: FacultativeStatus;
   statuses?: FacultativeStatus[];
+  paymentStatus?: string;
   placementType?: 'FACULTATIVE';
   cedantId?: string;
   riskTypeId?: string;
   classOfBusiness?: string;
   archived?: boolean;
+  dateFrom?: string;
+  dateTo?: string;
+  dateBasis?: 'created' | 'closed';
 }
 
 export interface ReinsurerPlacementsWorklistParams {
@@ -160,11 +164,15 @@ function normalizePageParams(params: FacultativesPageParams = {}) {
     ...(params.search?.trim() ? { search: params.search.trim() } : {}),
     ...(params.status ? { status: params.status } : {}),
     ...(params.statuses?.length ? { statuses: params.statuses.join(',') } : {}),
+    ...(params.paymentStatus ? { paymentStatus: params.paymentStatus } : {}),
     ...(params.placementType ? { placementType: params.placementType } : {}),
     ...(params.cedantId ? { cedantId: params.cedantId } : {}),
     ...(params.riskTypeId ? { riskTypeId: params.riskTypeId } : {}),
     ...(params.classOfBusiness?.trim() ? { classOfBusiness: params.classOfBusiness.trim() } : {}),
     ...(typeof params.archived === 'boolean' ? { archived: params.archived } : {}),
+    ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
+    ...(params.dateTo ? { dateTo: params.dateTo } : {}),
+    ...(params.dateBasis ? { dateBasis: params.dateBasis } : {}),
   };
 }
 

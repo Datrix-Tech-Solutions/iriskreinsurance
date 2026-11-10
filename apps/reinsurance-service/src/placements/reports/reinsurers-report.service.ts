@@ -194,7 +194,7 @@ export class ReinsurersReportService {
       ? Prisma.sql`AND p."riskTypeId" IN (${Prisma.join(query.riskTypeId)})`
       : Prisma.empty;
     const statusPredicate = query.placementStatus?.length
-      ? Prisma.sql`AND p."status" IN (${Prisma.join(query.placementStatus)})`
+      ? Prisma.sql`AND p."status"::text IN (${Prisma.join(query.placementStatus)})`
       : Prisma.empty;
     const searchPredicate = this.searchPredicate(query.search);
     const paymentStatusPredicate = query.paymentStatus?.length

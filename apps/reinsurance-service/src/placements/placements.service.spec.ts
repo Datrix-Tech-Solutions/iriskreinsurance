@@ -21,6 +21,7 @@ import {
 import { PlacementEventPublisher } from '../messaging/placement-event.publisher';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlacementFinancialLockPolicy } from './finance/financial-lock.policy';
+import { ReinsurancePaymentsWorklistService } from './worklists/payments-worklist.service';
 import {
   FacultativeOfferPermission,
   PlacementPermission,
@@ -359,6 +360,9 @@ describe('PlacementsService', () => {
       prisma as unknown as PrismaService,
       publisher as unknown as PlacementEventPublisher,
       financialLockPolicy as unknown as PlacementFinancialLockPolicy,
+      {
+        findPlacementIdsByPaymentStatus: jest.fn().mockResolvedValue([]),
+      } as unknown as ReinsurancePaymentsWorklistService,
     );
   });
 

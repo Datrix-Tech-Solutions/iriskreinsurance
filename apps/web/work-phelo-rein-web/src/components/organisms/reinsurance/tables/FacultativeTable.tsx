@@ -75,7 +75,6 @@ function fmtDateTime(value: string | null) {
 }
 const CLOSING_PAYMENT_FILTER_OPTIONS = [
   { value: 'Outstanding', label: 'Outstanding' },
-  { value: 'Pending', label: 'Pending' },
   { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Paid', label: 'Paid' },
 ];
@@ -316,12 +315,18 @@ export function FacultativeTable({
   const [forceCloseTarget, setForceCloseTarget] = useState<Facultative | null>(null);
 
   const serverStatusFilter = rawStatusFilter(statusFilter);
+  const serverPaymentFilter =
+    statusFilter && !serverStatusFilter && tab !== 'archived' ? statusFilter : undefined;
   const placementsPage = useFacultativesPage({
     page,
     limit: PAGE_SIZE,
     search,
     archived: tab === 'archived',
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    dateBasis: tab === 'closing' ? 'closed' : 'created',
     status: serverStatusFilter,
+    paymentStatus: serverPaymentFilter,
     statuses:
       !serverStatusFilter && tab === 'placements'
         ? OPEN_PLACEMENT_STATUSES
@@ -367,55 +372,9 @@ export function FacultativeTable({
     return map;
   }, [closingRows, closingPaymentsWorkList.data?.items]);
 
-  const filtered = useMemo(() => {
-    let rows = allRows;
-    if (search) {
-      const q = search.toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.policyNumber?.toLowerCase().includes(q) ?? false) ||
-          r.cedant.name.toLowerCase().includes(q) ||
-          r.title.toLowerCase().includes(q) ||
-          (r.classOfBusiness?.toLowerCase().includes(q) ?? false),
-      );
-    }
-    if (statusFilter && tab !== 'archived') {
-      if (tab === 'placements') {
-        rows = rows.filter((r) => r.status === statusFilter);
-      } else {
-        const isStatusFilter = CLOSING_STATUS_FILTER_OPTIONS.some(
-          (opt) => opt.value === statusFilter,
-        );
-        rows = isStatusFilter
-          ? rows.filter((r) => r.status === statusFilter)
-          : rows.filter((r) => paymentStatusMap.get(r.id) === (statusFilter as PaymentStatus));
-      }
-    }
-    // Open tab filters by when the offer was created; Closing tab by when it was closed.
-    const dateField: 'createdAt' | 'updatedAt' = tab === 'closing' ? 'updatedAt' : 'createdAt';
-    if (dateFrom) {
-      const from = new Date(dateFrom);
-      rows = rows.filter((r) => new Date(r[dateField]) >= from);
-    }
-    if (dateTo) {
-      const to = new Date(dateTo);
-      to.setHours(23, 59, 59, 999);
-      rows = rows.filter((r) => new Date(r[dateField]) <= to);
-    }
-    return rows;
-  }, [allRows, search, statusFilter, dateFrom, dateTo, tab, paymentStatusMap]);
-
-  // Closing tab: most recently closed first — CLOSED/CLOSING placements are effectively
-  // frozen once they land there, so updatedAt reliably marks the close moment.
-  const sorted = useMemo(() => {
-    if (tab !== 'closing') return filtered;
-    return [...filtered].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    );
-  }, [filtered, tab]);
-
   const totalPages = Math.max(1, placementsPage.data?.meta.totalPages ?? 1);
-  const paged = sorted;
+  // Search, status, payment status and dates are all applied by the server before paging.
+  const paged = allRows;
   const visiblePlacementIds = useMemo(
     () => (tab === 'archived' ? [] : paged.map((row) => row.id)),
     [paged, tab],

@@ -27,7 +27,6 @@ import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downl
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
-  { value: 'Pending', label: 'Pending' },
   { value: 'Part Payment', label: 'Part Payment' },
   { value: 'Paid', label: 'Paid' },
 ];

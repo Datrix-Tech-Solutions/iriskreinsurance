@@ -3,7 +3,9 @@ import {
   ArrayMaxSize,
   ArrayUnique,
   IsBoolean,
+  IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsArray,
@@ -14,6 +16,10 @@ import {
   Min,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  PREMIUM_REPORT_PAYMENT_STATUSES,
+  PremiumReportPaymentStatus,
+} from '../reports/dto/query-premiums-report.dto';
 import { TrimmedString } from '../../counterparties/dto/string.transforms';
 import {
   PlacementStatus,
@@ -118,6 +124,58 @@ export class QueryPlacementsDto {
   })
   @IsBoolean()
   archived?: boolean = false;
+
+  @ApiPropertyOptional({
+    enum: PREMIUM_REPORT_PAYMENT_STATUSES,
+    isArray: true,
+    example: ['Outstanding', 'Part Payment'],
+    description:
+      'Comma-separated derived payment statuses (same derivation as the payments worklist). Applied before pagination.',
+  })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    const rawValues = Array.isArray(value) ? value : [value];
+    const statuses = rawValues
+      .flatMap((item) => String(item).split(','))
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return statuses.length ? statuses : undefined;
+  })
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(4)
+  @IsIn(PREMIUM_REPORT_PAYMENT_STATUSES, { each: true })
+  paymentStatus?: PremiumReportPaymentStatus[];
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    description: 'Inclusive lower bound of the date selected by dateBasis.',
+  })
+  @IsOptional()
+  @IsDateString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date',
+    description:
+      'Inclusive upper bound (whole day) of the date selected by dateBasis.',
+  })
+  @IsOptional()
+  @IsDateString()
+  dateTo?: string;
+
+  @ApiPropertyOptional({
+    enum: ['created', 'closed'],
+    default: 'created',
+    description:
+      'created filters/sorts on createdAt. closed filters/sorts on the closed date: forceClosedAt, else the latest confirmed closing, else updatedAt.',
+  })
+  @IsOptional()
+  @IsIn(['created', 'closed'])
+  dateBasis?: 'created' | 'closed' = 'created';
 
   @ApiPropertyOptional({ example: 1, default: 1, minimum: 1 })
   @IsOptional()

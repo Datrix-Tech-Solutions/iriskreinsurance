@@ -9,23 +9,20 @@ interface PaginationProps {
 }
 
 function getPageNumbers(current: number, total: number): (number | '...')[] {
-  if (total <= 6) return Array.from({ length: total }, (_, i) => i + 1);
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
 
-  const pages: (number | '...')[] = [1, 2, 3];
+  // Sliding window: first, last, and current ±1. Near the edges, widen the
+  // window so the control keeps a stable width.
+  let start = Math.max(2, current - 1);
+  let end = Math.min(total - 1, current + 1);
+  if (current <= 3) end = 4;
+  if (current >= total - 2) start = total - 3;
 
-  const showCurrent = current > 3 && current < total - 1;
-  if (showCurrent) {
-    if (current > 4) pages.push('...');
-    pages.push(current);
-  }
-
-  // Ellipsis whenever there's an actual gap before the last page — not just when
-  // the current page happens to be past 4 (that left runs like [1, 2, 3, 20] with
-  // no separator whenever you were viewing an early page of a long list).
-  const lastShown = pages[pages.length - 1] as number;
-  if (total - lastShown > 1) pages.push('...');
-
-  if (!pages.includes(total)) pages.push(total);
+  const pages: (number | '...')[] = [1];
+  if (start > 2) pages.push('...');
+  for (let p = start; p <= end; p++) pages.push(p);
+  if (end < total - 1) pages.push('...');
+  pages.push(total);
   return pages;
 }
 

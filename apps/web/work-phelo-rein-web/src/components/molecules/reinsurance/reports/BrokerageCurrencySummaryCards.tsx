@@ -23,7 +23,7 @@ type CardDef = {
 const CARDS: CardDef[] = [
   { title: 'Total Premium', columnLabel: 'Premium', amount: (r) => r.premium },
   { title: 'Gross Premium', columnLabel: 'Gross Premium', amount: (r) => r.grossPremium },
-  { title: 'Brokerage Earned', columnLabel: 'Brokerage', amount: (r) => r.brokerageAmount },
+  { title: 'Total Brokerage', columnLabel: 'Brokerage', amount: (r) => r.brokerageAmount },
   { title: 'Brokerage Paid', columnLabel: 'Paid', amount: (r) => r.brokeragePaid },
   {
     title: 'Brokerage Outstanding',

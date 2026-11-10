@@ -29,6 +29,7 @@ import { ArchivePlacementDto } from './dto/archive-placement.dto';
 import { CreatePlacementParticipantDto } from './dto/create-placement-participant.dto';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { PlacementLockStatusDto } from './dto/placement-lock-status.dto';
+import { ReinsurancePaymentsWorklistService } from './worklists/payments-worklist.service';
 import { QueryPlacementsDto } from './dto/query-placements.dto';
 import { UpdatePlacementParticipantStatusDto } from './dto/update-placement-participant-status.dto';
 import { UpdatePlacementParticipantDto } from './dto/update-placement-participant.dto';
@@ -206,6 +207,7 @@ export class PlacementsService {
     private readonly prisma: PrismaService,
     private readonly publisher: PlacementEventPublisher,
     private readonly financialLockPolicy: PlacementFinancialLockPolicy,
+    private readonly paymentsWorklist: ReinsurancePaymentsWorklistService,
   ) {}
 
   async findAll(tenantId: string, query: QueryPlacementsDto) {
@@ -252,6 +254,32 @@ export class PlacementsService {
         : {}),
     };
 
+    if (query.paymentStatus?.length) {
+      const ids = await this.paymentsWorklist.findPlacementIdsByPaymentStatus(
+        tenantId,
+        query.paymentStatus,
+      );
+      where.id = { in: ids };
+    }
+
+    const from = query.dateFrom ? new Date(query.dateFrom) : undefined;
+    let to: Date | undefined;
+    if (query.dateTo) {
+      to = new Date(query.dateTo);
+      to.setUTCHours(23, 59, 59, 999);
+    }
+
+    if (query.dateBasis === 'closed') {
+      return this.findAllByClosedDate(where, page, limit, from, to);
+    }
+
+    if (from || to) {
+      where.createdAt = {
+        ...(from ? { gte: from } : {}),
+        ...(to ? { lte: to } : {}),
+      };
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.placement.findMany({
         where,
@@ -270,6 +298,78 @@ export class PlacementsService {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Closed date = forceClosedAt, else the latest confirmed closing, else
+   * updatedAt (declined/cancelled placements have neither). It is derived, so
+   * filtering, sorting and paging happen over a light projection and only the
+   * requested page is loaded in full.
+   */
+  private async findAllByClosedDate(
+    where: Prisma.PlacementWhereInput,
+    page: number,
+    limit: number,
+    from?: Date,
+    to?: Date,
+  ) {
+    const candidates = await this.prisma.placement.findMany({
+      where,
+      select: {
+        id: true,
+        forceClosedAt: true,
+        updatedAt: true,
+        closings: {
+          where: { status: 'CONFIRMED' },
+          select: { confirmedAt: true, issuedAt: true, createdAt: true },
+        },
+      },
+    });
+
+    const dated = candidates
+      .map((candidate) => {
+        const closingTimes = candidate.closings.map((closing) =>
+          (
+            closing.confirmedAt ??
+            closing.issuedAt ??
+            closing.createdAt
+          ).getTime(),
+        );
+        const closedAt =
+          candidate.forceClosedAt ??
+          (closingTimes.length
+            ? new Date(Math.max(...closingTimes))
+            : candidate.updatedAt);
+        return { id: candidate.id, closedAt };
+      })
+      .filter(
+        ({ closedAt }) =>
+          (!from || closedAt >= from) && (!to || closedAt <= to),
+      )
+      .sort((a, b) => b.closedAt.getTime() - a.closedAt.getTime());
+
+    const pageIds = dated
+      .slice((page - 1) * limit, page * limit)
+      .map(({ id }) => id);
+    const loaded = await this.prisma.placement.findMany({
+      where: { id: { in: pageIds } },
+      include: placementInclude,
+    });
+    const byId = new Map(loaded.map((item) => [item.id, item]));
+    const items = pageIds.flatMap((id) => {
+      const item = byId.get(id);
+      return item ? [this.withAggregates(item)] : [];
+    });
+
+    return {
+      items,
+      meta: {
+        page,
+        limit,
+        total: dated.length,
+        totalPages: Math.ceil(dated.length / limit),
       },
     };
   }
