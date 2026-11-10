@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { FacultativeStatus } from '@/types/reinsurance';
@@ -128,7 +128,7 @@ export const reinsurersReportKey = (params: ReinsurersReportParams = {}) =>
 export function useReinsurersReport(
   params: ReinsurersReportParams,
   options: { enabled?: boolean } = {},
-): {
+): Pick<UseQueryResult<ReinsurersReportResponse>, 'isError' | 'error' | 'refetch'> & {
   rows: ReinsurerReportRow[];
   summary: ReinsurersReportSummary;
   meta: ReinsurersReportMeta;
@@ -166,6 +166,9 @@ export function useReinsurersReport(
     },
     currencyTotals: toCurrencyTotals(summary),
     isLoading: result.isLoading,
+    isError: result.isError,
+    error: result.error,
+    refetch: result.refetch,
   };
 }
 
