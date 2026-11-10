@@ -84,11 +84,11 @@ export class QueryBrokerageReportDto {
 
   @ApiPropertyOptional({
     enum: PREMIUM_REPORT_DATE_BASIS,
-    default: 'INCEPTION_DATE',
+    default: 'CLOSING_CONFIRMED_AT',
   })
   @IsOptional()
   @IsIn(PREMIUM_REPORT_DATE_BASIS)
-  dateBasis?: PremiumReportDateBasis = 'INCEPTION_DATE';
+  dateBasis?: PremiumReportDateBasis = 'CLOSING_CONFIRMED_AT';
 
   @ApiPropertyOptional({ enum: BROKERAGE_REPORT_SCOPES, default: 'reinsurer' })
   @IsOptional()

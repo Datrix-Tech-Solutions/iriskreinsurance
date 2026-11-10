@@ -25,6 +25,7 @@ import {
 import { HistoricalStatementDetailModal } from '@/components/organisms/reinsurance/HistoricalStatementDetailModal';
 import { fmtDecimal, fmtSourceDate } from '@/lib/reinsurance/historicalFormat';
 import { downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
+import { ReportRowsSummary } from '@/components/molecules/reinsurance/reports/ReportRowsSummary';
 
 const KIND_OPTIONS: { value: HistoricalStatementKind; label: string }[] = [
   { value: 'INSURER', label: 'Insurer statements' },
@@ -53,8 +54,12 @@ const col = (
   numeric = false,
 ): ReportColumn => ({ key, label, width, className: numeric ? 'text-right' : undefined, render });
 
-const dec = (key: string, label: string, get: (r: Row) => string | null | undefined, width = '100px') =>
-  col(key, label, (r) => money(get(r)), width, true);
+const dec = (
+  key: string,
+  label: string,
+  get: (r: Row) => string | null | undefined,
+  width = '100px',
+) => col(key, label, (r) => money(get(r)), width, true);
 
 const policyCol = col(
   'policyNumber',
@@ -103,10 +108,25 @@ const COLUMNS_BY_KIND: Record<HistoricalStatementKind, ReportColumn[]> = {
     policyCol,
     col('insurer', 'Insurer', (r) => text(insurerOnly(r, (x) => x.insurerName)), '120px'),
     ...sharedHead,
-    dec('commissionPct', "Insurer's Commission (%)", (r) => insurerOnly(r, (x) => x.insurerCommissionPercent), '110px'),
+    dec(
+      'commissionPct',
+      "Insurer's Commission (%)",
+      (r) => insurerOnly(r, (x) => x.insurerCommissionPercent),
+      '110px',
+    ),
     dec('paidCommission', 'Paid Commission', (r) => r.paidCommission),
-    dec('netDueBroker', 'Net Premium Due Broker', (r) => insurerOnly(r, (x) => x.netPremiumDueBroker), '130px'),
-    dec('netDueBrokerPaid', 'Net Premium Due Broker Paid', (r) => insurerOnly(r, (x) => x.netPremiumDueBrokerPaid), '140px'),
+    dec(
+      'netDueBroker',
+      'Net Premium Due Broker',
+      (r) => insurerOnly(r, (x) => x.netPremiumDueBroker),
+      '130px',
+    ),
+    dec(
+      'netDueBrokerPaid',
+      'Net Premium Due Broker Paid',
+      (r) => insurerOnly(r, (x) => x.netPremiumDueBrokerPaid),
+      '140px',
+    ),
     ...sharedTail,
     dec('paidWht', 'Paid WHT', (r) => insurerOnly(r, (x) => x.paidWht), '80px'),
     ...nicAndNet,
@@ -128,7 +148,12 @@ const COLUMNS_BY_KIND: Record<HistoricalStatementKind, ReportColumn[]> = {
     dec('facSumInsured', 'Fac. Sum Insured', (r) => r.facSumInsured, '110px'),
     dec('facPremium', 'Fac. Premium', (r) => r.facPremium),
     dec('paidFacPremium', 'Paid Fac. Premium', (r) => r.paidFacPremium, '110px'),
-    dec('commissionAmt', 'Insurer Commission', (r) => reinsurerOnly(r, (x) => x.insurerCommissionAmount), '110px'),
+    dec(
+      'commissionAmt',
+      'Insurer Commission',
+      (r) => reinsurerOnly(r, (x) => x.insurerCommissionAmount),
+      '110px',
+    ),
     dec('paidCommission', 'Paid Commission', (r) => r.paidCommission),
     ...sharedTail,
     dec('paidWhtFirst', 'Paid WHT (1)', (r) => reinsurerOnly(r, (x) => x.paidWhtFirst), '90px'),
@@ -193,8 +218,7 @@ export function LegacyDataReportTable() {
     );
   };
 
-  const errorMessage =
-    historicalErrorMessage(datasetsQuery.error) ?? historicalErrorMessage(error);
+  const errorMessage = historicalErrorMessage(datasetsQuery.error) ?? historicalErrorMessage(error);
 
   const emptyMessage = errorMessage
     ? errorMessage
@@ -277,6 +301,15 @@ export function LegacyDataReportTable() {
                   Import
                 </Button>
               )}
+              {applied && (
+                <ReportRowsSummary
+                  page={applied.page ?? 1}
+                  pageSize={pageSize}
+                  shown={rows.length}
+                  total={meta.total}
+                  isLoading={isLoading}
+                />
+              )}
               {rowsPerPageControl}
             </>
           }
@@ -308,7 +341,11 @@ export function LegacyDataReportTable() {
               {facetSelect('year', 'Year', facets?.years, 'w-28')}
               <div className="w-40">{textInput('policyNumber', 'Policy number')}</div>
               <div className="w-40">{textInput('search', 'Search')}</div>
-              {facetSelect('insurer', kind === 'INSURER' ? 'Insurer' : 'Reinsured', facets?.insurers)}
+              {facetSelect(
+                'insurer',
+                kind === 'INSURER' ? 'Insurer' : 'Reinsured',
+                facets?.insurers,
+              )}
               {facetSelect('reinsurer', 'Reinsurer', facets?.reinsurers)}
               {facetSelect('insured', 'Insured', facets?.insureds)}
               {facetSelect('businessName', 'Business name', facets?.businessNames)}
@@ -357,6 +394,7 @@ export function LegacyDataReportTable() {
             disabled: !datasetId,
           }}
           emptyMessage={emptyMessage}
+          rowNumber={(_row, index) => ((applied?.page ?? 1) - 1) * pageSize + index + 1}
           currentPage={applied?.page ?? 1}
           totalPages={meta.totalPages}
           onPageChange={(page) => setApplied(applied ? { ...applied, page } : null)}

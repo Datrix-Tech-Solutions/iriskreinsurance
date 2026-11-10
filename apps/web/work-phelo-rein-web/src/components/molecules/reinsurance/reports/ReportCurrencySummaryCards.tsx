@@ -7,9 +7,15 @@ import { ReportCurrencyTotals } from '@/hooks/reinsurance/useReportCurrencyTotal
 interface ReportCurrencySummaryCardsProps {
   totals: ReportCurrencyTotals;
   isLoading: boolean;
+  /** Reports whose brokerage total is the amount received say so here. */
+  brokerageTitle?: string;
 }
 
-export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrencySummaryCardsProps) {
+export function ReportCurrencySummaryCards({
+  totals,
+  isLoading,
+  brokerageTitle = 'Total Paid Brokerage',
+}: ReportCurrencySummaryCardsProps) {
   const { data: currencies = [] } = useCurrencies();
   const loading = isLoading || totals.isLoading;
 
@@ -36,7 +42,7 @@ export function ReportCurrencySummaryCards({ totals, isLoading }: ReportCurrency
         compactEmpty
       />
       <CurrencyAmountListCard
-        title="Total Brokerage"
+        title={brokerageTitle}
         columnLabel="Brokerage"
         amountsByCode={totals.brokerage}
         currencies={currencies}

@@ -91,7 +91,7 @@ function normalizeReportParams(params: BrokerageReportParams = {}) {
   return {
     page: params.page ?? 1,
     limit: params.limit ?? 50,
-    dateBasis: (params.dateBasis ?? 'INCEPTION_DATE') as PremiumReportDateBasis,
+    dateBasis: (params.dateBasis ?? 'CLOSING_CONFIRMED_AT') as PremiumReportDateBasis,
     scope: params.scope ?? 'reinsurer',
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
