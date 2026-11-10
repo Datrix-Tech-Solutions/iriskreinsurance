@@ -24,6 +24,7 @@ import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { CedantPaymentStatus, facultativeStatusLabel } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
+import { ReportRowsSummary } from '@/components/molecules/reinsurance/reports/ReportRowsSummary';
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
@@ -190,7 +191,20 @@ export function ReinsurersReportTable() {
           data={data}
           headerClassName="text-[8px]"
           rowClassName="text-[10px]"
-          toolbarTrailing={rowsPerPageControl}
+          toolbarTrailing={
+            reportParams ? (
+              <div className="flex items-center gap-3">
+                <ReportRowsSummary
+                  page={page}
+                  pageSize={pageSize}
+                  shown={rows.length}
+                  total={meta.total}
+                  isLoading={isLoading}
+                />
+                {rowsPerPageControl}
+              </div>
+            ) : undefined
+          }
           isLoading={reportParams !== null && isLoading}
           exportOptions={
             reportParams && data.length > 0
@@ -290,6 +304,7 @@ export function ReinsurersReportTable() {
               ? 'No reinsurer activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
+          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
           currentPage={page}
           totalPages={Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}

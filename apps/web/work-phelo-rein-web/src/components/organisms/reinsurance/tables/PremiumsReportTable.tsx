@@ -28,6 +28,7 @@ import { exportToCsv } from '@/lib/exportCsv';
 import { PremiumsKpiCards } from '@/components/molecules/reinsurance/reports/PremiumsKpiCards';
 import { PremiumsCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/PremiumsCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
+import { ReportRowsSummary } from '@/components/molecules/reinsurance/reports/ReportRowsSummary';
 
 // Cedant-side premium payment status (has the cedant paid iRisk?).
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
@@ -520,7 +521,20 @@ export function PremiumsReportTable() {
                 ]
               : undefined
           }
-          toolbarTrailing={rowsPerPageControl}
+          toolbarTrailing={
+            reportParams ? (
+              <div className="flex items-center gap-3">
+                <ReportRowsSummary
+                  page={page}
+                  pageSize={pageSize}
+                  shown={rows.length}
+                  total={meta.total}
+                  isLoading={isLoading}
+                />
+                {rowsPerPageControl}
+              </div>
+            ) : undefined
+          }
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the
             // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
@@ -653,6 +667,7 @@ export function PremiumsReportTable() {
               ? 'No premium activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
+          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
           currentPage={page}
           totalPages={Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}

@@ -669,7 +669,7 @@ export class BrokerageReportService {
     };
 
     if (!dateRange.from && !dateRange.to) return Prisma.empty;
-    switch (dateBasis ?? 'INCEPTION_DATE') {
+    switch (dateBasis ?? 'CLOSING_CONFIRMED_AT') {
       case 'PLACEMENT_CREATED':
         return rangePredicate(Prisma.sql`p."createdAt"`);
       case 'EXPIRY_DATE':
@@ -693,6 +693,7 @@ export class BrokerageReportService {
               AND ec_date."placementId" = p."id"
               AND ec_date."status" = 'CONFIRMED'
               AND e_date."status" = 'CLOSED'
+              AND e_date."effectiveDate" <= NOW()
               ${rangePredicate(Prisma.sql`COALESCE(ec_date."confirmedAt", ec_date."createdAt")`)}
           )
         `;
@@ -709,6 +710,7 @@ export class BrokerageReportService {
             WHERE pay_date."tenantId" = p."tenantId"
               AND pay_date."placementId" = p."id"
               AND pay_date."type" = 'PREMIUM_RECEIVED'
+              AND pay_date."status" IN ('RECORDED', 'BANK_CONFIRMED')
               AND pay_date."reversalOfPaymentId" IS NULL
               ${rangePredicate(column)}
           )

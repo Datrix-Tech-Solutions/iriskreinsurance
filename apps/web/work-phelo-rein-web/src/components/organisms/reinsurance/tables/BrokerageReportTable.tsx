@@ -30,6 +30,7 @@ import {
   downloadReportBlob,
   downloadReportText,
 } from '@/lib/reinsurance/downloadReportExport';
+import { ReportRowsSummary } from '@/components/molecules/reinsurance/reports/ReportRowsSummary';
 
 const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = [
   { value: 'Outstanding', label: 'Outstanding' },
@@ -227,6 +228,8 @@ const COLUMNS_BY_SCOPE: Record<BrokerageReportScope, ReportColumn[]> = {
   ],
 };
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100, 200];
+
 export function BrokerageReportTable() {
   const router = useRouter();
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
@@ -287,27 +290,28 @@ export function BrokerageReportTable() {
     setReportParams({ ...reportParams, page: nextPage, limit: pageSize });
   };
 
-  const rowsPerPageControl = (
-    <select
-      value={pageSize}
-      onChange={(event) => {
-        const nextLimit = Number(event.target.value);
-        setPageSize(nextLimit);
-        setPage(1);
-        if (reportParams) {
-          setReportParams({ ...reportParams, page: 1, limit: nextLimit });
-        }
-      }}
-      className="h-8 rounded border border-gray-200 bg-white px-2 text-xs text-gray-600"
-      aria-label="Rows per page"
-    >
-      {[25, 50, 100, 200].map((size) => (
-        <option key={size} value={size}>
-          {size} rows
-        </option>
-      ))}
-    </select>
-  );
+  const rowsPerPageControl =
+    reportParams && meta.total > 10 ? (
+      <label className="flex items-center gap-1.5 text-sm text-gray-500">
+        Rows
+        <select
+          value={String(pageSize)}
+          onChange={(e) => {
+            const nextPageSize = Number(e.target.value);
+            setPageSize(nextPageSize);
+            setPage(1);
+            setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
+          }}
+          className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
+        >
+          {PAGE_SIZE_OPTIONS.map((opt) => (
+            <option key={String(opt)} value={String(opt)}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
 
   const handleExport = async () => {
     if (!reportParams) return;
@@ -354,7 +358,20 @@ export function BrokerageReportTable() {
                 ]
               : undefined
           }
-          toolbarTrailing={rowsPerPageControl}
+          toolbarTrailing={
+            reportParams ? (
+              <div className="flex items-center gap-3">
+                <ReportRowsSummary
+                  page={page}
+                  pageSize={pageSize}
+                  shown={rows.length}
+                  total={meta.total}
+                  isLoading={isLoading}
+                />
+                {rowsPerPageControl}
+              </div>
+            ) : undefined
+          }
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the
             // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
@@ -363,7 +380,7 @@ export function BrokerageReportTable() {
               <div className="w-50">
                 <DatePicker
                   size="sm"
-                  placeholder="Period start"
+                  placeholder="Closed from"
                   value={startDate}
                   onChange={setStartDate}
                 />
@@ -371,7 +388,7 @@ export function BrokerageReportTable() {
               <div className="w-50">
                 <DatePicker
                   size="sm"
-                  placeholder="Period end"
+                  placeholder="Closed to"
                   value={endDate}
                   minDate={startDate || undefined}
                   onChange={setEndDate}
@@ -456,6 +473,7 @@ export function BrokerageReportTable() {
               ? 'No brokerage activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
+          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
           currentPage={page}
           totalPages={meta.totalPages}
           onPageChange={handlePageChange}

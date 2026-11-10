@@ -29,6 +29,7 @@ import {
   downloadReportBlob,
   downloadReportText,
 } from '@/lib/reinsurance/downloadReportExport';
+import { ReportRowsSummary } from '@/components/molecules/reinsurance/reports/ReportRowsSummary';
 
 const BUCKET_OPTIONS: { value: ClaimsReportBucket; label: string }[] = [
   { value: 'notification', label: 'Notification' },
@@ -410,7 +411,20 @@ export function ClaimsReportTable() {
                 ]
               : undefined
           }
-          toolbarTrailing={rowsPerPageControl}
+          toolbarTrailing={
+            reportParams ? (
+              <div className="flex items-center gap-3">
+                <ReportRowsSummary
+                  page={page}
+                  pageSize={pageSize}
+                  shown={rows.length}
+                  total={meta.total}
+                  isLoading={isLoading}
+                />
+                {rowsPerPageControl}
+              </div>
+            ) : undefined
+          }
           extraFilters={
             // w-full forces the filter group to own the first toolbar line, so the
             // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
@@ -527,6 +541,7 @@ export function ClaimsReportTable() {
               ? 'No claims activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
+          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
           currentPage={page}
           totalPages={meta.totalPages}
           onPageChange={handlePageChange}

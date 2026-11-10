@@ -76,6 +76,8 @@ interface DataTableProps<T extends { id: string | number }> {
   headerClassName?: string;
   /** Overrides the body row's default text-sm sizing (e.g. for denser tables). */
   rowClassName?: string;
+  /** Adds a leading "#" column; return the number to show for a row (index is its position on this page). */
+  rowNumber?: (row: T, index: number) => React.ReactNode;
 }
 
 function ThreeDotMenu({ actions }: { actions: RowAction[] }) {
@@ -212,6 +214,7 @@ export function DataTable<T extends { id: string | number }>({
   rowActions,
   singleActionAsButton = true,
   onRowClick,
+  rowNumber,
   currentPage,
   totalPages,
   onPageChange,
@@ -391,11 +394,13 @@ export function DataTable<T extends { id: string | number }>({
                 )}
                 style={{
                   gridTemplateColumns: [
+                    ...(rowNumber ? ['32px'] : []),
                     ...columns.map((c) => c.width ?? '1fr'),
                     ...(rowActions ? ['44px'] : []),
                   ].join(' '),
                 }}
               >
+                {rowNumber && <div className="min-w-0">#</div>}
                 {columns.map((col) => (
                   <div key={col.key} className={cn('min-w-0', col.className)}>
                     {col.label}
@@ -438,7 +443,7 @@ export function DataTable<T extends { id: string | number }>({
                   </div>
                 </div>
               ) : (
-                data.map((row) => (
+                data.map((row, rowIndex) => (
                   <div
                     key={row.id}
                     onClick={() => onRowClick?.(row)}
@@ -463,11 +468,17 @@ export function DataTable<T extends { id: string | number }>({
                       )}
                       style={{
                         gridTemplateColumns: [
+                          ...(rowNumber ? ['32px'] : []),
                           ...columns.map((c) => c.width ?? '1fr'),
                           ...(rowActions ? ['44px'] : []),
                         ].join(' '),
                       }}
                     >
+                      {rowNumber && (
+                        <div className="min-w-0 tabular-nums text-gray-400">
+                          {rowNumber(row, rowIndex)}
+                        </div>
+                      )}
                       {columns.map((col) => (
                         <div key={col.key} className={cn('min-w-0', col.className)}>
                           {col.render

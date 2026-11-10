@@ -278,19 +278,42 @@ export class FacultativeReportService {
     tenantId: string,
     query: QueryFacultativeReportDto,
   ): Prisma.Sql {
+    // With reinsurers selected the cards add up only their own lines, so a cedant
+    // offer shared with other reinsurers does not inflate the totals.
+    // "brokerage" here is the brokerage received (paid), matching the Brokerage report's
+    // "Brokerage Paid" total, not the brokerage due.
+    const reinsurerScoped = Boolean(query.reinsurerId?.length);
+    const lines = reinsurerScoped
+      ? Prisma.sql`
+        LEFT JOIN LATERAL (
+          SELECT
+            SUM((re.elem ->> 'facSumInsured')::numeric) AS "sumInsured",
+            SUM((re.elem ->> 'facPremium')::numeric) AS "premium",
+            SUM((re.elem ->> 'brokeragePaid')::numeric) AS "brokerage",
+            SUM((re.elem ->> 'commission')::numeric) AS "commission"
+          FROM jsonb_array_elements(filtered."reinsurers") AS re(elem)
+        ) lines ON TRUE`
+      : Prisma.empty;
+    const col = (name: string, unscoped: Prisma.Sql) =>
+      reinsurerScoped ? Prisma.raw(`lines."${name}"`) : unscoped;
     return Prisma.sql`
       ${this.reportCtes(tenantId, query)}
       SELECT
         COALESCE(filtered."currency", 'UNKNOWN') AS "currency",
         COUNT(*) AS "placementCount",
-        SUM(filtered."reinsurerCount") AS "participantCount",
-        SUM(filtered."sumInsured") AS "sumInsured",
-        SUM(filtered."premium") AS "premium",
-        SUM(filtered."brokerage") AS "brokerage",
-        SUM(filtered."cedantCommissionAmount") AS "commission",
+        ${
+          reinsurerScoped
+            ? Prisma.sql`SUM(jsonb_array_length(filtered."reinsurers"))`
+            : Prisma.sql`SUM(filtered."reinsurerCount")`
+        } AS "participantCount",
+        SUM(${col('sumInsured', Prisma.sql`filtered."sumInsured"`)}) AS "sumInsured",
+        SUM(${col('premium', Prisma.sql`filtered."premium"`)}) AS "premium",
+        SUM(${col('brokerage', Prisma.sql`filtered."brokeragePaid"`)}) AS "brokerage",
+        SUM(${col('commission', Prisma.sql`filtered."cedantCommissionAmount"`)}) AS "commission",
         SUM(CASE WHEN filtered."status" IN ('DRAFT', 'MARKETING') THEN 1 ELSE 0 END) AS "openOffers",
         SUM(CASE WHEN filtered."status" IN ('PARTIALLY_PLACED', 'PLACED', 'CLOSING', 'CLOSED') THEN 1 ELSE 0 END) AS "acceptedOffers"
       FROM filtered_rows filtered
+      ${lines}
       GROUP BY COALESCE(filtered."currency", 'UNKNOWN')
       ORDER BY COALESCE(filtered."currency", 'UNKNOWN') ASC
     `;
@@ -327,6 +350,11 @@ export class FacultativeReportService {
           WHERE es_re."placementId" = rr."id"
             AND es_re."reinsurerId" IN (${Prisma.join(query.reinsurerId)})
         )`
+      : Prisma.empty;
+    // When specific reinsurers are selected, only their lines are listed on each
+    // placement, not every other reinsurer sharing the same cedant offer.
+    const reinsurerBreakdownPredicate = query.reinsurerId?.length
+      ? Prisma.sql`AND es."reinsurerId" IN (${Prisma.join(query.reinsurerId)})`
       : Prisma.empty;
     return Prisma.sql`
       WITH base_placements AS (
@@ -668,6 +696,7 @@ export class FacultativeReportService {
                       ELSE 0
                     END,
                   'brokerage', es."effectiveBrokerageAmount",
+                  'commission', COALESCE(es."commissionAmount", 0),
                   'brokeragePaid',
                     CASE
                       WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
@@ -722,6 +751,7 @@ export class FacultativeReportService {
                  )
                )
               WHERE es."placementId" = bp."id"
+                ${reinsurerBreakdownPredicate}
             ),
             '[]'::jsonb
           ) AS "reinsurers"

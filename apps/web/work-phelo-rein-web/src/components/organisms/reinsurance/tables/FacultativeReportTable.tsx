@@ -517,28 +517,47 @@ export function FacultativeReportTable() {
     setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
   };
 
-  const rowsPerPageControl =
-    reportParams && meta.total > 10 ? (
-      <label className="flex items-center gap-1.5 text-sm text-gray-500">
-        Rows
-        <select
-          value={String(pageSize)}
-          onChange={(e) => {
-            const nextPageSize = Number(e.target.value);
-            setPageSize(nextPageSize);
-            setPage(1);
-            setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
-          }}
-          className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
-        >
-          {PAGE_SIZE_OPTIONS.map((opt) => (
-            <option key={String(opt)} value={String(opt)}>
-              {opt}
-            </option>
-          ))}
-        </select>
-      </label>
-    ) : null;
+  // Reconciliation: which slice of the result set is on screen, e.g. "21–22 of 32".
+  // Reinsurer scope pages by offer but shows one row per reinsurer, so it also
+  // reports how many table rows those offers expand to.
+  const rangeStart = rows.length ? (meta.page - 1) * meta.limit + 1 : 0;
+  const rangeEnd = rows.length ? rangeStart + rows.length - 1 : 0;
+  const rangeLabel = rows.length ? `${rangeStart}–${rangeEnd}` : '0';
+  const shownLabel =
+    scope === 'reinsurer'
+      ? `Offers ${rangeLabel} of ${meta.total} · ${displayRows.length} ${
+          displayRows.length === 1 ? 'row' : 'rows'
+        }`
+      : `${rangeLabel} of ${meta.total}`;
+
+  const rowsPerPageControl = reportParams ? (
+    <div className="flex items-center gap-3">
+      <span className="text-sm text-gray-500 tabular-nums" aria-live="polite">
+        {isLoading ? 'Loading…' : shownLabel}
+      </span>
+      {meta.total > 10 && (
+        <label className="flex items-center gap-1.5 text-sm text-gray-500">
+          Rows
+          <select
+            value={String(pageSize)}
+            onChange={(e) => {
+              const nextPageSize = Number(e.target.value);
+              setPageSize(nextPageSize);
+              setPage(1);
+              setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
+            }}
+            className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
+          >
+            {PAGE_SIZE_OPTIONS.map((opt) => (
+              <option key={String(opt)} value={String(opt)}>
+                {opt}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </div>
+  ) : null;
 
   const handleExport = async () => {
     if (!reportParams) return;
@@ -555,7 +574,13 @@ export function FacultativeReportTable() {
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       {reportParams && <FacultativeKpiCards summary={summary} isLoading={isLoading} />}
-      {reportParams && <ReportCurrencySummaryCards totals={currencyTotals} isLoading={isLoading} />}
+      {reportParams && (
+        <ReportCurrencySummaryCards
+          totals={currencyTotals}
+          isLoading={isLoading}
+          brokerageTitle="Total Brokerage Paid"
+        />
+      )}
 
       <div className="flex-1 min-h-0">
         <DataTable
@@ -705,6 +730,13 @@ export function FacultativeReportTable() {
             reportParams
               ? 'No facultative activity for the selected filters'
               : 'Select a date field, date range, and click Run Filter to generate the report'
+          }
+          rowNumber={(row, index) =>
+            // Reinsurer scope expands an offer into one row per reinsurer, so rows of the
+            // same offer share its number, matching the "Offers x–y of n" count.
+            scope === 'reinsurer'
+              ? (page - 1) * pageSize + rows.findIndex((r) => r.id === row.placementId) + 1
+              : (page - 1) * pageSize + index + 1
           }
           currentPage={page}
           totalPages={Math.max(meta.totalPages, 1)}
