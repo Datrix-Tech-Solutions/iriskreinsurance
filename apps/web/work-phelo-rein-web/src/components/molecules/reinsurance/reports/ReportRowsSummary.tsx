@@ -19,9 +19,8 @@ export function ReportRowsSummary({
   const start = shown ? (page - 1) * pageSize + 1 : 0;
   const end = shown ? start + shown - 1 : 0;
   return (
-    <span className="flex flex-col text-sm text-gray-500 tabular-nums" aria-live="polite">
-      <span>{isLoading ? 'Loading…' : `${shown ? `${start}–${end}` : '0'} of ${total}`}</span>
-      <span className="text-[10px] text-gray-400">Exports: all filtered rows · max 50,000</span>
+    <span className="text-sm text-gray-500 tabular-nums" aria-live="polite">
+      {isLoading ? 'Loading…' : `${shown ? `${start}–${end}` : '0'} of ${total}`}
     </span>
   );
 }

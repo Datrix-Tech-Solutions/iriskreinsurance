@@ -50,8 +50,8 @@ it('keeps zero, credit and unavailable amounts distinct', () => {
 });
 it('retains filter codes that have no settings metadata', () => {
   expect(reportCurrencyOptions([{ value: 'GHS', label: 'Cedi' }], ['USD', 'EUR'])).toEqual([
-    { value: 'EUR', label: 'EUR' },
     { value: 'GHS', label: 'Cedi' },
+    { value: 'EUR', label: 'EUR' },
     { value: 'USD', label: 'USD' },
   ]);
 });
@@ -67,4 +67,26 @@ it('renders genuine empty results separately', () => {
   );
   expect(html).toContain('No filtered rows');
   expect(html).not.toContain('Not available');
+});
+
+it('preserves existing currency display order and appends missing report codes', () => {
+  const amounts = new Map([
+    ['EUR', 25],
+    ['GHS', 1000],
+    ['USD', 500],
+  ]);
+  expect(
+    reportCurrencyRows(amounts, undefined, [{ isoCode: 'USD' }, { isoCode: 'GHS' }]).map(
+      (row) => row.isoCode,
+    ),
+  ).toEqual(['USD', 'GHS', 'EUR']);
+  expect(
+    reportCurrencyOptions(
+      [
+        { value: 'USD', label: 'US dollar' },
+        { value: 'GHS', label: 'Cedi' },
+      ],
+      ['EUR', 'USD'],
+    ).map((row) => row.value),
+  ).toEqual(['USD', 'GHS', 'EUR']);
 });

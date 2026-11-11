@@ -214,8 +214,8 @@ export class PremiumsReportService {
           'Inception Date',
           'Expiry Date',
           'Currency',
-          '100% S.I (Placement Context)',
-          '100% Premium (Placement Context)',
+          '100% S.I',
+          '100% Premium',
           'Fac Share',
           'Fac Premium',
           "Insurer's Commission %",
@@ -223,16 +223,12 @@ export class PremiumsReportService {
           'Brokerage',
           'Net Premium Due Reinsurer',
           'Net Premium Due Reinsurer Paid',
-          'Cedant Premium Due (Placement Context)',
-          'Cedant Premium Paid (Placement Context)',
-          'Mandatory Deductions (Placement Context)',
-          'Effective Settlement (Placement Context)',
-          'Cedant Outstanding (Placement Context)',
+          'Cedant Premium Due',
+          'Cedant Premium Paid',
+          'Mandatory Deductions',
+          'Effective Settlement',
+          'Cedant Outstanding',
           'Payment Status',
-          'Reinsurer Settlement Status',
-          'Placement ID',
-          'Closing ID',
-          'Row Kind',
         ];
 
         const exportRows = this.toCsvRows(rows);
@@ -1382,11 +1378,6 @@ export class PremiumsReportService {
         this.csvNumber(dto.effectiveSettlementCredit),
         this.csvNumber(dto.outstanding),
         dto.paymentStatus,
-        reinsurer?.settlementStatus ?? '',
-        dto.placementId,
-        reinsurer?.closingId ?? '',
-        reinsurer?.rowKind ??
-          (reinsurer ? 'CURRENT_SNAPSHOT' : 'PLACEMENT_CONTEXT'),
       ]);
     });
   }

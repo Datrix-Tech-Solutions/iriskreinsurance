@@ -68,7 +68,6 @@ export function PremiumsKpiCards({ summary, isLoading }: PremiumsKpiCardsProps) 
         iconColor="#e11d48"
         sub={[
           { label: 'Part', value: settlement.part },
-          { label: 'Pending', value: settlement.pending ?? 0 },
           { label: 'Outstanding', value: settlement.outstanding },
         ]}
         isLoading={isLoading}

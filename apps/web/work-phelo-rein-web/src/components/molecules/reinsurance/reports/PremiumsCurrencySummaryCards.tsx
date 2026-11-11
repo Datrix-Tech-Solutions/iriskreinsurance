@@ -8,7 +8,6 @@ import type {
 } from '@/hooks/reinsurance/usePremiumsReport';
 
 interface PremiumsCurrencySummaryCardsProps {
-  scope?: 'cedant' | 'reinsurer';
   summary: PremiumsReportSummary;
   isLoading: boolean;
 }
@@ -45,7 +44,6 @@ function totalsByCode(rows: PremiumsReportCurrencyTotals[], key: AmountKey): Map
 
 export function PremiumsCurrencySummaryCards({
   summary,
-  scope,
   isLoading,
 }: PremiumsCurrencySummaryCardsProps) {
   const { data: currencies = [] } = useCurrencies();
@@ -55,12 +53,7 @@ export function PremiumsCurrencySummaryCards({
       {CARDS.map((card) => (
         <CurrencyAmountListCard
           key={card.key}
-          title={
-            scope === 'reinsurer' &&
-            ['cedantCurrentObligation', 'premiumReceived', 'cedantOutstanding'].includes(card.key)
-              ? `${card.title} (Placement Groups)`
-              : card.title
-          }
+          title={card.title}
           columnLabel={card.columnLabel}
           amountsByCode={totalsByCode(summary.totalsByCurrency ?? [], card.key)}
           currencies={currencies}

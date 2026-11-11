@@ -257,7 +257,7 @@ export function usePremiumsReport(
       total: 0,
       totalPages: 0,
     },
-    isLoading: result.isFetching,
+    isLoading: result.isLoading,
     isError: result.isError,
     error: result.error,
     refetch: result.refetch,

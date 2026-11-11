@@ -188,6 +188,8 @@ financialDatabaseDescribe(
       expect(filtered.meta.total).toBe(1);
       expect(filtered.items[0].id).toBe(targetPlacementId);
       expect(filtered.items[0].reinsurers).toHaveLength(1);
+      expect(filtered.items[0].reinsurers[0].closingId).toBeTruthy();
+      expect(filtered.items[0].reinsurers[0].settlementStatus).toBe('part');
       expect(filtered.items[0].reinsurers[0]).toMatchObject({
         reinsurerId: targetReinsurerId,
         paidAmount: 300,
@@ -254,6 +256,36 @@ financialDatabaseDescribe(
         expect(xlsRows(xls)).toEqual(logical);
         if (name === 'premiums') {
           expect(logical).toHaveLength(2);
+          expect(logical[0]).toEqual([
+            'Policy Number',
+            'Reinsurer',
+            'Insured',
+            'Policy Type',
+            'Cedant',
+            'Offer Date',
+            'Date Closed',
+            'Inception Date',
+            'Expiry Date',
+            'Currency',
+            '100% S.I',
+            '100% Premium',
+            'Fac Share',
+            'Fac Premium',
+            "Insurer's Commission %",
+            "Insurer's Commission Amount",
+            'Brokerage',
+            'Net Premium Due Reinsurer',
+            'Net Premium Due Reinsurer Paid',
+            'Cedant Premium Due',
+            'Cedant Premium Paid',
+            'Mandatory Deductions',
+            'Effective Settlement',
+            'Cedant Outstanding',
+            'Payment Status',
+          ]);
+          expect(logical[1]).toHaveLength(25);
+          expect(logical[1][17]).toBe('800');
+          expect(logical[1][18]).toBe('300');
           expect(csv).toContain('USD');
           expect(csv).not.toContain('GHS');
         } else expect(logical.length).toBeGreaterThan(50);

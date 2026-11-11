@@ -121,7 +121,6 @@ interface PremiumReportDisplayRow {
   premium: number | null;
   reinsurerId: string | null;
   reinsurerName: string | null;
-  settlementStatus: PremiumReinsurerBreakdown['settlementStatus'] | null;
   sharePercent: number | null;
   grossPremium: number | null;
   commissionPercent: number | null;
@@ -158,7 +157,6 @@ function flattenRow(
     premium: r.premium,
     reinsurerId: reinsurer?.reinsurerId ?? null,
     reinsurerName: reinsurer?.reinsurerName ?? null,
-    settlementStatus: reinsurer?.settlementStatus ?? null,
     // That reinsurer's signed line % when exploded, else the placement's overall offer %.
     sharePercent: reinsurer?.sharePercent ?? r.facultativeOfferPercent,
     grossPremium: reinsurer?.grossPremium ?? null,
@@ -336,17 +334,6 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
 
 const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
-    key: 'settlementStatus',
-    label: 'Reinsurer Settlement Status',
-    width: '110px',
-    render: (row) =>
-      row.settlementStatus
-        ? { paid: 'Paid', part: 'Part Payment', pending: 'Pending', outstanding: 'Outstanding' }[
-            row.settlementStatus
-          ]
-        : '—',
-  },
-  {
     key: 'facPremium',
     label: 'Fac Premium',
     width: '120px',
@@ -372,7 +359,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'netPremiumDueIriskRe',
-    label: 'Net Premium Due Reinsurer',
+    label: 'Net Premium Due iRisk Re',
     width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.netPremium, row.currency),
@@ -380,7 +367,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'netPremiumDueIriskRePaid',
-    label: 'Net Premium Due Reinsurer Paid',
+    label: 'Net Premium Due iRisk Re Paid',
     width: '150px',
     className: 'text-right',
     render: (row) => fmtAmount(row.paidAmount, row.currency),
@@ -390,12 +377,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
 
 const COLUMNS_BY_SCOPE: Record<PremiumsReportScope, ReportColumn[]> = {
   cedant: [POLICY_NUMBER_COLUMN, REINSURER_NAME_COLUMN, ...MIDDLE_COLUMNS, ...CEDANT_TAIL_COLUMNS],
-  reinsurer: [
-    POLICY_NUMBER_COLUMN,
-    REINSURER_NAME_COLUMN,
-    ...MIDDLE_COLUMNS,
-    ...REINSURER_TAIL_COLUMNS,
-  ],
+  reinsurer: [POLICY_NUMBER_COLUMN, ...MIDDLE_COLUMNS, ...REINSURER_TAIL_COLUMNS],
 };
 
 export function PremiumsReportTable() {
@@ -528,11 +510,7 @@ export function PremiumsReportTable() {
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       {reportParams && !isError && <PremiumsKpiCards summary={summary} isLoading={isLoading} />}
       {reportParams && !isError && (
-        <PremiumsCurrencySummaryCards
-          scope={reportParams?.scope}
-          summary={summary}
-          isLoading={isLoading}
-        />
+        <PremiumsCurrencySummaryCards summary={summary} isLoading={isLoading} />
       )}
 
       <div className="flex-1 min-h-0">
@@ -568,9 +546,6 @@ export function PremiumsReportTable() {
                   total={meta.total}
                   isLoading={isLoading}
                 />
-                <span className="text-xs text-gray-500">
-                  placement groups; {displayRows.length} settlement rows shown
-                </span>
                 {rowsPerPageControl}
               </div>
             ) : undefined

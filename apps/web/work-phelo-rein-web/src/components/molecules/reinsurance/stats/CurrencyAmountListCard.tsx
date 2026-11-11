@@ -66,6 +66,7 @@ export function CurrencyAmountListCard({
   title,
   columnLabel,
   amountsByCode,
+  currencies = [],
   isLoading,
   emptyMessage = 'No data for this period',
   className,
@@ -74,7 +75,7 @@ export function CurrencyAmountListCard({
   compactEmpty,
   unavailable,
 }: CurrencyAmountListCardProps) {
-  const rows = reportCurrencyRows(amountsByCode, subAmountsByCode);
+  const rows = reportCurrencyRows(amountsByCode, subAmountsByCode, currencies);
 
   return (
     <div className={cn(transparentCardClass('flex flex-col gap-3 py-5 h-80'), className)}>

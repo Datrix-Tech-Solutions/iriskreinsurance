@@ -239,7 +239,7 @@ export function useFacultativeReport(
       totalPages: 0,
     },
     currencyTotals: toCurrencyTotals(summary),
-    isLoading: result.isFetching,
+    isLoading: result.isLoading,
     isError: result.isError,
     error: result.error,
     refetch: result.refetch,
