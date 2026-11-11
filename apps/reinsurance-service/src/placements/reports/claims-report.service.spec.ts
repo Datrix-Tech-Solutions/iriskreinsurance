@@ -203,6 +203,33 @@ describe('ClaimsReportService', () => {
     expect(sql).toContain('"claimId"');
   });
 
+  it.each(['general', 'cedant', 'reinsurer'] as const)(
+    'uses current confirmed originals throughout the %s report SQL',
+    async (scope) => {
+      await service.findClaims('tenant-1', { scope });
+      await service.exportClaimsCsv('tenant-1', { scope });
+
+      // Rows, currency summary, KPIs, reinsurer totals and export share the CTE.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+      for (const [query] of prisma.$queryRaw.mock.calls) {
+        const sql = renderedSql(query).replace(/\s+/g, ' ');
+        expect(sql).toContain(
+          `SUM(r."amount") FILTER ( WHERE r."status"::text = 'BANK_CONFIRMED' AND r."reversalOfReceiptId" IS NULL ) AS "bankConfirmedRecovery"`,
+        );
+        expect(sql).toContain(
+          `MAX(r."bankConfirmedAt") FILTER ( WHERE r."status"::text = 'BANK_CONFIRMED' AND r."reversalOfReceiptId" IS NULL AND r."bankConfirmedAt" IS NOT NULL ) AS "lastRecoveredAt"`,
+        );
+        expect(sql).toContain(
+          'COALESCE(rr."bankConfirmedRecovery", 0) AS "reinsurerPaidAmount"',
+        );
+        expect(sql).toContain(
+          'GREATEST( 0, ab."reinsurerShareAmount" - COALESCE(rr."bankConfirmedRecovery", 0) ) AS "reinsurerOutstandingAmount"',
+        );
+        expect(sql).not.toContain('"reversedRecovery"');
+      }
+    },
+  );
+
   it('exports the full filtered Claims CSV through the server-side report query', async () => {
     prisma.$queryRaw.mockResolvedValueOnce([
       rawClaimReportRow({

@@ -186,9 +186,8 @@ export class ReinsuranceClaimRowStateService {
             claimId: claim.id,
             placementId: claim.placementId,
             bucket,
-            recoveredAmount: this.formatMoney(
-              this.round(position.totalConfirmed - position.totalReversed),
-            ),
+            // Reversed originals are already excluded from totalConfirmed.
+            recoveredAmount: this.formatMoney(position.totalConfirmed),
             recoveredAt: position.recoveredAt,
             isFullyRecovered: bucket === 'closed',
             nonVoidEndorsementCount,
@@ -337,6 +336,7 @@ export class ReinsuranceClaimRowStateService {
         (receipt) =>
           receipt.status ===
             PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED &&
+          !receipt.reversalOfReceiptId &&
           receipt.bankConfirmedAt,
       )
       .map((receipt) => receipt.bankConfirmedAt as Date)

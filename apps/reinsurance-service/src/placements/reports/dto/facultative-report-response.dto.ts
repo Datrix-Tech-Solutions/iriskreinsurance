@@ -38,6 +38,20 @@ export class FacultativeCedantFinancialsDto {
 }
 
 export class FacultativeReinsurerBreakdownDto {
+  @ApiPropertyOptional({
+    enum: ['SETTLEMENT_ONLY'],
+    description:
+      'Historical settlement only; carries no current obligation or participant count.',
+  })
+  rowKind?: 'SETTLEMENT_ONLY';
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Actual original or endorsement closing ID, including the proven source of a historical settlement.',
+  })
+  closingId?: string;
+
   @ApiProperty({ format: 'uuid' })
   reinsurerId!: string;
 

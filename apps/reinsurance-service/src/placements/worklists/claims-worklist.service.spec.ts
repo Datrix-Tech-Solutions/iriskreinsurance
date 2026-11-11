@@ -10,11 +10,11 @@ import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { ReinsuranceClaimsWorklistService } from './claims-worklist.service';
 
 describe('ReinsuranceClaimsWorklistService', () => {
-  let prisma: { $queryRaw: jest.Mock };
+  let prisma: { $queryRaw: jest.Mock<Promise<unknown[]>, unknown[]> };
   let service: ReinsuranceClaimsWorklistService;
 
   beforeEach(() => {
-    prisma = { $queryRaw: jest.fn() };
+    prisma = { $queryRaw: jest.fn<Promise<unknown[]>, unknown[]>() };
     service = new ReinsuranceClaimsWorklistService(
       prisma as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
@@ -128,7 +128,7 @@ describe('ReinsuranceClaimsWorklistService', () => {
     expect(result.items[0]?.claim.finalLossAmount).toBeNull();
   });
 
-  it('maps closed rows using recovered date sort contract and recovered amount net of reversals', async () => {
+  it('maps closed rows using the recovered date and current confirmed recovery', async () => {
     prisma.$queryRaw.mockResolvedValue([
       rawClaimRow({
         bucket: 'closed',
@@ -191,7 +191,7 @@ describe('ReinsuranceClaimsWorklistService', () => {
     expect(cte).toContain('COALESCE(ccp."totalCashCalled", 0) >=');
     expect(cte).toContain('COALESCE(ccp."totalOutstanding", 0) <= 0.01');
     expect(cte).toContain(
-      'COALESCE(ccp."totalConfirmed", 0) - COALESCE(ccp."totalReversed", 0)',
+      'COALESCE(ccp."totalConfirmed", 0) AS "recoveredAmount"',
     );
     expect(cte).toContain('MAX(r."bankConfirmedAt") FILTER');
     expect(cte).toContain('e."status"::text <>');
@@ -201,6 +201,41 @@ describe('ReinsuranceClaimsWorklistService', () => {
     expect(query).toContain('LIMIT');
     expect(query).toContain('OFFSET');
   });
+
+  it.each(['findClaims', 'summarizeClaims'] as const)(
+    '%s uses current confirmed originals for recovery amount and date, keeping reversals separate',
+    async (method) => {
+      prisma.$queryRaw.mockResolvedValue([]);
+      if (method === 'findClaims') {
+        await service.findClaims('tenant-1', {
+          tab: 'open',
+          page: 1,
+          limit: 10,
+        });
+      } else {
+        await service.summarizeClaims('tenant-1');
+      }
+      // Tagged $queryRaw passes the interpolated CTE after the template strings.
+      const arguments_: unknown[] = prisma.$queryRaw.mock.calls[0];
+      const sql = arguments_.map(renderedSql).join(' ').replace(/\s+/g, ' ');
+      expect(sql).toContain(
+        `SUM(r."amount") FILTER ( WHERE r."status"::text = 'BANK_CONFIRMED' AND r."reversalOfReceiptId" IS NULL ) AS "confirmedAmount"`,
+      );
+      expect(sql).toContain(
+        `MAX(r."bankConfirmedAt") FILTER ( WHERE r."status"::text = 'BANK_CONFIRMED' AND r."reversalOfReceiptId" IS NULL AND r."bankConfirmedAt" IS NOT NULL ) AS "latestConfirmedAt"`,
+      );
+      expect(sql).toContain(
+        'COALESCE(ccp."totalConfirmed", 0) AS "recoveredAmount"',
+      );
+      expect(sql).not.toContain('COALESCE(ccp."totalConfirmed", 0) -');
+      expect(sql).toContain(
+        'SUM(ABS(r."amount")) FILTER ( WHERE r."reversalOfReceiptId" IS NOT NULL ) AS "reversedAmount"',
+      );
+      expect(sql).toContain(
+        'SUM(COALESCE(rt."reversedAmount", 0)) AS "totalReversed"',
+      );
+    },
+  );
 
   it('summarizes global claims KPIs from one query using the shared classification CTE', async () => {
     prisma.$queryRaw.mockResolvedValue([

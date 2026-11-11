@@ -330,6 +330,7 @@ export class ReinsuranceDashboardService {
     query: QueryDashboardPeriodDto = {},
   ): Promise<ReinsuranceDashboardFinancialsResponseDto> {
     const range = this.dateRange(query.since, query.until);
+    const asOfDate = new Date();
     const placementPeriodFilter = this.prismaPlacementPeriodFilter(range);
     const [
       confirmedPlacementClosings,
@@ -344,6 +345,8 @@ export class ReinsuranceDashboardService {
           placement: { archivedAt: null, ...placementPeriodFilter },
         },
         select: {
+          placementId: true,
+          participantId: true,
           grossPremium: true,
           netPremium: true,
           brokerageAmount: true,
@@ -357,22 +360,34 @@ export class ReinsuranceDashboardService {
           status: PlacementClosingStatus.CONFIRMED,
           placement: { archivedAt: null, ...placementPeriodFilter },
           endorsement: {
-            status: { not: PlacementEndorsementStatus.VOID },
+            status: PlacementEndorsementStatus.CLOSED,
+            effectiveDate: { lte: asOfDate },
           },
         },
         select: {
+          placementId: true,
+          endorsementParticipant: { select: { originalParticipantId: true } },
           premiumSnapshot: true,
           netPremium: true,
           brokerageAmount: true,
           commissionAmount: true,
           currency: true,
         },
+        orderBy: [
+          { endorsement: { effectiveDate: 'asc' } },
+          { endorsement: { createdAt: 'asc' } },
+          { endorsement: { endorsementNumber: 'asc' } },
+          { endorsement: { id: 'asc' } },
+          { createdAt: 'asc' },
+          { id: 'asc' },
+        ],
       }),
       this.prisma.placementPayment.findMany({
         where: {
           tenantId,
           status: PlacementPaymentStatus.BANK_CONFIRMED,
           type: PlacementPaymentType.PREMIUM_RECEIVED,
+          reversalOfPaymentId: null,
           placement: { archivedAt: null, ...placementPeriodFilter },
         },
         select: { amount: true, currency: true },
@@ -386,6 +401,43 @@ export class ReinsuranceDashboardService {
       }),
     ]);
 
+    // Periods select the placement-createdAt cohort; its financial position is
+    // effective now, even when an applied endorsement falls outside that period.
+    // Keep rows per placement so replacements cannot affect another placement.
+    type FinancialClosing = Omit<
+      (typeof confirmedPlacementClosings)[number],
+      'participantId'
+    > & {
+      participantId?: string;
+      originalParticipantId?: string | null;
+    };
+    const effectiveByPlacement = new Map<string, FinancialClosing[]>();
+    for (const closing of confirmedPlacementClosings) {
+      const rows = effectiveByPlacement.get(closing.placementId) ?? [];
+      rows.push(closing);
+      effectiveByPlacement.set(closing.placementId, rows);
+    }
+    // The query orders endorsements and their closings exactly as the canonical
+    // effective position does. A missing original identity means additive.
+    for (const closing of confirmedEndorsementClosings) {
+      const originalParticipantId =
+        closing.endorsementParticipant.originalParticipantId;
+      let rows = effectiveByPlacement.get(closing.placementId) ?? [];
+      if (originalParticipantId) {
+        rows = rows.filter(
+          (row) =>
+            row.participantId !== originalParticipantId &&
+            row.originalParticipantId !== originalParticipantId,
+        );
+      }
+      rows.push({
+        ...closing,
+        originalParticipantId,
+        grossPremium: closing.premiumSnapshot,
+      });
+      effectiveByPlacement.set(closing.placementId, rows);
+    }
+
     const grossPremiumByCurrency = new Map<string, number>();
     const netPremiumByCurrency = new Map<string, number>();
     const brokerageByCurrency = new Map<string, number>();
@@ -398,7 +450,7 @@ export class ReinsuranceDashboardService {
     let commission = 0;
     let paid = 0;
 
-    for (const closing of confirmedPlacementClosings) {
+    for (const closing of [...effectiveByPlacement.values()].flat()) {
       grossPremium += this.money.toNumber(closing.grossPremium);
       netPremium += this.money.toNumber(closing.netPremium);
       brokerage += this.money.toNumber(closing.brokerageAmount);
@@ -407,28 +459,6 @@ export class ReinsuranceDashboardService {
         grossPremiumByCurrency,
         closing.currency,
         closing.grossPremium,
-      );
-      this.addCurrencyAmount(
-        netPremiumByCurrency,
-        closing.currency,
-        closing.netPremium,
-      );
-      this.addCurrencyAmount(
-        brokerageByCurrency,
-        closing.currency,
-        closing.brokerageAmount,
-      );
-    }
-
-    for (const closing of confirmedEndorsementClosings) {
-      grossPremium += this.money.toNumber(closing.premiumSnapshot);
-      netPremium += this.money.toNumber(closing.netPremium);
-      brokerage += this.money.toNumber(closing.brokerageAmount);
-      commission += this.money.toNumber(closing.commissionAmount);
-      this.addCurrencyAmount(
-        grossPremiumByCurrency,
-        closing.currency,
-        closing.premiumSnapshot,
       );
       this.addCurrencyAmount(
         netPremiumByCurrency,
@@ -531,14 +561,38 @@ export class ReinsuranceDashboardService {
             finalLossAmount: true,
           },
         }),
-        // Recoveries received, windowed by bank-confirmation date.
+        // With no dates, return the current unreversed confirmed balance.
+        // With dates, return activity: retain an originally confirmed receipt
+        // even after reversal, and subtract the reversal in its own window.
         this.prisma.placementClaimRecoveryReceipt.findMany({
           where: {
             tenantId,
             placement: { archivedAt: null },
             claim: { status: { not: PlacementClaimStatus.VOID } },
-            status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
-            ...(range ? { bankConfirmedAt: range } : {}),
+            ...(range
+              ? {
+                  bankConfirmedAt: { not: null, ...range },
+                  OR: [
+                    {
+                      reversalOfReceiptId: null,
+                      status: {
+                        in: [
+                          PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+                          PlacementClaimRecoveryReceiptStatus.REVERSED,
+                        ],
+                      },
+                    },
+                    {
+                      reversalOfReceiptId: { not: null },
+                      status:
+                        PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+                    },
+                  ],
+                }
+              : {
+                  status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+                  reversalOfReceiptId: null,
+                }),
           },
           select: { currency: true, amount: true, reversalOfReceiptId: true },
         }),
@@ -570,7 +624,7 @@ export class ReinsuranceDashboardService {
 
     const recoveriesByCurrency = new Map<string, number>();
     for (const receipt of recoveryReceipts) {
-      // Reversal rows carry positive amounts; subtract them, add originals.
+      // Only period activity includes positive linked reversal rows to subtract.
       const signedAmount =
         this.money.toNumber(receipt.amount) *
         (receipt.reversalOfReceiptId ? -1 : 1);
@@ -628,6 +682,9 @@ export class ReinsuranceDashboardService {
       cashCallCounts,
       warnings: [
         'allocatedLiability uses allocatedFinalLossAmount when present, otherwise allocatedEstimatedLossAmount.',
+        range
+          ? 'recoveriesByCurrency is net activity by bankConfirmedAt in the requested period, including subsequent reversals in their own period.'
+          : 'recoveriesByCurrency is the current balance of unreversed BANK_CONFIRMED original receipts.',
         'PAID cash calls are reserved for future settlement-payment integration.',
       ],
     };

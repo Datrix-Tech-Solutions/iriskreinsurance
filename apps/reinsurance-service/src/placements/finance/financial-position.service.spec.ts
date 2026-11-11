@@ -320,6 +320,37 @@ describe('PlacementFinancialPositionService', () => {
     );
   });
 
+  it('retains a payment-only reinsurer as a credit without creating an obligation', async () => {
+    tx.placementPayment.findMany.mockResolvedValue([
+      {
+        id: 'advance-payment',
+        counterpartyId: 'advance-reinsurer',
+        counterparty: { name: 'Advance reinsurer' },
+        type: PlacementPaymentType.REINSURER_DISBURSEMENT,
+        amount: new Prisma.Decimal('300.00'),
+        currency: 'GHS',
+        status: PlacementPaymentStatus.BANK_CONFIRMED,
+        reversalOfPaymentId: null,
+      },
+    ]);
+
+    const result = await service.getFinancialPosition(
+      tenantId,
+      placementId,
+      asOfDate,
+    );
+
+    expect(result.reinsurers).toContainEqual(
+      expect.objectContaining({
+        counterpartyId: 'advance-reinsurer',
+        counterpartyName: 'Advance reinsurer',
+        currentEffectivePayable: 0,
+        netSettled: 300,
+        outstanding: -300,
+      }),
+    );
+  });
+
   it('adds effective additional-premium endorsement adjustments', async () => {
     tx.placementEndorsementClosing.findMany.mockResolvedValue([
       {

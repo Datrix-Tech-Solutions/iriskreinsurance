@@ -483,11 +483,9 @@ export class ClaimsReportService {
             WHERE r."status"::text = 'BANK_CONFIRMED'
               AND r."reversalOfReceiptId" IS NULL
           ) AS "bankConfirmedRecovery",
-          SUM(ABS(r."amount")) FILTER (
-            WHERE r."reversalOfReceiptId" IS NOT NULL
-          ) AS "reversedRecovery",
           MAX(r."bankConfirmedAt") FILTER (
             WHERE r."status"::text = 'BANK_CONFIRMED'
+              AND r."reversalOfReceiptId" IS NULL
               AND r."bankConfirmedAt" IS NOT NULL
           ) AS "lastRecoveredAt"
         FROM "reinsurance"."PlacementClaimRecoveryReceipt" r
@@ -502,12 +500,12 @@ export class ClaimsReportService {
           ab."reinsurerName",
           ab."reinsurerSharePercent",
           ab."reinsurerShareAmount",
-          COALESCE(rr."bankConfirmedRecovery", 0) - COALESCE(rr."reversedRecovery", 0)
-            AS "reinsurerPaidAmount",
+          -- Reversed originals already leave the BANK_CONFIRMED sum.
+          COALESCE(rr."bankConfirmedRecovery", 0) AS "reinsurerPaidAmount",
           GREATEST(
             0,
             ab."reinsurerShareAmount" -
-              (COALESCE(rr."bankConfirmedRecovery", 0) - COALESCE(rr."reversedRecovery", 0))
+              COALESCE(rr."bankConfirmedRecovery", 0)
           ) AS "reinsurerOutstandingAmount",
           rr."lastRecoveredAt"
         FROM allocation_base ab

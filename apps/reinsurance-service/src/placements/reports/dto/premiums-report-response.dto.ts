@@ -3,6 +3,13 @@ import { PlacementStatus } from '../../../../prisma/generated/client';
 import { PremiumReportPaymentStatus } from './query-premiums-report.dto';
 
 export class PremiumReportReinsurerDto {
+  @ApiPropertyOptional({
+    enum: ['SETTLEMENT_ONLY'],
+    description:
+      'Historical settlement only; carries no current obligation or participant count.',
+  })
+  rowKind?: 'SETTLEMENT_ONLY';
+
   @ApiProperty({ format: 'uuid' })
   reinsurerId!: string;
 

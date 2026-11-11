@@ -358,6 +358,7 @@ export class ReinsuranceClaimsWorklistService {
           ) AS "reversedAmount",
           MAX(r."bankConfirmedAt") FILTER (
             WHERE r."status"::text = 'BANK_CONFIRMED'
+              AND r."reversalOfReceiptId" IS NULL
               AND r."bankConfirmedAt" IS NOT NULL
           ) AS "latestConfirmedAt"
         FROM "reinsurance"."PlacementClaimRecoveryReceipt" r
@@ -426,7 +427,8 @@ export class ReinsuranceClaimsWorklistService {
       classified_claims AS (
         SELECT
           bc.*,
-          COALESCE(ccp."totalConfirmed", 0) - COALESCE(ccp."totalReversed", 0) AS "recoveredAmount",
+          -- Reversed originals already leave the BANK_CONFIRMED sum.
+          COALESCE(ccp."totalConfirmed", 0) AS "recoveredAmount",
           ccp."recoveredAt",
           COALESCE(at."totalAllocated", 0) AS "totalAllocated",
           COALESCE(ccp."totalCashCalled", 0) AS "totalCashCalled",

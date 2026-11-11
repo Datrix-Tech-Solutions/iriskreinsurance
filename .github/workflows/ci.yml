@@ -92,6 +92,36 @@ jobs:
         env:
           REPORTS_TEST_DATABASE_URL: postgresql://reports_test:reports_test@127.0.0.1:5432/irisk_reports_test_ci
 
+      - name: Prepare isolated current-schema financial database
+        env:
+          DATABASE_URL: postgresql://reports_test:reports_test@127.0.0.1:5432/irisk_financial_test_ci
+        run: |
+          node <<'NODE'
+          const { Client } = require('pg');
+          (async () => {
+            const target = new URL(process.env.DATABASE_URL);
+            if (target.hostname !== '127.0.0.1' || target.pathname !== '/irisk_financial_test_ci') {
+              throw new Error('Expected disposable localhost financial test database');
+            }
+            const admin = new URL(target);
+            admin.pathname = '/postgres';
+            const client = new Client({ connectionString: admin.toString() });
+            await client.connect();
+            try { await client.query('CREATE DATABASE "irisk_financial_test_ci"'); }
+            finally { await client.end(); }
+          })().catch(() => { console.error('Disposable database setup failed'); process.exitCode = 1; });
+          NODE
+          npx prisma migrate deploy --schema apps/reinsurance-service/prisma/schema.prisma
+
+      - name: Execute financial correctness PostgreSQL regressions
+        run: >-
+          npm run test:unit --workspace=apps/reinsurance-service -- --runInBand --runTestsByPath
+          src/placements/reports/claims-financial-correctness.database.spec.ts
+          src/placements/reports/dashboard-financial-correctness.database.spec.ts
+          src/placements/reports/financial-reports-attribution.database.spec.ts
+        env:
+          FINANCIAL_REPORTS_TEST_DATABASE_URL: postgresql://reports_test:reports_test@127.0.0.1:5432/irisk_financial_test_ci
+
   web:
     name: Web Lint & Build
     runs-on: ubuntu-latest

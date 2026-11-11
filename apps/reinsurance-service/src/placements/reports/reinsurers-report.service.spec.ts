@@ -3,12 +3,23 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { ReinsurersReportService } from './reinsurers-report.service';
 
+type QueryReader = {
+  $queryRaw: jest.Mock<Promise<unknown>, [unknown]>;
+};
+type TransactionCallback = (reader: QueryReader) => Promise<unknown>;
+
 describe('ReinsurersReportService', () => {
-  let prisma: { $queryRaw: jest.Mock<Promise<unknown>, [unknown]> };
+  let prisma: QueryReader & {
+    $transaction: jest.Mock<Promise<unknown>, [TransactionCallback]>;
+  };
   let service: ReinsurersReportService;
 
   beforeEach(() => {
-    prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    prisma = {
+      $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
+      $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
+    };
+    prisma.$transaction.mockImplementation((run) => run(prisma));
     service = new ReinsurersReportService(
       prisma as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
@@ -16,6 +27,7 @@ describe('ReinsurersReportService', () => {
   });
 
   it('returns server-paginated reinsurer rows with participant-level currency totals', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw
       .mockResolvedValueOnce([
         {
@@ -80,7 +92,7 @@ describe('ReinsurersReportService', () => {
       placementStatus: [PlacementStatus.CLOSED],
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -145,6 +157,7 @@ describe('ReinsurersReportService', () => {
   });
 
   it('builds tenant-scoped Reinsurers SQL from effective confirmed closings and disbursements', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await service.findReinsurers('tenant-1', {
@@ -155,7 +168,7 @@ describe('ReinsurersReportService', () => {
       paymentStatus: ['Part Payment'],
     });
 
-    const firstQuery = prisma.$queryRaw.mock.calls[0]?.[0] as
+    const firstQuery = prisma.$queryRaw.mock.calls[1]?.[0] as
       | { sql?: string }
       | undefined;
     const sql = firstQuery?.sql ?? '';
@@ -167,14 +180,14 @@ describe('ReinsurersReportService', () => {
     expect(sql).toContain('e."status" = \'CLOSED\'');
     expect(sql).toContain('ROW_NUMBER() OVER');
     expect(sql).toContain('pay."type" = \'REINSURER_DISBURSEMENT\'');
-    expect(sql).toContain('pay."status" = \'BANK_CONFIRMED\'');
-    expect(sql).toContain('pay."status" = \'RECORDED\'');
+    expect(sql).toContain("pay.\"status\" IN ('BANK_CONFIRMED', 'RECORDED')");
     expect(sql).toContain('ps."paymentStatus" IN');
-    expect(sql).not.toContain('PlacementPaymentAllocation');
-    expect(sql).not.toContain('PlacementNote');
+    expect(sql).toContain('PlacementPaymentAllocation');
+    expect(sql).toContain('PlacementNote');
   });
 
   it('returns empty Reinsurers report results without fabricating totals', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const result = await service.findReinsurers('tenant-1', {
@@ -201,6 +214,7 @@ describe('ReinsurersReportService', () => {
   });
 
   it('exports the full filtered Reinsurers CSV through the server-side report query', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([
       {
         reinsurerId: 'reinsurer-1',
@@ -229,7 +243,7 @@ describe('ReinsurersReportService', () => {
       limit: 10,
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(csv).toContain(
       'Reinsurer,Currency,Placements,Participants,Ceded Premium,Payable,Disbursed,Outstanding,Pending',
     );
