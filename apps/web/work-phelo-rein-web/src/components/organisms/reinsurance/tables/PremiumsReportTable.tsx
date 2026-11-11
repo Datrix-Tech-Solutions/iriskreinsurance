@@ -30,7 +30,10 @@ import {
 } from '@/hooks/reinsurance/usePremiumsReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
-import { reportSnapshotRowKey } from '@/lib/reinsurance/reportSnapshotRowKey';
+import {
+  reportPlacementGroupNumber,
+  reportSnapshotRowKey,
+} from '@/lib/reinsurance/reportSnapshotRowKey';
 import { PremiumsKpiCards } from '@/components/molecules/reinsurance/reports/PremiumsKpiCards';
 import { PremiumsCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/PremiumsCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
@@ -701,7 +704,9 @@ export function PremiumsReportTable() {
               ? 'No premium activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
-          rowNumber={(_row, index) => (meta.page - 1) * meta.limit + index + 1}
+          rowNumber={(row) =>
+            reportPlacementGroupNumber(row.placementId, rows, meta.page, meta.limit)
+          }
           currentPage={meta.page}
           totalPages={isError ? 0 : Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}

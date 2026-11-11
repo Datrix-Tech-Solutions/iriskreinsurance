@@ -35,7 +35,10 @@ import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
-import { reportSnapshotRowKey } from '@/lib/reinsurance/reportSnapshotRowKey';
+import {
+  reportPlacementGroupNumber,
+  reportSnapshotRowKey,
+} from '@/lib/reinsurance/reportSnapshotRowKey';
 import { FacultativeKpiCards } from '@/components/molecules/reinsurance/reports/FacultativeKpiCards';
 import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
@@ -746,12 +749,8 @@ export function FacultativeReportTable() {
               ? 'No facultative activity for the selected filters'
               : 'Select a date field, date range, and click Run Filter to generate the report'
           }
-          rowNumber={(row, index) =>
-            // Reinsurer scope expands an offer into one row per reinsurer, so rows of the
-            // same offer share its number, matching the "Offers x–y of n" count.
-            reportParams?.scope === 'reinsurer'
-              ? (meta.page - 1) * meta.limit + rows.findIndex((r) => r.id === row.placementId) + 1
-              : (meta.page - 1) * meta.limit + index + 1
+          rowNumber={(row) =>
+            reportPlacementGroupNumber(row.placementId, rows, meta.page, meta.limit)
           }
           currentPage={meta.page}
           totalPages={isError ? 0 : Math.max(meta.totalPages, 1)}
