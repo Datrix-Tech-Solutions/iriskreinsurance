@@ -113,12 +113,16 @@ jobs:
           NODE
           npx prisma migrate deploy --schema apps/reinsurance-service/prisma/schema.prisma
 
+      - name: Build shared types for canonical recovery service tests
+        run: npm run build --workspace=@work-phelo/types
+
       - name: Execute financial correctness PostgreSQL regressions
         run: >-
           npm run test:unit --workspace=apps/reinsurance-service -- --runInBand --runTestsByPath
           src/placements/reports/claims-financial-correctness.database.spec.ts
           src/placements/reports/dashboard-financial-correctness.database.spec.ts
           src/placements/reports/financial-reports-attribution.database.spec.ts
+          src/placements/worklists/payments-worklist.database.spec.ts
         env:
           FINANCIAL_REPORTS_TEST_DATABASE_URL: postgresql://reports_test:reports_test@127.0.0.1:5432/irisk_financial_test_ci
 
