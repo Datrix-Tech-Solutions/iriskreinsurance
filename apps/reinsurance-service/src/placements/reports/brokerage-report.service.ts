@@ -1,3 +1,7 @@
+import {
+  assertReportExportLimit,
+  reportPopulationTotal,
+} from './report-population';
 import { Injectable } from '@nestjs/common';
 import { PlacementStatus, Prisma } from '../../../prisma/generated/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -91,30 +95,42 @@ export class BrokerageReportService {
     tenantId: string,
     query: QueryBrokerageReportDto,
   ): Promise<BrokerageReportResponseDto> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
-    const offset = (page - 1) * limit;
-    const scope = query.scope ?? 'reinsurer';
+    return this.prisma.$transaction(
+      async (tx) => {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 50;
+        const offset = (page - 1) * limit;
+        const scope = query.scope ?? 'reinsurer';
 
-    const rows = await this.prisma.$queryRaw<BrokerageReportRawRow[]>(
-      this.rowsQuery(tenantId, query, limit, offset),
-    );
-    const summaryRows = await this.prisma.$queryRaw<
-      BrokerageReportRawSummaryRow[]
-    >(this.summaryQuery(tenantId, query));
-    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
-    const kpis = await this.findKpis(tenantId, query);
+        const rows = await tx.$queryRaw<BrokerageReportRawRow[]>(
+          this.rowsQuery(tenantId, query, limit, offset),
+        );
+        const summaryRows = await tx.$queryRaw<BrokerageReportRawSummaryRow[]>(
+          this.summaryQuery(tenantId, query),
+        );
+        const total = await reportPopulationTotal(
+          tx,
+          rows,
+          this.reportCtes(tenantId, query),
+          (query.scope ?? 'reinsurer') === 'cedant'
+            ? Prisma.sql`filtered_placements`
+            : Prisma.sql`filtered_participants`,
+        );
+        const kpis = await this.findKpis(tenantId, query, tx);
 
-    return {
-      items: rows.map((row) => this.toRowDto(row)),
-      summary: { ...this.toSummaryDto(scope, summaryRows), ...kpis },
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        return {
+          items: rows.map((row) => this.toRowDto(row)),
+          summary: { ...this.toSummaryDto(scope, summaryRows), ...kpis },
+          meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        };
       },
-    };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   async exportBrokerageCsv(
@@ -124,6 +140,7 @@ export class BrokerageReportService {
     const rows = await this.prisma.$queryRaw<BrokerageReportRawRow[]>(
       this.rowsQuery(tenantId, query, 50_000, 0),
     );
+    assertReportExportLimit(rows);
     const header = [
       'Policy Number',
       'Reinsurer',
@@ -189,6 +206,7 @@ export class BrokerageReportService {
   private async findKpis(
     tenantId: string,
     query: QueryBrokerageReportDto,
+    reader: Pick<Prisma.TransactionClient, '$queryRaw'> = this.prisma,
   ): Promise<
     Pick<
       BrokerageReportResponseDto['summary'],
@@ -202,7 +220,7 @@ export class BrokerageReportService {
   > {
     const ctes = this.reportCtes(tenantId, query);
     const [kpiRows, paymentRows] = await Promise.all([
-      this.prisma.$queryRaw<BrokerageReportRawKpiRow[]>(Prisma.sql`
+      reader.$queryRaw<BrokerageReportRawKpiRow[]>(Prisma.sql`
         ${ctes}
         , placement_level AS (
           SELECT
@@ -231,7 +249,7 @@ export class BrokerageReportService {
           COUNT(*) FILTER (WHERE "brokeragePaid" <= 0.01) AS "brokerageOutstandingCount"
         FROM placement_level
       `),
-      this.prisma.$queryRaw<BrokerageReportRawCountRow[]>(Prisma.sql`
+      reader.$queryRaw<BrokerageReportRawCountRow[]>(Prisma.sql`
         ${ctes}
         , placement_status AS (
           SELECT "placementId", MAX("paymentStatus") AS "paymentStatus"

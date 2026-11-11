@@ -62,6 +62,7 @@ export function ReportCurrencySummaryCards({
         compactEmpty
       />
       <CurrencyAmountListCard
+        unavailable={totals.unavailable?.includes('nicLevy')}
         title="Total NIC Levy"
         columnLabel="NIC Levy"
         amountsByCode={totals.nicLevy}
@@ -72,6 +73,7 @@ export function ReportCurrencySummaryCards({
         compactEmpty
       />
       <CurrencyAmountListCard
+        unavailable={totals.unavailable?.includes('wht')}
         title="Total WHT"
         columnLabel="WHT"
         amountsByCode={totals.wht}

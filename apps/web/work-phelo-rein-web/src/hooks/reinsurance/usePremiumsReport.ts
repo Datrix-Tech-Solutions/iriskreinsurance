@@ -1,3 +1,4 @@
+import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
@@ -13,6 +14,9 @@ export type PremiumReportDateBasis =
   | 'BANK_CONFIRMED_AT';
 
 export interface PremiumsReportParams {
+  scope?: 'cedant' | 'reinsurer';
+  reinsurerIds?: string[];
+  settlementStatuses?: Array<'paid' | 'part' | 'pending' | 'outstanding'>;
   /** Restricts placements by the selected date basis. Defaults to inceptionDate. */
   startDate?: string;
   endDate?: string;
@@ -41,6 +45,9 @@ export interface PremiumsReportParams {
 }
 
 export interface PremiumReinsurerBreakdown {
+  rowKind?: 'SETTLEMENT_ONLY';
+  pendingAmount?: number;
+  settlementStatus?: 'paid' | 'part' | 'pending' | 'outstanding';
   reinsurerId: string;
   reinsurerName: string;
   closingId: string;
@@ -118,7 +125,7 @@ export interface PremiumsReportSummary {
   closedCount: number;
   openCount: number;
   paymentStatusCounts: PremiumsReportCount[];
-  settlementCounts: { paid: number; part: number; outstanding: number };
+  settlementCounts: { paid: number; part: number; outstanding: number; pending?: number };
   totalsByCurrency: PremiumsReportCurrencyTotals[];
   /** Backwards-compatible first-currency summary for older report surfaces. */
   totalCollected: number;
@@ -169,26 +176,33 @@ function normalizeReportParams(params: PremiumsReportParams = {}) {
         : undefined;
 
   return {
+    scope: params.scope ?? 'cedant',
+    ...(params.reinsurerIds?.length ? { reinsurerId: reportFilterCsv(params.reinsurerIds) } : {}),
+    ...(params.settlementStatuses?.length
+      ? { settlementStatus: reportFilterCsv(params.settlementStatuses) }
+      : {}),
     page: params.page ?? 1,
     limit: params.limit ?? 50,
     dateBasis: params.dateBasis ?? 'INCEPTION_DATE',
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
-    ...(params.riskTypeIds?.length ? { riskTypeId: params.riskTypeIds.join(',') } : {}),
-    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
-    ...(params.paymentStatuses?.length ? { paymentStatus: params.paymentStatuses.join(',') } : {}),
-    ...(params.cedantIds?.length ? { cedantId: params.cedantIds.join(',') } : {}),
-    ...(placementStatus ? { placementStatus: placementStatus.join(',') } : {}),
+    ...(params.riskTypeIds?.length ? { riskTypeId: reportFilterCsv(params.riskTypeIds) } : {}),
+    ...(params.currencies?.length ? { currency: reportFilterCsv(params.currencies) } : {}),
+    ...(params.paymentStatuses?.length
+      ? { paymentStatus: reportFilterCsv(params.paymentStatuses) }
+      : {}),
+    ...(params.cedantIds?.length ? { cedantId: reportFilterCsv(params.cedantIds) } : {}),
+    ...(placementStatus ? { placementStatus: reportFilterCsv(placementStatus) } : {}),
     ...(params.sortBy ? { sortBy: params.sortBy } : {}),
     ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
   };
 }
 
 export const premiumsReportKey = (params: PremiumsReportParams = {}) =>
-  ['reinsurance', 'reports', 'premiums', normalizeReportParams(params)] as const;
+  [...reinsuranceReportsKey, 'premiums', normalizeReportParams(params)] as const;
 
 export const premiumsStatsKey = (params: { since: string; until?: string }) =>
-  ['reinsurance', 'reports', 'premiums', 'stats', params] as const;
+  [...reinsuranceReportsKey, 'premiums', 'stats', params] as const;
 
 function normalizeSummary(summary: PremiumsReportResponse['summary']): PremiumsReportSummary {
   const firstCurrency = summary.totalsByCurrency[0];
@@ -212,8 +226,9 @@ export function usePremiumsReport(
   const normalizedParams = normalizeReportParams(params);
   const result = useQuery({
     queryKey: premiumsReportKey(params),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const res = await api.get<PremiumsReportResponse>(PREMIUMS_REPORT_BASE, {
+        signal,
         params: normalizedParams,
       });
       return res.data;
@@ -242,7 +257,7 @@ export function usePremiumsReport(
       total: 0,
       totalPages: 0,
     },
-    isLoading: result.isLoading,
+    isLoading: result.isFetching,
     isError: result.isError,
     error: result.error,
     refetch: result.refetch,

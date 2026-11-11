@@ -1,5 +1,10 @@
 'use client';
 
+import { reportCurrencyOptions } from '@/lib/reinsurance/reportCurrencies';
+
+import { useAppliedReportParams } from '@/hooks/reinsurance/useAppliedReportParams';
+import { brokerageReportKey } from '@/hooks/reinsurance/useBrokerageReport';
+
 import { useState, useMemo } from 'react';
 import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
@@ -244,20 +249,19 @@ export function BrokerageReportTable() {
   const [scope, setScope] = useState<BrokerageReportScope>('reinsurer');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
-  const [reportParams, setReportParams] = useState<BrokerageReportParams | null>(null);
-  const [page, setPage] = useState(1);
+  const [reportParams, setReportParams] =
+    useAppliedReportParams<BrokerageReportParams>(brokerageReportKey);
   const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
-  const { data: currencyOptions = [] } = useCurrencyOptions();
+  const { data: currencyMetadataOptions = [] } = useCurrencyOptions();
 
   const handleScopeChange = (value: string) => {
     setScope(value as BrokerageReportScope);
     setCedantIds([]);
     setReinsurerIds([]);
-    setPage(1);
   };
 
   const { rows, summary, meta, isLoading, isError, error, refetch } = useBrokerageReport(
@@ -267,9 +271,14 @@ export function BrokerageReportTable() {
     },
   );
 
+  const currencyOptions = reportCurrencyOptions(
+    currencyMetadataOptions,
+    summary.totalsByCurrency.map((row) => row.currency),
+  );
+
   const handleRunFilter = () => {
     const nextPage = 1;
-    setPage(nextPage);
+
     setReportParams({
       startDate,
       endDate,
@@ -286,12 +295,16 @@ export function BrokerageReportTable() {
     });
   };
 
-  const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
+  const columns = useMemo<ReportColumn[]>(
+    () => COLUMNS_BY_SCOPE[reportParams?.scope ?? 'reinsurer'],
+    [reportParams?.scope],
+  );
 
   const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
     if (!reportParams) return;
-    setReportParams({ ...reportParams, page: nextPage, limit: pageSize });
+    setReportParams((previous) =>
+      previous ? { ...previous, page: nextPage, limit: pageSize } : previous,
+    );
   };
 
   const rowsPerPageControl =
@@ -303,7 +316,7 @@ export function BrokerageReportTable() {
           onChange={(e) => {
             const nextPageSize = Number(e.target.value);
             setPageSize(nextPageSize);
-            setPage(1);
+
             setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
           }}
           className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
@@ -360,7 +373,7 @@ export function BrokerageReportTable() {
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
           exportOptions={
-            reportParams && !isError && rows.length > 0
+            reportParams && !isError && meta.total > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -371,7 +384,7 @@ export function BrokerageReportTable() {
             reportParams ? (
               <div className="flex items-center gap-3">
                 <ReportRowsSummary
-                  page={page}
+                  page={meta.page}
                   pageSize={pageSize}
                   shown={rows.length}
                   total={meta.total}
@@ -465,7 +478,6 @@ export function BrokerageReportTable() {
                     value={reinsurerIds}
                     onChange={(next) => {
                       setReinsurerIds(next);
-                      setPage(1);
                     }}
                   />
                 </div>
@@ -482,8 +494,8 @@ export function BrokerageReportTable() {
               ? 'No brokerage activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
-          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
-          currentPage={page}
+          rowNumber={(_row, index) => (meta.page - 1) * meta.limit + index + 1}
+          currentPage={meta.page}
           totalPages={isError ? 0 : meta.totalPages}
           onPageChange={handlePageChange}
           noInternalScroll

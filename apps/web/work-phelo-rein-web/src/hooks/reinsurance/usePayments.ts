@@ -1,5 +1,6 @@
+import { useReportMutation } from '@/hooks/reinsurance/useReportMutation';
 import { useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import {
   Facultative,
@@ -118,7 +119,7 @@ export function usePremiumPaymentContext(placementId: string) {
 
 export function useCreatePlacementPayment() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       ...payload
@@ -136,7 +137,7 @@ export function useCreatePlacementPayment() {
 
 export function useConfirmPlacementPaymentBank() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       paymentId,
@@ -158,7 +159,7 @@ export function useConfirmPlacementPaymentBank() {
 
 export function useReversePayment() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ placementId, paymentId }: { placementId: string; paymentId: string }) => {
       const res = await api.post(`${BASE}/${placementId}/payments/${paymentId}/reverse`);
       return res.data as PlacementPayment;
@@ -176,7 +177,7 @@ export function useReversePayment() {
  *  {@link useCreatePlacementPayment}. */
 export function useCancelPlacementPayment() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       paymentId,

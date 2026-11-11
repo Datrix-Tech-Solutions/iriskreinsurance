@@ -1,5 +1,6 @@
+import { useReportMutation } from '@/hooks/reinsurance/useReportMutation';
 import { useMemo } from 'react';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import {
   ApprovePlacementClaimPayablePayload,
@@ -174,7 +175,7 @@ export function usePlacementClaim(placementId: string, claimId: string) {
 
 export function useCreatePlacementClaim() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       ...payload
@@ -196,7 +197,7 @@ export function useCreatePlacementClaim() {
  *  spanning multiple placements — pass the ids per call instead of binding them up front. */
 export function useDeletePlacementClaim() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ placementId, claimId }: { placementId: string; claimId: string }) => {
       await api.delete(`${BASE}/${placementId}/claims/${claimId}`);
     },
@@ -211,7 +212,7 @@ export function useDeletePlacementClaim() {
 
 export function useUpdatePlacementClaim(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: UpdatePlacementClaimPayload) => {
       const res = await api.patch(`${BASE}/${placementId}/claims/${claimId}`, payload);
       return res.data as PlacementClaim;
@@ -228,7 +229,7 @@ export function useUpdatePlacementClaim(placementId: string, claimId: string) {
  *  claims list without opening the full edit panel. */
 export function useUpdatePlacementClaimUnbound() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       claimId,
@@ -245,7 +246,7 @@ export function useUpdatePlacementClaimUnbound() {
 
 export function useUpdateClaimStatus(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (status: PlacementClaimStatus) => {
       const res = await api.patch(`${BASE}/${placementId}/claims/${claimId}/status`, { status });
       return res.data as PlacementClaim;
@@ -286,7 +287,7 @@ export function useClaimAllocations(placementId: string, claimId: string) {
 
 export function useGenerateClaimAllocations(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async () => {
       const res = await api.post(`${BASE}/${placementId}/claims/${claimId}/allocations/generate`);
       return (res.data?.items ?? res.data ?? []) as PlacementClaimAllocation[];
@@ -299,7 +300,7 @@ export function useGenerateClaimAllocations(placementId: string, claimId: string
 
 export function useGenerateClaimAllocationsMutation() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ placementId, claimId }: { placementId: string; claimId: string }) => {
       const res = await api.post(`${BASE}/${placementId}/claims/${claimId}/allocations/generate`);
       return (res.data?.items ?? res.data ?? []) as PlacementClaimAllocation[];
@@ -323,7 +324,7 @@ export function useClaimCashCalls(placementId: string, claimId: string) {
 
 export function useCreateClaimCashCall(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (allocationId: string) => {
       const res = await api.post(
         `${BASE}/${placementId}/claims/${claimId}/allocations/${allocationId}/cash-calls`,
@@ -338,7 +339,7 @@ export function useCreateClaimCashCall(placementId: string, claimId: string) {
 
 export function useUpdateClaimCashCallStatus(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       cashCallId,
       status,
@@ -360,7 +361,7 @@ export function useUpdateClaimCashCallStatus(placementId: string, claimId: strin
 
 export function useVoidClaimCashCall(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ cashCallId, voidReason }: { cashCallId: string; voidReason: string }) => {
       const res = await api.post(
         `${BASE}/${placementId}/claims/${claimId}/cash-calls/${cashCallId}/void`,
@@ -387,7 +388,7 @@ export function useClaimRecoveryPosition(placementId: string, claimId: string) {
 
 export function useApproveClaimPayable(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: ApprovePlacementClaimPayablePayload) => {
       const res = await api.patch(
         `${BASE}/${placementId}/claims/${claimId}/approve-payable`,
@@ -414,7 +415,7 @@ export function useClaimCedantSettlements(placementId: string, claimId: string) 
 
 export function useCreateClaimCedantSettlement(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: CreatePlacementClaimCedantSettlementPayload) => {
       const res = await api.post(
         `${BASE}/${placementId}/claims/${claimId}/cedant-settlements`,
@@ -430,7 +431,7 @@ export function useCreateClaimCedantSettlement(placementId: string, claimId: str
 
 export function useReverseClaimCedantSettlement(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ settlementId, notes }: { settlementId: string; notes?: string }) => {
       const res = await api.post(
         `${BASE}/${placementId}/claims/${claimId}/cedant-settlements/${settlementId}/reverse`,
@@ -446,7 +447,7 @@ export function useReverseClaimCedantSettlement(placementId: string, claimId: st
 
 export function useConfirmClaimCedantSettlementBank(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       settlementId,
       ...payload
@@ -477,7 +478,7 @@ export function useClaimRecoveryApprovals(placementId: string, claimId: string) 
 
 export function useApproveClaimRecovery(placementId: string, claimId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       allocationId,
       ...payload
@@ -509,7 +510,7 @@ export function useClaimRecoveryReceipts(placementId: string, claimId: string, c
 
 export function useCreateClaimRecoveryReceipt() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       claimId,
@@ -542,7 +543,7 @@ export function useCreateClaimRecoveryReceipt() {
 
 export function useReverseClaimRecoveryReceipt() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       claimId,
@@ -568,7 +569,7 @@ export function useReverseClaimRecoveryReceipt() {
 
 export function useConfirmClaimRecoveryReceiptBank() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       claimId,

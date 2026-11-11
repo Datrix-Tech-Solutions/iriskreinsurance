@@ -12,7 +12,11 @@ describe('BrokerageReportService', () => {
     // KPI queries (run after rows + summary) default to empty results.
     prisma.$queryRaw.mockResolvedValue([]);
     service = new BrokerageReportService(
-      prisma as unknown as PrismaService,
+      {
+        ...prisma,
+        $transaction: async (run: (tx: typeof prisma) => Promise<unknown>) =>
+          run(prisma),
+      } as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
     );
   });

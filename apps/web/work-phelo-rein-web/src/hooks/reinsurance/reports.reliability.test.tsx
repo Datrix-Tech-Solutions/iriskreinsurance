@@ -16,7 +16,11 @@ import { FacultativeReportTable } from '@/components/organisms/reinsurance/table
 import { PremiumsReportTable } from '@/components/organisms/reinsurance/tables/PremiumsReportTable';
 import { ReinsurersReportTable } from '@/components/organisms/reinsurance/tables/ReinsurersReportTable';
 
-jest.mock('@tanstack/react-query', () => ({ useQuery: jest.fn() }));
+jest.mock('@tanstack/react-query', () => ({
+  ...jest.requireActual('@tanstack/react-query'),
+  useQuery: jest.fn(),
+  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+}));
 jest.mock('@/lib/api', () => ({ api: { get: jest.fn() } }));
 jest.mock('next/navigation', () => ({ useParams: () => ({ tenantSlug: 'test' }) }));
 jest.mock('@/hooks/useLoadingRouter', () => ({ useLoadingRouter: () => ({ push: jest.fn() }) }));
@@ -52,6 +56,7 @@ function queryState(overrides: Record<string, unknown> = {}) {
   jest.mocked(useQuery).mockReturnValue({
     data: undefined,
     isLoading: false,
+    isFetching: overrides.isLoading ?? false,
     isError: false,
     error: null,
     refetch,

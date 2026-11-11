@@ -75,6 +75,37 @@ function parseArray(value: unknown): unknown {
 }
 
 export class QueryPremiumsReportDto {
+  @ApiPropertyOptional({
+    enum: ['cedant', 'reinsurer'],
+    default: 'cedant',
+    description:
+      'Pages count placement groups. Reinsurer scope includes only matching effective settlement rows.',
+  })
+  @IsOptional()
+  @IsIn(['cedant', 'reinsurer'])
+  scope?: 'cedant' | 'reinsurer' = 'cedant';
+
+  @ApiPropertyOptional({ type: [String], format: 'uuid' })
+  @IsOptional()
+  @Transform(({ value }) => parseArray(value as unknown))
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  reinsurerId?: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    enum: ['paid', 'part', 'pending', 'outstanding'],
+    description:
+      'Reinsurer settlement state; separate from cedant paymentStatus.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseArray(value as unknown))
+  @IsArray()
+  @ArrayMaxSize(4)
+  @IsIn(['paid', 'part', 'pending', 'outstanding'], { each: true })
+  settlementStatus?: Array<'paid' | 'part' | 'pending' | 'outstanding'>;
+
   @ApiPropertyOptional({ example: 1, default: 1, minimum: 1 })
   @IsOptional()
   @Type(() => Number)

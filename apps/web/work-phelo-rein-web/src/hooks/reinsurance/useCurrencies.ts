@@ -11,12 +11,25 @@ function extractList(data: unknown): Currency[] {
   return paginated?.items ?? paginated?.data ?? [];
 }
 
+export async function fetchAllCurrencyMetadata(): Promise<Currency[]> {
+  const rows: Currency[] = [];
+  for (let page = 1; ; page += 1) {
+    const res = await api.get<Currency[] | { items: Currency[]; meta?: { totalPages?: number } }>(
+      BASE,
+      { params: { page, limit: 100 } },
+    );
+    const list = extractList(res.data);
+    rows.push(...list);
+    if (Array.isArray(res.data) || page >= (res.data.meta?.totalPages ?? page)) break;
+  }
+  return rows;
+}
+
 export function useCurrencies() {
   return useQuery({
     queryKey: CURRENCIES_KEY,
     queryFn: async () => {
-      const res = await api.get(BASE);
-      return extractList(res.data);
+      return fetchAllCurrencyMetadata();
     },
   });
 }
@@ -54,15 +67,12 @@ export function useDeleteCurrency() {
 }
 
 export function useCurrencyOptions() {
-  return useQuery({
-    queryKey: [...CURRENCIES_KEY, 'options'],
-    queryFn: async () => {
-      const res = await api.get(BASE);
-      const list = extractList(res.data);
-      return list.map((c) => ({
-        value: c.isoCode,
-        label: c.symbol ? `${c.symbol} ${c.isoCode} – ${c.name}` : `${c.isoCode} – ${c.name}`,
-      }));
-    },
-  });
+  const result = useCurrencies();
+  return {
+    ...result,
+    data: result.data?.map((c) => ({
+      value: c.isoCode,
+      label: c.symbol ? `${c.symbol} ${c.isoCode} – ${c.name}` : `${c.isoCode} – ${c.name}`,
+    })),
+  };
 }

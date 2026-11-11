@@ -8,9 +8,15 @@ describe('CedantsReportService', () => {
   let service: CedantsReportService;
 
   beforeEach(() => {
-    prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    prisma = {
+      $queryRaw: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue([]),
+    };
     service = new CedantsReportService(
-      prisma as unknown as PrismaService,
+      {
+        ...prisma,
+        $transaction: async (run: (tx: typeof prisma) => Promise<unknown>) =>
+          run(prisma),
+      } as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
     );
   });

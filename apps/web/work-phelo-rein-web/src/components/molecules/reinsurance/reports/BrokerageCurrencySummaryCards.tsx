@@ -41,7 +41,7 @@ const REINSURER_CARDS: CardDef[] = [
 function totalsByCode(rows: BrokerageReportCurrencyTotals[], card: CardDef): Map<string, number> {
   return rows.reduce<Map<string, number>>((acc, row) => {
     const value = card.amount(row);
-    if (Math.abs(value) > 0.0001) acc.set(row.currency, value);
+    if (value != null) acc.set(row.currency, value);
     return acc;
   }, new Map());
 }

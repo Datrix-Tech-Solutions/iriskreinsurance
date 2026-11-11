@@ -1,10 +1,11 @@
 'use client';
 
 import { DataList, Column } from '@/components/organisms/shared/DataList';
+import { reportCurrencyRows } from '@/lib/reinsurance/reportCurrencies';
 import { Currency } from '@/types/reinsurance';
 import { cn, transparentCardClass } from '@/lib/utils';
 
-type AmountRow = Currency & { amount: number | null; subAmount: number | null };
+type AmountRow = ReturnType<typeof reportCurrencyRows>[number];
 
 function fmtAmount(value: number): string {
   const abs = Math.abs(value);
@@ -47,7 +48,8 @@ interface CurrencyAmountListCardProps {
   title: string;
   columnLabel: string;
   amountsByCode: Map<string, number>;
-  currencies: Currency[];
+  currencies?: Currency[];
+  unavailable?: boolean;
   isLoading?: boolean;
   emptyMessage?: string;
   /** Overrides the card's default height (`h-80`). */
@@ -64,27 +66,23 @@ export function CurrencyAmountListCard({
   title,
   columnLabel,
   amountsByCode,
-  currencies,
   isLoading,
   emptyMessage = 'No data for this period',
   className,
   subAmountsByCode,
   subLabel,
   compactEmpty,
+  unavailable,
 }: CurrencyAmountListCardProps) {
-  const rows = currencies
-    .map((c) => ({
-      ...c,
-      amount: amountsByCode.get(c.isoCode) ?? null,
-      subAmount: subAmountsByCode?.get(c.isoCode) ?? null,
-    }))
-    .filter((row) => row.amount != null);
+  const rows = reportCurrencyRows(amountsByCode, subAmountsByCode);
 
   return (
     <div className={cn(transparentCardClass('flex flex-col gap-3 py-5 h-80'), className)}>
       <h3 className="text-sm font-semibold text-blue-900">{title}</h3>
       <div className="flex-1 min-h-0 overflow-y-auto -mx-3 px-3">
-        {!isLoading && rows.length === 0 && compactEmpty ? (
+        {unavailable ? (
+          <p className="py-2 text-sm text-gray-400">Not available from this report</p>
+        ) : !isLoading && rows.length === 0 && compactEmpty ? (
           <p className="py-2 text-sm text-gray-400">{emptyMessage}</p>
         ) : (
           <DataList

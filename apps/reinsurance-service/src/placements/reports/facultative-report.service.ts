@@ -1,3 +1,7 @@
+import {
+  assertReportExportLimit,
+  reportPopulationTotal,
+} from './report-population';
 import { Injectable } from '@nestjs/common';
 import {
   assertPaymentAttribution,
@@ -134,7 +138,12 @@ export class FacultativeReportService {
         const summaryRows = await tx.$queryRaw<
           FacultativeReportRawSummaryRow[]
         >(this.summaryQuery(tenantId, query));
-        const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+        const total = await reportPopulationTotal(
+          tx,
+          rows,
+          this.reportCtes(tenantId, query),
+          Prisma.sql`filtered_rows`,
+        );
         const kpis = await this.findKpis(tenantId, query, tx);
 
         return {
@@ -164,6 +173,7 @@ export class FacultativeReportService {
           this.rowsQuery(tenantId, query, 50_000, 0),
         );
         const scope = query.scope ?? 'cedant';
+        assertReportExportLimit(rows);
         const header = [
           'Policy Number',
           'Insurer',
@@ -196,7 +206,9 @@ export class FacultativeReportService {
           'Offer Status',
           'Payment Status',
         ];
-        const lines = [header, ...this.toCsvRows(rows, scope)].map((cells) =>
+        const exportRows = this.toCsvRows(rows, scope);
+        assertReportExportLimit(rows, exportRows.length);
+        const lines = [header, ...exportRows].map((cells) =>
           cells.map((cell) => this.csvEscape(cell)).join(','),
         );
         return `${lines.join('\n')}\n`;

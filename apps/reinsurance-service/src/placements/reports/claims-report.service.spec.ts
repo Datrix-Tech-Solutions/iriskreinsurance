@@ -12,7 +12,11 @@ describe('ClaimsReportService', () => {
     // KPI queries (run after rows + summary) default to empty results.
     prisma.$queryRaw.mockResolvedValue([]);
     service = new ClaimsReportService(
-      prisma as unknown as PrismaService,
+      {
+        ...prisma,
+        $transaction: async (run: (tx: typeof prisma) => Promise<unknown>) =>
+          run(prisma),
+      } as unknown as PrismaService,
       new ReinsuranceMoneyHelper(),
     );
   });
@@ -210,7 +214,7 @@ describe('ClaimsReportService', () => {
       await service.exportClaimsCsv('tenant-1', { scope });
 
       // Rows, currency summary, KPIs, reinsurer totals and export share the CTE.
-      expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
       for (const [query] of prisma.$queryRaw.mock.calls) {
         const sql = renderedSql(query).replace(/\s+/g, ' ');
         expect(sql).toContain(

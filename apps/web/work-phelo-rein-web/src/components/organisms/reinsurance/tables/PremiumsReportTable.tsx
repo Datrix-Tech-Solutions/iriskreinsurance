@@ -1,5 +1,10 @@
 'use client';
 
+import { reportCurrencyOptions } from '@/lib/reinsurance/reportCurrencies';
+
+import { useAppliedReportParams } from '@/hooks/reinsurance/useAppliedReportParams';
+import { premiumsReportKey } from '@/hooks/reinsurance/usePremiumsReport';
+
 import { useState, useMemo } from 'react';
 import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
@@ -26,7 +31,6 @@ import {
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
 import { reportSnapshotRowKey } from '@/lib/reinsurance/reportSnapshotRowKey';
-import { exportToCsv } from '@/lib/exportCsv';
 import { PremiumsKpiCards } from '@/components/molecules/reinsurance/reports/PremiumsKpiCards';
 import { PremiumsCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/PremiumsCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
@@ -42,6 +46,7 @@ const PAYMENT_STATUS_OPTIONS: { value: CedantPaymentStatus; label: string }[] = 
 // Reinsurer-side settlement status (has iRisk paid the reinsurer their net premium?),
 // derived per row from net premium due vs. amount paid.
 const SETTLEMENT_OPTIONS: { value: string; label: string }[] = [
+  { value: 'pending', label: 'Pending' },
   { value: 'paid', label: 'Paid' },
   { value: 'part', label: 'Part Payment' },
   { value: 'outstanding', label: 'Outstanding' },
@@ -113,6 +118,7 @@ interface PremiumReportDisplayRow {
   premium: number | null;
   reinsurerId: string | null;
   reinsurerName: string | null;
+  settlementStatus: PremiumReinsurerBreakdown['settlementStatus'] | null;
   sharePercent: number | null;
   grossPremium: number | null;
   commissionPercent: number | null;
@@ -149,6 +155,7 @@ function flattenRow(
     premium: r.premium,
     reinsurerId: reinsurer?.reinsurerId ?? null,
     reinsurerName: reinsurer?.reinsurerName ?? null,
+    settlementStatus: reinsurer?.settlementStatus ?? null,
     // That reinsurer's signed line % when exploded, else the placement's overall offer %.
     sharePercent: reinsurer?.sharePercent ?? r.facultativeOfferPercent,
     grossPremium: reinsurer?.grossPremium ?? null,
@@ -326,6 +333,17 @@ const CEDANT_TAIL_COLUMNS: ReportColumn[] = [
 
 const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   {
+    key: 'settlementStatus',
+    label: 'Reinsurer Settlement Status',
+    width: '110px',
+    render: (row) =>
+      row.settlementStatus
+        ? { paid: 'Paid', part: 'Part Payment', pending: 'Pending', outstanding: 'Outstanding' }[
+            row.settlementStatus
+          ]
+        : '—',
+  },
+  {
     key: 'facPremium',
     label: 'Fac Premium',
     width: '120px',
@@ -351,7 +369,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'netPremiumDueIriskRe',
-    label: 'Net Premium Due iRisk Re',
+    label: 'Net Premium Due Reinsurer',
     width: '120px',
     className: 'text-right',
     render: (row) => fmtAmount(row.netPremium, row.currency),
@@ -359,7 +377,7 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
   },
   {
     key: 'netPremiumDueIriskRePaid',
-    label: 'Net Premium Due iRisk Re Paid',
+    label: 'Net Premium Due Reinsurer Paid',
     width: '150px',
     className: 'text-right',
     render: (row) => fmtAmount(row.paidAmount, row.currency),
@@ -369,7 +387,12 @@ const REINSURER_TAIL_COLUMNS: ReportColumn[] = [
 
 const COLUMNS_BY_SCOPE: Record<PremiumsReportScope, ReportColumn[]> = {
   cedant: [POLICY_NUMBER_COLUMN, REINSURER_NAME_COLUMN, ...MIDDLE_COLUMNS, ...CEDANT_TAIL_COLUMNS],
-  reinsurer: [POLICY_NUMBER_COLUMN, ...MIDDLE_COLUMNS, ...REINSURER_TAIL_COLUMNS],
+  reinsurer: [
+    POLICY_NUMBER_COLUMN,
+    REINSURER_NAME_COLUMN,
+    ...MIDDLE_COLUMNS,
+    ...REINSURER_TAIL_COLUMNS,
+  ],
 };
 
 export function PremiumsReportTable() {
@@ -387,14 +410,14 @@ export function PremiumsReportTable() {
   const [scope, setScope] = useState<PremiumsReportScope>('cedant');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
-  const [reportParams, setReportParams] = useState<PremiumsReportParams | null>(null);
-  const [page, setPage] = useState(1);
+  const [reportParams, setReportParams] =
+    useAppliedReportParams<PremiumsReportParams>(premiumsReportKey);
   const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
-  const { data: currencyOptions = [] } = useCurrencyOptions();
+  const { data: currencyMetadataOptions = [] } = useCurrencyOptions();
 
   const handleScopeChange = (value: string) => {
     setScope(value as PremiumsReportScope);
@@ -404,7 +427,6 @@ export function PremiumsReportTable() {
     setReinsurerIds([]);
     setPaymentStatuses([]);
     setSettlements([]);
-    setPage(1);
   };
 
   const { rows, summary, isLoading, isError, error, refetch, meta } = usePremiumsReport(
@@ -414,10 +436,21 @@ export function PremiumsReportTable() {
     },
   );
 
+  const currencyOptions = reportCurrencyOptions(
+    currencyMetadataOptions,
+    summary.totalsByCurrency.map((row) => row.currency),
+  );
+
   const handleRunFilter = () => {
     const nextPage = 1;
-    setPage(nextPage);
+
     setReportParams({
+      scope,
+      reinsurerIds: scope === 'reinsurer' && reinsurerIds.length ? reinsurerIds : undefined,
+      settlementStatuses:
+        scope === 'reinsurer' && settlements.length
+          ? (settlements as PremiumsReportParams['settlementStatuses'])
+          : undefined,
       startDate,
       endDate,
       riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
@@ -433,35 +466,23 @@ export function PremiumsReportTable() {
     });
   };
 
-  const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
+  const columns = useMemo<ReportColumn[]>(
+    () => COLUMNS_BY_SCOPE[reportParams?.scope ?? 'cedant'],
+    [reportParams?.scope],
+  );
 
-  const displayRows = useMemo<PremiumReportDisplayRow[]>(() => {
-    let flat = rows.flatMap((r) =>
-      r.reinsurers.length
-        ? r.reinsurers.map((re, index) => flattenRow(r, re, index))
-        : [flattenRow(r, null)],
-    );
-
-    if (scope === 'reinsurer' && reinsurerIds.length) {
-      const selected = new Set(reinsurerIds);
-      flat = flat.filter((row) => row.reinsurerId != null && selected.has(row.reinsurerId));
-    }
-
-    if (scope === 'reinsurer' && settlements.length) {
-      const selected = new Set(settlements);
-      flat = flat.filter((row) => {
-        const net = row.netPremium ?? 0;
-        const paid = row.paidAmount ?? 0;
-        const key =
-          paid <= 0.01 ? 'outstanding' : net > 0.01 && paid >= net - 0.01 ? 'paid' : 'part';
-        return selected.has(key);
-      });
-    }
-    return flat;
-  }, [rows, scope, reinsurerIds, settlements]);
+  // Pages count placement groups; participant rows are already filtered by the server.
+  const displayRows = useMemo<PremiumReportDisplayRow[]>(
+    () =>
+      rows.flatMap((r) =>
+        r.reinsurers.length
+          ? r.reinsurers.map((re, index) => flattenRow(r, re, index))
+          : [flattenRow(r, null)],
+      ),
+    [rows],
+  );
 
   const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
     setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
   };
 
@@ -474,7 +495,7 @@ export function PremiumsReportTable() {
           onChange={(e) => {
             const nextPageSize = Number(e.target.value);
             setPageSize(nextPageSize);
-            setPage(1);
+
             setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
           }}
           className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
@@ -489,15 +510,9 @@ export function PremiumsReportTable() {
     ) : null;
 
   const handleExport = async () => {
-    if (reportParams && scope === 'cedant') {
-      const blob = await downloadPremiumsReportCsv(reportParams);
-      downloadReportBlob(blob, datedReportFilename('premiums-report', 'csv'));
-      return;
-    }
-
-    const headers = columns.map((c) => c.label);
-    const data = displayRows.map((row) => columns.map((c) => c.csv?.(row) ?? ''));
-    exportToCsv(`premiums-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
+    if (!reportParams) return;
+    const blob = await downloadPremiumsReportCsv(reportParams);
+    downloadReportBlob(blob, datedReportFilename('premiums-report', 'csv'));
   };
 
   const handleExportExcel = async () => {
@@ -510,7 +525,11 @@ export function PremiumsReportTable() {
     <div className="flex flex-col gap-4 flex-1 min-h-0">
       {reportParams && !isError && <PremiumsKpiCards summary={summary} isLoading={isLoading} />}
       {reportParams && !isError && (
-        <PremiumsCurrencySummaryCards summary={summary} isLoading={isLoading} />
+        <PremiumsCurrencySummaryCards
+          scope={reportParams?.scope}
+          summary={summary}
+          isLoading={isLoading}
+        />
       )}
 
       <div className="flex-1 min-h-0">
@@ -529,7 +548,7 @@ export function PremiumsReportTable() {
             router.push(`/${tenantSlug}/operations/reinsurance/payments/${row.placementId}`)
           }
           exportOptions={
-            reportParams && !isError && displayRows.length > 0
+            reportParams && !isError && meta.total > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -540,12 +559,15 @@ export function PremiumsReportTable() {
             reportParams ? (
               <div className="flex items-center gap-3">
                 <ReportRowsSummary
-                  page={page}
+                  page={meta.page}
                   pageSize={pageSize}
                   shown={rows.length}
                   total={meta.total}
                   isLoading={isLoading}
                 />
+                <span className="text-xs text-gray-500">
+                  placement groups; {displayRows.length} settlement rows shown
+                </span>
                 {rowsPerPageControl}
               </div>
             ) : undefined
@@ -634,7 +656,6 @@ export function PremiumsReportTable() {
                       value={paymentStatuses}
                       onChange={(next) => {
                         setPaymentStatuses(next);
-                        setPage(1);
                       }}
                     />
                   </div>
@@ -651,7 +672,6 @@ export function PremiumsReportTable() {
                       value={reinsurerIds}
                       onChange={(next) => {
                         setReinsurerIds(next);
-                        setPage(1);
                       }}
                     />
                   </div>
@@ -664,7 +684,6 @@ export function PremiumsReportTable() {
                       value={settlements}
                       onChange={(next) => {
                         setSettlements(next);
-                        setPage(1);
                       }}
                     />
                   </div>
@@ -682,8 +701,8 @@ export function PremiumsReportTable() {
               ? 'No premium activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
-          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
-          currentPage={page}
+          rowNumber={(_row, index) => (meta.page - 1) * meta.limit + index + 1}
+          currentPage={meta.page}
           totalPages={isError ? 0 : Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}
           noInternalScroll

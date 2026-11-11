@@ -42,7 +42,7 @@ const REINSURER_CARDS: { title: string; columnLabel: string; key: AmountKey }[] 
 function totalsByCode(rows: ClaimsReportCurrencyTotals[], key: AmountKey): Map<string, number> {
   return rows.reduce<Map<string, number>>((acc, row) => {
     const value = row[key] ?? 0;
-    if (Math.abs(value) > 0.0001) acc.set(row.currency, value);
+    if (value != null) acc.set(row.currency, value);
     return acc;
   }, new Map());
 }

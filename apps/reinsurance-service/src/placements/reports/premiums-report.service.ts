@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  assertReportExportLimit,
+  reportPopulationTotal,
+} from './report-population';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   assertPaymentAttribution,
   paymentAttributionCtes,
@@ -29,6 +33,8 @@ import { csvToExcelHtml, formatExportDate } from './report-excel-export';
 type SqlNumber = Prisma.Decimal | string | number | null;
 
 type PremiumReportRawReinsurer = {
+  settlementStatus?: 'paid' | 'part' | 'pending' | 'outstanding';
+  pendingAmount?: SqlNumber;
   rowKind?: 'SETTLEMENT_ONLY';
   reinsurerId: string;
   reinsurerName: string;
@@ -84,6 +90,7 @@ type PremiumReportRawKpiRow = {
   settlementPaid: bigint | number | string;
   settlementPart: bigint | number | string;
   settlementOutstanding: bigint | number | string;
+  settlementPending?: bigint | number | string;
 };
 
 type PremiumReportRawCountRow = {
@@ -161,7 +168,12 @@ export class PremiumsReportService {
           this.summaryQuery(tenantId, query),
         );
 
-        const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+        const total = await reportPopulationTotal(
+          tx,
+          rows,
+          this.reportCtes(tenantId, query),
+          Prisma.sql`filtered_rows`,
+        );
         const kpis = await this.findKpis(tenantId, query, tx);
 
         return {
@@ -190,6 +202,7 @@ export class PremiumsReportService {
         const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
           this.rowsQuery(tenantId, query, 50_000, 0),
         );
+        assertReportExportLimit(rows);
         const header = [
           'Policy Number',
           'Reinsurer',
@@ -201,8 +214,8 @@ export class PremiumsReportService {
           'Inception Date',
           'Expiry Date',
           'Currency',
-          '100% S.I',
-          '100% Premium',
+          '100% S.I (Placement Context)',
+          '100% Premium (Placement Context)',
           'Fac Share',
           'Fac Premium',
           "Insurer's Commission %",
@@ -210,15 +223,21 @@ export class PremiumsReportService {
           'Brokerage',
           'Net Premium Due Reinsurer',
           'Net Premium Due Reinsurer Paid',
-          'Cedant Premium Due',
-          'Cedant Premium Paid',
-          'Mandatory Deductions',
-          'Effective Settlement',
-          'Cedant Outstanding',
+          'Cedant Premium Due (Placement Context)',
+          'Cedant Premium Paid (Placement Context)',
+          'Mandatory Deductions (Placement Context)',
+          'Effective Settlement (Placement Context)',
+          'Cedant Outstanding (Placement Context)',
           'Payment Status',
+          'Reinsurer Settlement Status',
+          'Placement ID',
+          'Closing ID',
+          'Row Kind',
         ];
 
-        const lines = [header, ...this.toCsvRows(rows)].map((cells) =>
+        const exportRows = this.toCsvRows(rows);
+        assertReportExportLimit(rows, exportRows.length);
+        const lines = [header, ...exportRows].map((cells) =>
           cells.map((cell) => this.csvEscape(cell)).join(','),
         );
         return `${lines.join('\n')}\n`;
@@ -299,26 +318,14 @@ export class PremiumsReportService {
           (SELECT COUNT(*) FROM filtered_rows f WHERE f."status" <> 'CLOSED') AS "openCount",
           s."settlementPaid",
           s."settlementPart",
+          s."settlementPending",
           s."settlementOutstanding"
         FROM (
           SELECT
-            COUNT(*) FILTER (
-              WHERE COALESCE((re.elem ->> 'paidAmount')::numeric, 0) > 0.01
-                AND COALESCE((re.elem ->> 'netPremium')::numeric, 0) > 0.01
-                AND COALESCE((re.elem ->> 'paidAmount')::numeric, 0)
-                      >= COALESCE((re.elem ->> 'netPremium')::numeric, 0) - 0.01
-            ) AS "settlementPaid",
-            COUNT(*) FILTER (
-              WHERE COALESCE((re.elem ->> 'paidAmount')::numeric, 0) > 0.01
-                AND NOT (
-                  COALESCE((re.elem ->> 'netPremium')::numeric, 0) > 0.01
-                  AND COALESCE((re.elem ->> 'paidAmount')::numeric, 0)
-                        >= COALESCE((re.elem ->> 'netPremium')::numeric, 0) - 0.01
-                )
-            ) AS "settlementPart",
-            COUNT(*) FILTER (
-              WHERE COALESCE((re.elem ->> 'paidAmount')::numeric, 0) <= 0.01
-            ) AS "settlementOutstanding"
+            COUNT(*) FILTER (WHERE re.elem ->> 'settlementStatus' = 'paid') AS "settlementPaid",
+            COUNT(*) FILTER (WHERE re.elem ->> 'settlementStatus' = 'part') AS "settlementPart",
+            COUNT(*) FILTER (WHERE re.elem ->> 'settlementStatus' = 'pending') AS "settlementPending",
+            COUNT(*) FILTER (WHERE re.elem ->> 'settlementStatus' = 'outstanding') AS "settlementOutstanding"
           FROM filtered_rows f
           CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
             WHERE re.elem ->> 'rowKind' IS DISTINCT FROM 'SETTLEMENT_ONLY'
@@ -342,6 +349,9 @@ export class PremiumsReportService {
         count: this.toInteger(r.count),
       })),
       settlementCounts: {
+        ...(Number(kpi?.settlementPending ?? 0) > 0
+          ? { pending: Number(kpi?.settlementPending) }
+          : {}),
         paid: kpi ? this.toInteger(kpi.settlementPaid) : 0,
         part: kpi ? this.toInteger(kpi.settlementPart) : 0,
         outstanding: kpi ? this.toInteger(kpi.settlementOutstanding) : 0,
@@ -359,7 +369,7 @@ export class PremiumsReportService {
         COALESCE(filtered."currency", 'UNKNOWN') AS "currency",
         COUNT(*) AS "placementCount",
         SUM(filtered."participantCount") AS "participantCount",
-        SUM(filtered."sumInsured") AS "sumInsured",
+        SUM(${query.scope === 'reinsurer' ? Prisma.sql`filtered."selectedSumInsured"` : Prisma.sql`filtered."sumInsured"`}) AS "sumInsured",
         SUM(filtered."grossPremium") AS "grossPremium",
         SUM(filtered."commission") AS "commission",
         SUM(filtered."brokerage") AS "brokerage",
@@ -382,6 +392,27 @@ export class PremiumsReportService {
     tenantId: string,
     query: QueryPremiumsReportDto,
   ): Prisma.Sql {
+    if (
+      query.scope !== 'reinsurer' &&
+      (query.reinsurerId?.length || query.settlementStatus?.length)
+    ) {
+      throw new BadRequestException(
+        'reinsurerId and settlementStatus require scope=reinsurer',
+      );
+    }
+    const settlementState = Prisma.sql`CASE
+      WHEN COALESCE(rp."disbursed", cr."disbursed", 0) > 0.01
+        AND (CASE WHEN cc."isCredit" THEN 0 ELSE COALESCE(cc."netPremium", 0) END)
+          - COALESCE(rp."disbursed", cr."disbursed", 0) <= 0.01 THEN 'paid'
+      WHEN COALESCE(rp."disbursed", cr."disbursed", 0) > 0.01 THEN 'part'
+      WHEN COALESCE(rp."pending", cr."pending", 0) > 0.01 THEN 'pending'
+      ELSE 'outstanding' END`;
+    const reinsurerPredicate = query.reinsurerId?.length
+      ? Prisma.sql`AND cc."reinsurerId" IN (${Prisma.join(query.reinsurerId)})`
+      : Prisma.empty;
+    const settlementPredicate = query.settlementStatus?.length
+      ? Prisma.sql`AND (${settlementState}) IN (${Prisma.join(query.settlementStatus)})`
+      : Prisma.empty;
     const dateRange = this.dateRange(query);
     const baseDatePredicate = this.baseDatePredicate(
       query.dateBasis ?? 'INCEPTION_DATE',
@@ -405,7 +436,7 @@ export class PremiumsReportService {
       : Prisma.empty;
     const searchPredicate = this.searchPredicate(query.search);
     const paymentStatusPredicate = query.paymentStatus?.length
-      ? Prisma.sql`WHERE rr."paymentStatus" IN (${Prisma.join(query.paymentStatus)})`
+      ? Prisma.sql`AND rr."paymentStatus" IN (${Prisma.join(query.paymentStatus)})`
       : Prisma.empty;
 
     return Prisma.sql`
@@ -458,6 +489,7 @@ export class PremiumsReportService {
           pc."tenantId",
           pc."signedLinePercent",
           pc."sharePercent",
+          pc."sumInsuredSnapshot",
           pc."grossPremium",
           pc."commissionPercent",
           pc."commissionAmount",
@@ -496,6 +528,7 @@ export class PremiumsReportService {
           ec."tenantId",
           ec."signedLinePercent",
           ec."sharePercent",
+          ec."sumInsuredSnapshot",
           ec."premiumSnapshot" AS "grossPremium",
           ec."commissionPercent",
           ec."commissionAmount",
@@ -617,16 +650,26 @@ export class PremiumsReportService {
               'netPremium', CASE WHEN cc."isCredit" THEN 0 ELSE cc."netPremium" END,
               'paidAmount', COALESCE(rp."disbursed", cr."disbursed", 0),
               'outstandingAmount', CASE WHEN cc."isCredit" THEN 0 ELSE COALESCE(cc."netPremium", 0) END - COALESCE(rp."disbursed", cr."disbursed", 0),
-              'closedAt', cc."confirmedAt"
+              'closedAt', cc."confirmedAt",
+              'settlementStatus', ${settlementState},
+              'pendingAmount', COALESCE(rp."pending", cr."pending", 0)
             )
             ORDER BY cc."reinsurerName" ASC, cc."id" ASC
-          ) AS "reinsurers"
+          ) AS "reinsurers",
+          COUNT(*) FILTER (WHERE NOT cc."isCredit") AS "participantCount",
+          SUM(CASE WHEN cc."isCredit" THEN 0 ELSE cc."sumInsuredSnapshot" END) AS "selectedSumInsured",
+          SUM(CASE WHEN cc."isCredit" THEN 0 ELSE cc."grossPremium" END) AS "grossPremium",
+          SUM(CASE WHEN cc."isCredit" THEN 0 ELSE cc."commissionAmount" END) AS "commission",
+          SUM(CASE WHEN cc."isCredit" THEN 0 ELSE cc."brokerageAmount" END) AS "brokerage",
+          SUM(CASE WHEN cc."isCredit" THEN 0 ELSE cc."netPremium" END) AS "reinsurerPayable",
+          SUM(COALESCE(rp."disbursed", cr."disbursed", 0)) AS "reinsurerDisbursed"
         FROM settlement_closings cc
         LEFT JOIN attribution_snapshot_payments rp
           ON rp."placementId" = cc."placementId" AND rp."id" = cc."id" AND rp."sourceRank" = cc."sourceRank" AND NOT cc."isCredit"
         LEFT JOIN attribution_credit_rows cr
           ON cr."placementId" = cc."placementId" AND cr."id" = cc."id"
           AND cr."sourceRank" = cc."sourceRank" AND cc."isCredit"
+        WHERE TRUE ${reinsurerPredicate} ${settlementPredicate}
         GROUP BY cc."placementId"
       ),
       report_rows AS (
@@ -650,13 +693,14 @@ export class PremiumsReportService {
           bp."currency",
           COALESCE(bp."sumInsured", 0) AS "sumInsured",
           COALESCE(bp."premium", 0) AS "premium",
+          COALESCE(rr."selectedSumInsured", 0) AS "selectedSumInsured",
           bp."facultativeOffer" AS "facultativeOfferPercent",
-          COALESCE(cr."participantCount", 0) AS "participantCount",
-          COALESCE(cr."grossPremium", 0) AS "grossPremium",
-          COALESCE(cr."commission", 0) AS "commission",
-          COALESCE(cr."brokerage", 0) AS "brokerage",
-          COALESCE(cr."reinsurerPayable", 0) AS "reinsurerPayable",
-          COALESCE(pp."reinsurerDisbursed", 0) AS "reinsurerDisbursed",
+          COALESCE(rr."participantCount", 0) AS "participantCount",
+          COALESCE(rr."grossPremium", 0) AS "grossPremium",
+          COALESCE(rr."commission", 0) AS "commission",
+          COALESCE(rr."brokerage", 0) AS "brokerage",
+          COALESCE(rr."reinsurerPayable", 0) AS "reinsurerPayable",
+          COALESCE(rr."reinsurerDisbursed", 0) AS "reinsurerDisbursed",
           COALESCE(cr."cedantObligation", 0) AS "due",
           COALESCE(pp."premiumReceived", 0) AS "paid",
           COALESCE(cr."mandatoryDeductions", 0) AS "mandatoryDeductions",
@@ -691,7 +735,8 @@ export class PremiumsReportService {
       filtered_rows AS (
         SELECT *
         FROM report_rows rr
-        ${paymentStatusPredicate}
+        WHERE TRUE ${paymentStatusPredicate}
+          ${query.scope === 'reinsurer' ? Prisma.sql`AND jsonb_array_length(rr."reinsurers") > 0` : Prisma.empty}
       )
     `;
   }
@@ -1286,6 +1331,12 @@ export class PremiumsReportService {
       return {
         reinsurerId: item.reinsurerId,
         reinsurerName: item.reinsurerName,
+        ...(item.settlementStatus
+          ? { settlementStatus: item.settlementStatus }
+          : {}),
+        ...(item.pendingAmount != null
+          ? { pendingAmount: this.toMoneyNumber(item.pendingAmount) }
+          : {}),
         closingId: item.closingId,
         ...(item.rowKind ? { rowKind: item.rowKind } : {}),
         sharePercent: this.toOptionalMoneyNumber(item.sharePercent),
@@ -1331,6 +1382,11 @@ export class PremiumsReportService {
         this.csvNumber(dto.effectiveSettlementCredit),
         this.csvNumber(dto.outstanding),
         dto.paymentStatus,
+        reinsurer?.settlementStatus ?? '',
+        dto.placementId,
+        reinsurer?.closingId ?? '',
+        reinsurer?.rowKind ??
+          (reinsurer ? 'CURRENT_SNAPSHOT' : 'PLACEMENT_CONTEXT'),
       ]);
     });
   }

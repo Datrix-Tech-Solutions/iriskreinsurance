@@ -1,5 +1,10 @@
 'use client';
 
+import { reportCurrencyOptions } from '@/lib/reinsurance/reportCurrencies';
+
+import { useAppliedReportParams } from '@/hooks/reinsurance/useAppliedReportParams';
+import { facultativeReportKey } from '@/hooks/reinsurance/useFacultativeReport';
+
 import { useState, useMemo } from 'react';
 import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
@@ -461,26 +466,30 @@ export function FacultativeReportTable() {
   const [scope, setScope] = useState<FacultativeReportScope>('cedant');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
-  const [reportParams, setReportParams] = useState<FacultativeReportParams | null>(null);
-  const [page, setPage] = useState(1);
+  const [reportParams, setReportParams] =
+    useAppliedReportParams<FacultativeReportParams>(facultativeReportKey);
   const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
   const { data: riskClassOptions = [] } = useRiskClassOptions();
-  const { data: currencyOptions = [] } = useCurrencyOptions();
+  const { data: currencyMetadataOptions = [] } = useCurrencyOptions();
 
   const handleScopeChange = (value: string) => {
     setScope(value as FacultativeReportScope);
     setCedantIds([]);
     setReinsurerIds([]);
-    setPage(1);
   };
 
   const { rows, summary, currencyTotals, isLoading, isError, error, refetch, meta } =
     useFacultativeReport(reportParams ?? {}, {
       enabled: reportParams !== null,
     });
+
+  const currencyOptions = reportCurrencyOptions(
+    currencyMetadataOptions,
+    summary.totalsByCurrency.map((row) => row.currency),
+  );
 
   const handleRunFilter = () => {
     setReportParams({
@@ -500,21 +509,22 @@ export function FacultativeReportTable() {
       page: 1,
       limit: pageSize,
     });
-    setPage(1);
   };
 
-  const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
+  const columns = useMemo<ReportColumn[]>(
+    () => COLUMNS_BY_SCOPE[reportParams?.scope ?? 'cedant'],
+    [reportParams?.scope],
+  );
 
   // Cedants scope: one row per placement. Reinsurer scope: one row per accepted
   // reinsurer. Reinsurer narrowing is done by the backend before pagination.
   const displayRows = useMemo<FacultativeReportDisplayRow[]>(() => {
-    if (scope === 'cedant') return rows.map((r) => flattenRow(r, null));
+    if ((reportParams?.scope ?? 'cedant') === 'cedant') return rows.map((r) => flattenRow(r, null));
 
     return rows.flatMap((r) => r.reinsurers.map((re, index) => flattenRow(r, re, index)));
-  }, [rows, scope]);
+  }, [rows, reportParams?.scope]);
 
   const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
     setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
   };
 
@@ -525,7 +535,7 @@ export function FacultativeReportTable() {
   const rangeEnd = rows.length ? rangeStart + rows.length - 1 : 0;
   const rangeLabel = rows.length ? `${rangeStart}–${rangeEnd}` : '0';
   const shownLabel =
-    scope === 'reinsurer'
+    reportParams?.scope === 'reinsurer'
       ? `Offers ${rangeLabel} of ${meta.total} · ${displayRows.length} ${
           displayRows.length === 1 ? 'row' : 'rows'
         }`
@@ -544,7 +554,7 @@ export function FacultativeReportTable() {
             onChange={(e) => {
               const nextPageSize = Number(e.target.value);
               setPageSize(nextPageSize);
-              setPage(1);
+
               setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
             }}
             className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
@@ -599,7 +609,7 @@ export function FacultativeReportTable() {
             router.push(`/${tenantSlug}/operations/reinsurance/facultative/${row.placementId}`)
           }
           exportOptions={
-            reportParams && !isError && displayRows.length > 0
+            reportParams && !isError && meta.total > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -720,7 +730,6 @@ export function FacultativeReportTable() {
                     value={reinsurerIds}
                     onChange={(next) => {
                       setReinsurerIds(next);
-                      setPage(1);
                     }}
                   />
                 </div>
@@ -740,11 +749,11 @@ export function FacultativeReportTable() {
           rowNumber={(row, index) =>
             // Reinsurer scope expands an offer into one row per reinsurer, so rows of the
             // same offer share its number, matching the "Offers x–y of n" count.
-            scope === 'reinsurer'
-              ? (page - 1) * pageSize + rows.findIndex((r) => r.id === row.placementId) + 1
-              : (page - 1) * pageSize + index + 1
+            reportParams?.scope === 'reinsurer'
+              ? (meta.page - 1) * meta.limit + rows.findIndex((r) => r.id === row.placementId) + 1
+              : (meta.page - 1) * meta.limit + index + 1
           }
-          currentPage={page}
+          currentPage={meta.page}
           totalPages={isError ? 0 : Math.max(meta.totalPages, 1)}
           onPageChange={handlePageChange}
           noInternalScroll

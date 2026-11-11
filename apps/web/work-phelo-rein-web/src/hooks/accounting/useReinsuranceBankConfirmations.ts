@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useReportMutation } from '@/hooks/reinsurance/useReportMutation';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CASHBOOK_KEY } from '@/hooks/accounting/useCashAccounts';
 import type {
@@ -153,7 +154,7 @@ function invalidateConfirmationAndCashbook(queryClient: ReturnType<typeof useQue
 
 export function useConfirmReinsurerDisbursementBankPayment() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       placementId,
       paymentId,
