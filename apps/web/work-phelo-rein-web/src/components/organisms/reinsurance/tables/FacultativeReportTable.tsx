@@ -30,6 +30,7 @@ import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
 import { facultativeStatusLabel, CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { displayPolicyNumber } from '@/lib/reinsurance/policyNumber';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import { reportSnapshotRowKey } from '@/lib/reinsurance/reportSnapshotRowKey';
 import { FacultativeKpiCards } from '@/components/molecules/reinsurance/reports/FacultativeKpiCards';
 import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
 import { datedReportFilename, downloadReportBlob } from '@/lib/reinsurance/downloadReportExport';
@@ -121,10 +122,11 @@ interface FacultativeReportDisplayRow extends FacultativeReportRow {
 function flattenRow(
   r: FacultativeReportRow,
   reinsurer: FacultativeReinsurerBreakdown | null,
+  snapshotIndex = 0,
 ): FacultativeReportDisplayRow {
   return {
     ...r,
-    id: reinsurer ? `${r.id}:${reinsurer.reinsurerId}` : r.id,
+    id: reinsurer ? reportSnapshotRowKey(r.id, reinsurer, snapshotIndex) : r.id,
     placementId: r.id,
     scopeReinsurer: reinsurer,
   };
@@ -508,7 +510,7 @@ export function FacultativeReportTable() {
   const displayRows = useMemo<FacultativeReportDisplayRow[]>(() => {
     if (scope === 'cedant') return rows.map((r) => flattenRow(r, null));
 
-    return rows.flatMap((r) => r.reinsurers.map((re) => flattenRow(r, re)));
+    return rows.flatMap((r) => r.reinsurers.map((re, index) => flattenRow(r, re, index)));
   }, [rows, scope]);
 
   const handlePageChange = (nextPage: number) => {

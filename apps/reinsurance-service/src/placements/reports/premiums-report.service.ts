@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import {
+  assertPaymentAttribution,
+  paymentAttributionCtes,
+} from './payment-attribution.sql';
 import { PlacementStatus, Prisma } from '../../../prisma/generated/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
@@ -25,6 +29,7 @@ import { csvToExcelHtml, formatExportDate } from './report-excel-export';
 type SqlNumber = Prisma.Decimal | string | number | null;
 
 type PremiumReportRawReinsurer = {
+  rowKind?: 'SETTLEMENT_ONLY';
   reinsurerId: string;
   reinsurerName: string;
   closingId: string;
@@ -141,71 +146,85 @@ export class PremiumsReportService {
     tenantId: string,
     query: QueryPremiumsReportDto,
   ): Promise<PremiumsReportResponseDto> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
-    const offset = (page - 1) * limit;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 50;
+        const offset = (page - 1) * limit;
 
-    const rows = await this.prisma.$queryRaw<PremiumReportRawRow[]>(
-      this.rowsQuery(tenantId, query, limit, offset),
-    );
-    const summaryRows = await this.prisma.$queryRaw<
-      PremiumReportRawSummaryRow[]
-    >(this.summaryQuery(tenantId, query));
+        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
-    const kpis = await this.findKpis(tenantId, query);
+        const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
+          this.rowsQuery(tenantId, query, limit, offset),
+        );
+        const summaryRows = await tx.$queryRaw<PremiumReportRawSummaryRow[]>(
+          this.summaryQuery(tenantId, query),
+        );
 
-    return {
-      items: rows.map((row) => this.toRowDto(row)),
-      summary: { ...this.toSummaryDto(summaryRows), ...kpis },
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+        const kpis = await this.findKpis(tenantId, query, tx);
+
+        return {
+          items: rows.map((row) => this.toRowDto(row)),
+          summary: { ...this.toSummaryDto(summaryRows), ...kpis },
+          meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        };
       },
-    };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   async exportPremiumsCsv(
     tenantId: string,
     query: QueryPremiumsReportDto,
   ): Promise<string> {
-    const rows = await this.prisma.$queryRaw<PremiumReportRawRow[]>(
-      this.rowsQuery(tenantId, query, 50_000, 0),
-    );
-    const header = [
-      'Policy Number',
-      'Reinsurer',
-      'Insured',
-      'Policy Type',
-      'Cedant',
-      'Offer Date',
-      'Date Closed',
-      'Inception Date',
-      'Expiry Date',
-      'Currency',
-      '100% S.I',
-      '100% Premium',
-      'Fac Share',
-      'Fac Premium',
-      "Insurer's Commission %",
-      "Insurer's Commission Amount",
-      'Brokerage',
-      'Net Premium Due Reinsurer',
-      'Net Premium Due Reinsurer Paid',
-      'Cedant Premium Due',
-      'Cedant Premium Paid',
-      'Mandatory Deductions',
-      'Effective Settlement',
-      'Cedant Outstanding',
-      'Payment Status',
-    ];
+    return this.prisma.$transaction(
+      async (tx) => {
+        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-    const lines = [header, ...this.toCsvRows(rows)].map((cells) =>
-      cells.map((cell) => this.csvEscape(cell)).join(','),
+        const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
+          this.rowsQuery(tenantId, query, 50_000, 0),
+        );
+        const header = [
+          'Policy Number',
+          'Reinsurer',
+          'Insured',
+          'Policy Type',
+          'Cedant',
+          'Offer Date',
+          'Date Closed',
+          'Inception Date',
+          'Expiry Date',
+          'Currency',
+          '100% S.I',
+          '100% Premium',
+          'Fac Share',
+          'Fac Premium',
+          "Insurer's Commission %",
+          "Insurer's Commission Amount",
+          'Brokerage',
+          'Net Premium Due Reinsurer',
+          'Net Premium Due Reinsurer Paid',
+          'Cedant Premium Due',
+          'Cedant Premium Paid',
+          'Mandatory Deductions',
+          'Effective Settlement',
+          'Cedant Outstanding',
+          'Payment Status',
+        ];
+
+        const lines = [header, ...this.toCsvRows(rows)].map((cells) =>
+          cells.map((cell) => this.csvEscape(cell)).join(','),
+        );
+        return `${lines.join('\n')}\n`;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    return `${lines.join('\n')}\n`;
   }
 
   async exportPremiumsExcel(
@@ -252,6 +271,7 @@ export class PremiumsReportService {
   private async findKpis(
     tenantId: string,
     query: QueryPremiumsReportDto,
+    reader: Pick<Prisma.TransactionClient, '$queryRaw'> = this.prisma,
   ): Promise<
     Pick<
       PremiumsReportResponseDto['summary'],
@@ -265,7 +285,7 @@ export class PremiumsReportService {
   > {
     const ctes = this.reportCtes(tenantId, query);
     const [kpiRows, paymentRows] = await Promise.all([
-      this.prisma.$queryRaw<PremiumReportRawKpiRow[]>(Prisma.sql`
+      reader.$queryRaw<PremiumReportRawKpiRow[]>(Prisma.sql`
         ${ctes}
         SELECT
           (SELECT COUNT(DISTINCT f."cedantId") FROM filtered_rows f) AS "cedantCount",
@@ -273,6 +293,7 @@ export class PremiumsReportService {
             SELECT COUNT(DISTINCT re.elem ->> 'reinsurerId')
             FROM filtered_rows f
             CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
+            WHERE re.elem ->> 'rowKind' IS DISTINCT FROM 'SETTLEMENT_ONLY'
           ) AS "reinsurerCount",
           (SELECT COUNT(*) FROM filtered_rows f WHERE f."status" = 'CLOSED') AS "closedCount",
           (SELECT COUNT(*) FROM filtered_rows f WHERE f."status" <> 'CLOSED') AS "openCount",
@@ -300,9 +321,10 @@ export class PremiumsReportService {
             ) AS "settlementOutstanding"
           FROM filtered_rows f
           CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
+            WHERE re.elem ->> 'rowKind' IS DISTINCT FROM 'SETTLEMENT_ONLY'
         ) s
       `),
-      this.prisma.$queryRaw<PremiumReportRawCountRow[]>(Prisma.sql`
+      reader.$queryRaw<PremiumReportRawCountRow[]>(Prisma.sql`
         ${ctes}
         SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
         FROM filtered_rows f
@@ -447,8 +469,10 @@ export class PremiumsReportService {
           0 AS "sourceRank",
           NULL::timestamp AS "effectiveDate",
           NULL::timestamp AS "endorsementCreatedAt",
+          NULL::text AS "endorsementNumber",
           NULL::text AS "endorsementId",
-          pc."createdAt"
+          pc."createdAt",
+          TRUE AS "isCurrentEligible"
         FROM "reinsurance"."PlacementClosing" pc
         JOIN base_placements bp ON bp."id" = pc."placementId"
         JOIN "reinsurance"."PlacementParticipant" pp
@@ -483,8 +507,10 @@ export class PremiumsReportService {
           1 AS "sourceRank",
           e."effectiveDate",
           e."createdAt" AS "endorsementCreatedAt",
+          e."endorsementNumber",
           e."id" AS "endorsementId",
-          ec."createdAt"
+          ec."createdAt",
+          (e."status" = 'CLOSED' AND e."effectiveDate" <= NOW()) AS "isCurrentEligible"
         FROM "reinsurance"."PlacementEndorsementClosing" ec
         JOIN base_placements bp ON bp."id" = ec."placementId"
         JOIN "reinsurance"."PlacementEndorsement" e
@@ -498,8 +524,6 @@ export class PremiumsReportService {
          AND cp."tenantId" = ep."tenantId"
         WHERE ec."tenantId" = ${tenantId}
           AND ec."status" = 'CONFIRMED'
-          AND e."status" = 'CLOSED'
-          AND e."effectiveDate" <= NOW()
       ),
       confirmed_closings AS (
         SELECT *
@@ -512,14 +536,21 @@ export class PremiumsReportService {
                 sc."sourceRank" DESC,
                 sc."effectiveDate" DESC NULLS LAST,
                 sc."endorsementCreatedAt" DESC NULLS LAST,
+                sc."endorsementNumber" DESC NULLS LAST,
                 sc."endorsementId" DESC NULLS LAST,
                 sc."createdAt" DESC,
                 sc."id" DESC
             ) AS rn
           FROM snapshot_candidates sc
+          WHERE sc."isCurrentEligible"
         ) ranked
         WHERE ranked.rn = 1
       ),
+      attribution_current AS (
+        SELECT "id", "placementId", "participantId" AS "snapshotKey", "reinsurerId", "sourceRank"
+        FROM confirmed_closings
+      ),
+      ${paymentAttributionCtes(tenantId, { guardPremiumReceipts: true })},
       closing_rollup AS (
         SELECT
           cc."placementId",
@@ -561,19 +592,13 @@ export class PremiumsReportService {
           AND pay."reversalOfPaymentId" IS NULL
         GROUP BY pay."placementId"
       ),
-      reinsurer_payments AS (
-        SELECT
-          pay."placementId",
-          pay."counterpartyId",
-          SUM(pay."amount") AS "paidAmount"
-        FROM "reinsurance"."PlacementPayment" pay
-        JOIN base_placements bp ON bp."id" = pay."placementId"
-        WHERE pay."tenantId" = ${tenantId}
-          AND pay."type" = 'REINSURER_DISBURSEMENT'
-          AND pay."status" = 'BANK_CONFIRMED'
-          AND pay."reversalOfPaymentId" IS NULL
-          AND pay."counterpartyId" IS NOT NULL
-        GROUP BY pay."placementId", pay."counterpartyId"
+      settlement_closings AS (
+        SELECT cc.*, FALSE AS "isCredit" FROM confirmed_closings cc
+        UNION ALL
+        SELECT sc.*, 0::bigint AS rn, TRUE AS "isCredit"
+        FROM snapshot_candidates sc
+        JOIN attribution_credit_rows cr ON cr."id" = sc."id"
+          AND cr."placementId" = sc."placementId" AND cr."sourceRank" = sc."sourceRank"
       ),
       reinsurer_rows AS (
         SELECT
@@ -583,22 +608,25 @@ export class PremiumsReportService {
               'reinsurerId', cc."reinsurerId",
               'reinsurerName', cc."reinsurerName",
               'closingId', cc."id",
-              'sharePercent', COALESCE(cc."signedLinePercent", cc."sharePercent"),
-              'grossPremium', cc."grossPremium",
+              'rowKind', CASE WHEN cc."isCredit" THEN 'SETTLEMENT_ONLY' END,
+              'sharePercent', CASE WHEN cc."isCredit" THEN 0 ELSE COALESCE(cc."signedLinePercent", cc."sharePercent") END,
+              'grossPremium', CASE WHEN cc."isCredit" THEN 0 ELSE cc."grossPremium" END,
               'commissionPercent', cc."commissionPercent",
-              'commissionAmount', cc."commissionAmount",
-              'brokerageAmount', cc."brokerageAmount",
-              'netPremium', cc."netPremium",
-              'paidAmount', COALESCE(rp."paidAmount", 0),
-              'outstandingAmount', COALESCE(cc."netPremium", 0) - COALESCE(rp."paidAmount", 0),
+              'commissionAmount', CASE WHEN cc."isCredit" THEN 0 ELSE cc."commissionAmount" END,
+              'brokerageAmount', CASE WHEN cc."isCredit" THEN 0 ELSE cc."brokerageAmount" END,
+              'netPremium', CASE WHEN cc."isCredit" THEN 0 ELSE cc."netPremium" END,
+              'paidAmount', COALESCE(rp."disbursed", cr."disbursed", 0),
+              'outstandingAmount', CASE WHEN cc."isCredit" THEN 0 ELSE COALESCE(cc."netPremium", 0) END - COALESCE(rp."disbursed", cr."disbursed", 0),
               'closedAt', cc."confirmedAt"
             )
             ORDER BY cc."reinsurerName" ASC, cc."id" ASC
           ) AS "reinsurers"
-        FROM confirmed_closings cc
-        LEFT JOIN reinsurer_payments rp
-          ON rp."placementId" = cc."placementId"
-         AND rp."counterpartyId" = cc."reinsurerId"
+        FROM settlement_closings cc
+        LEFT JOIN attribution_snapshot_payments rp
+          ON rp."placementId" = cc."placementId" AND rp."id" = cc."id" AND rp."sourceRank" = cc."sourceRank" AND NOT cc."isCredit"
+        LEFT JOIN attribution_credit_rows cr
+          ON cr."placementId" = cc."placementId" AND cr."id" = cc."id"
+          AND cr."sourceRank" = cc."sourceRank" AND cc."isCredit"
         GROUP BY cc."placementId"
       ),
       report_rows AS (
@@ -725,6 +753,7 @@ export class PremiumsReportService {
           0 AS "sourceRank",
           NULL::timestamp AS "effectiveDate",
           NULL::timestamp AS "endorsementCreatedAt",
+          NULL::text AS "endorsementNumber",
           NULL::text AS "endorsementId",
           pc."createdAt",
           pc."id"
@@ -760,6 +789,7 @@ export class PremiumsReportService {
           1 AS "sourceRank",
           e."effectiveDate",
           e."createdAt" AS "endorsementCreatedAt",
+          e."endorsementNumber",
           e."id" AS "endorsementId",
           ec."createdAt",
           ec."id"
@@ -787,6 +817,7 @@ export class PremiumsReportService {
                 sc."sourceRank" DESC,
                 sc."effectiveDate" DESC NULLS LAST,
                 sc."endorsementCreatedAt" DESC NULLS LAST,
+                sc."endorsementNumber" DESC NULLS LAST,
                 sc."endorsementId" DESC NULLS LAST,
                 sc."createdAt" DESC,
                 sc."id" DESC
@@ -1256,6 +1287,7 @@ export class PremiumsReportService {
         reinsurerId: item.reinsurerId,
         reinsurerName: item.reinsurerName,
         closingId: item.closingId,
+        ...(item.rowKind ? { rowKind: item.rowKind } : {}),
         sharePercent: this.toOptionalMoneyNumber(item.sharePercent),
         grossPremium: this.toOptionalMoneyNumber(item.grossPremium),
         commissionPercent: this.toOptionalMoneyNumber(item.commissionPercent),

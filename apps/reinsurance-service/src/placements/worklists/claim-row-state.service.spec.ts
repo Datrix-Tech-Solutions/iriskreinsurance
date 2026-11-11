@@ -209,14 +209,71 @@ describe('ReinsuranceClaimRowStateService', () => {
     expect(result.items[0]).toMatchObject({ bucket: 'closed' });
   });
 
-  it('returns recoveredAmount as confirmed minus reversal rows', async () => {
+  it.each([
+    ['fully confirmed', '1000.00', null, '1000.00', 'closed'],
+    ['partially confirmed', '400.00', null, '400.00', 'open'],
+    ['confirmed then fully reversed', null, '1000.00', '0.00', 'open'],
+    ['one of multiple receipts reversed', '750.00', '250.00', '750.00', 'open'],
+    [
+      'replacement recovery after reversal',
+      '1000.00',
+      '1000.00',
+      '1000.00',
+      'closed',
+    ],
+  ])(
+    'uses current confirmed originals for %s',
+    async (_scenario, confirmed, reversed, recoveredAmount, bucket) => {
+      const confirmedAt = new Date('2026-08-20T10:00:00.000Z');
+      prisma.placementClaimRecoveryReceipt.findMany.mockResolvedValue([
+        ...(confirmed
+          ? [
+              receipt(CLAIM_ID, CASH_CALL_ID, confirmed, {
+                status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+                bankConfirmedAt: confirmedAt,
+              }),
+            ]
+          : []),
+        ...(reversed
+          ? [
+              receipt(CLAIM_ID, CASH_CALL_ID, reversed, {
+                status: PlacementClaimRecoveryReceiptStatus.REVERSED,
+              }),
+              receipt(CLAIM_ID, CASH_CALL_ID, reversed, {
+                status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+                reversalOfReceiptId: 'receipt-original',
+                bankConfirmedAt: new Date('2026-08-22T10:00:00.000Z'),
+              }),
+            ]
+          : []),
+      ]);
+
+      const result = await service.findRowState(TENANT_ID, {
+        claimIds: [CLAIM_ID],
+      });
+
+      expect(result.items[0]).toMatchObject({
+        recoveredAmount,
+        bucket,
+        isFullyRecovered: bucket === 'closed',
+        recoveredAt: confirmed ? confirmedAt.toISOString() : null,
+      });
+    },
+  );
+
+  it('reversing a RECORDED receipt does not reduce existing confirmed cash', async () => {
     prisma.placementClaimRecoveryReceipt.findMany.mockResolvedValue([
-      receipt(CLAIM_ID, CASH_CALL_ID, '1000.00', {
+      receipt(CLAIM_ID, CASH_CALL_ID, '750.00', {
         status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
       }),
-      receipt(CLAIM_ID, CASH_CALL_ID, '-250.00', {
+      receipt(CLAIM_ID, CASH_CALL_ID, '250.00', {
         status: PlacementClaimRecoveryReceiptStatus.REVERSED,
+        bankConfirmedAt: null,
+      }),
+      receipt(CLAIM_ID, CASH_CALL_ID, '250.00', {
+        status: PlacementClaimRecoveryReceiptStatus.RECORDED,
         reversalOfReceiptId: 'receipt-1',
+        bankConfirmedAt: null,
       }),
     ]);
 
@@ -226,7 +283,8 @@ describe('ReinsuranceClaimRowStateService', () => {
 
     expect(result.items[0]).toMatchObject({
       recoveredAmount: '750.00',
-      bucket: 'closed',
+      bucket: 'open',
+      recoveredAt: '2026-08-20T10:00:00.000Z',
     });
   });
 
@@ -249,6 +307,37 @@ describe('ReinsuranceClaimRowStateService', () => {
     expect(result.items[0]?.recoveredAt).toBe('2026-08-21T10:00:00.000Z');
   });
 
+  it('keeps receipt reversals linked to their cash call when aggregating a claim', async () => {
+    prisma.placementClaimCashCall.findMany.mockResolvedValue([
+      cashCall(CLAIM_ID, CASH_CALL_ID, ALLOCATION_ID, '400.00'),
+      cashCall(CLAIM_ID, 'cash-call-2', ALLOCATION_ID, '600.00'),
+    ]);
+    prisma.placementClaimRecoveryReceipt.findMany.mockResolvedValue([
+      receipt(CLAIM_ID, CASH_CALL_ID, '400.00', {
+        status: PlacementClaimRecoveryReceiptStatus.REVERSED,
+      }),
+      receipt(CLAIM_ID, CASH_CALL_ID, '400.00', {
+        status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+        reversalOfReceiptId: 'receipt-original',
+        bankConfirmedAt: new Date('2026-08-22T10:00:00.000Z'),
+      }),
+      receipt(CLAIM_ID, 'cash-call-2', '600.00', {
+        status: PlacementClaimRecoveryReceiptStatus.BANK_CONFIRMED,
+      }),
+    ]);
+
+    const result = await service.findRowState(TENANT_ID, {
+      claimIds: [CLAIM_ID],
+    });
+
+    expect(result.items[0]).toMatchObject({
+      recoveredAmount: '600.00',
+      recoveredAt: '2026-08-20T10:00:00.000Z',
+      bucket: 'open',
+      isFullyRecovered: false,
+    });
+  });
+
   it('ignores non-confirmed receipts when deriving recoveredAt', async () => {
     prisma.placementClaimRecoveryReceipt.findMany.mockResolvedValue([
       receipt(CLAIM_ID, CASH_CALL_ID, '1000.00', {
@@ -262,6 +351,11 @@ describe('ReinsuranceClaimRowStateService', () => {
     });
 
     expect(result.items[0]?.recoveredAt).toBeNull();
+    expect(result.items[0]).toMatchObject({
+      recoveredAmount: '0.00',
+      bucket: 'open',
+      isFullyRecovered: false,
+    });
   });
 
   it('excludes VOID endorsements and counts multiple non-VOID endorsements', async () => {

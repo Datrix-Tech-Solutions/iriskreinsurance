@@ -243,6 +243,21 @@ export class PlacementFinancialPositionService {
 
       for (const payment of payments) {
         currencies.add(this.cleanCurrency(payment.currency));
+        // A proven payment may precede its endorsement's effective obligation.
+        // Retain the payee's cash/credit even when no current snapshot names it.
+        if (
+          payment.type === PlacementPaymentType.REINSURER_DISBURSEMENT &&
+          payment.reversalOfPaymentId === null &&
+          (payment.status === PlacementPaymentStatus.BANK_CONFIRMED ||
+            payment.status === PlacementPaymentStatus.RECORDED) &&
+          !reinsurers.has(payment.counterpartyId)
+        ) {
+          this.getReinsurerAccumulator(
+            reinsurers,
+            payment.counterpartyId,
+            payment.counterparty.name,
+          );
+        }
       }
       this.assertSingleCurrency(currencies);
 
@@ -416,6 +431,7 @@ export class PlacementFinancialPositionService {
       orderBy: [
         { endorsement: { effectiveDate: 'asc' } },
         { endorsement: { createdAt: 'asc' } },
+        { endorsement: { endorsementNumber: 'asc' } },
         { endorsementId: 'asc' },
         { createdAt: 'asc' },
         { id: 'asc' },
@@ -434,6 +450,7 @@ export class PlacementFinancialPositionService {
       select: {
         id: true,
         counterpartyId: true,
+        counterparty: { select: { name: true } },
         endorsementClosingId: true,
         type: true,
         amount: true,

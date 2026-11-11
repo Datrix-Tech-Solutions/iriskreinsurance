@@ -64,6 +64,8 @@ async function installReportSchema(client: Client) {
     'PlacementEndorsementParticipant',
     'PlacementEndorsementClosing',
     'PlacementPayment',
+    'PlacementPaymentAllocation',
+    'PlacementNote',
   ];
   const models = Prisma.dmmf.datamodel.models.filter((model) =>
     names.includes(model.name),
@@ -167,6 +169,10 @@ databaseDescribe('Reinsurers report real PostgreSQL', () => {
     role: 'REINSURER' | 'CO_REINSURER' = 'REINSURER',
   ) {
     const participantId = randomUUID();
+    const parent = await pg.query<{ currency: string }>(
+      'SELECT "currency" FROM "reinsurance"."Placement" WHERE "id"=$1 AND "tenantId"=$2',
+      [placementId, tenantId],
+    );
     await insert('PlacementParticipant', {
       id: participantId,
       tenantId,
@@ -181,6 +187,7 @@ databaseDescribe('Reinsurers report real PostgreSQL', () => {
       placementId,
       participantId,
       status: 'CONFIRMED',
+      currency: parent.rows[0].currency,
       sumInsuredSnapshot: sumInsured,
       grossPremium: gross,
       commissionAmount: String(Number(gross) / 10),
@@ -261,6 +268,7 @@ databaseDescribe('Reinsurers report real PostgreSQL', () => {
         participantId,
         counterpartyId,
         type: 'REINSURER_DISBURSEMENT',
+        direction: 'OUTBOUND',
         status,
         currency: 'GHS',
         amount,

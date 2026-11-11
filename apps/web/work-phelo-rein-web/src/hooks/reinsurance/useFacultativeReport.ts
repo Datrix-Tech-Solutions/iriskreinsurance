@@ -40,6 +40,8 @@ export interface FacultativeReportParams {
 export interface FacultativeReinsurerBreakdown {
   reinsurerId: string;
   reinsurerName: string;
+  /** Snapshot identity; absent in older cached report responses. */
+  closingId?: string;
   sharePercent: number | null;
   closedAt: string | null;
   facSumInsured: number | null;

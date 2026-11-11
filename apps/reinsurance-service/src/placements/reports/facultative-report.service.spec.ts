@@ -3,12 +3,23 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { FacultativeReportService } from './facultative-report.service';
 
+type QueryReader = {
+  $queryRaw: jest.Mock<Promise<unknown>, [unknown]>;
+};
+type TransactionCallback = (reader: QueryReader) => Promise<unknown>;
+
 describe('FacultativeReportService', () => {
-  let prisma: { $queryRaw: jest.Mock<Promise<unknown>, [unknown]> };
+  let prisma: QueryReader & {
+    $transaction: jest.Mock<Promise<unknown>, [TransactionCallback]>;
+  };
   let service: FacultativeReportService;
 
   beforeEach(() => {
-    prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    prisma = {
+      $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
+      $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
+    };
+    prisma.$transaction.mockImplementation((run) => run(prisma));
     // KPI queries (run after rows + summary) default to empty results.
     prisma.$queryRaw.mockResolvedValue([]);
     service = new FacultativeReportService(
@@ -18,6 +29,7 @@ describe('FacultativeReportService', () => {
   });
 
   it('returns server-paginated Facultative rows with placement and participant financials', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw
       .mockResolvedValueOnce([
         {
@@ -117,7 +129,7 @@ describe('FacultativeReportService', () => {
       placementStatus: [PlacementStatus.CLOSED],
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -180,6 +192,7 @@ describe('FacultativeReportService', () => {
   });
 
   it('builds tenant-scoped SQL without payment allocations or frontend fan-out dependencies', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await service.findFacultative('tenant-1', {
@@ -191,7 +204,7 @@ describe('FacultativeReportService', () => {
       paymentStatus: ['Paid'],
     });
 
-    const firstQuery = prisma.$queryRaw.mock.calls[0]?.[0] as
+    const firstQuery = prisma.$queryRaw.mock.calls[1]?.[0] as
       | { sql?: string }
       | undefined;
     const sql = firstQuery?.sql ?? '';
@@ -212,10 +225,11 @@ describe('FacultativeReportService', () => {
     expect(sql).toContain('"PlacementNote" n');
     expect(sql).toContain('n."type" = \'CREDIT_NOTE\'');
     expect(sql).toContain('rr."paymentStatus" IN');
-    expect(sql).not.toContain('PlacementPaymentAllocation');
+    expect(sql).toContain('PlacementPaymentAllocation');
   });
 
   it('returns empty Facultative report results without fabricating totals', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     const result = await service.findFacultative('tenant-1', {
@@ -247,6 +261,7 @@ describe('FacultativeReportService', () => {
   });
 
   it('exports the full filtered Facultative CSV through the server-side report query', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([
       {
         id: 'placement-1',
@@ -293,7 +308,7 @@ describe('FacultativeReportService', () => {
       limit: 10,
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(csv).toContain('Policy Number,Insurer,Insured');
     expect(csv).not.toContain('Policy Number,Insurer,Reinsurer,Insured');
     expect(csv).toContain(
@@ -305,6 +320,7 @@ describe('FacultativeReportService', () => {
   });
 
   it('exports explicit reinsurer-scope Facultative CSV rows without multiplying placement-level fields in the API summary', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([
       {
         id: 'placement-1',

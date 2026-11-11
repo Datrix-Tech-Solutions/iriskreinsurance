@@ -25,6 +25,7 @@ import {
 } from '@/hooks/reinsurance/usePremiumsReport';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { todayISODate } from '@/lib/reinsurance/reportDates';
+import { reportSnapshotRowKey } from '@/lib/reinsurance/reportSnapshotRowKey';
 import { exportToCsv } from '@/lib/exportCsv';
 import { PremiumsKpiCards } from '@/components/molecules/reinsurance/reports/PremiumsKpiCards';
 import { PremiumsCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/PremiumsCurrencySummaryCards';
@@ -129,9 +130,10 @@ interface PremiumReportDisplayRow {
 function flattenRow(
   r: PremiumReportRow,
   reinsurer: PremiumReinsurerBreakdown | null,
+  snapshotIndex = 0,
 ): PremiumReportDisplayRow {
   return {
-    id: reinsurer ? `${r.id}:${reinsurer.reinsurerId}` : r.id,
+    id: reinsurer ? reportSnapshotRowKey(r.id, reinsurer, snapshotIndex) : r.id,
     placementId: r.id,
     policyNumber: r.policyNumber,
     title: r.title,
@@ -435,7 +437,9 @@ export function PremiumsReportTable() {
 
   const displayRows = useMemo<PremiumReportDisplayRow[]>(() => {
     let flat = rows.flatMap((r) =>
-      r.reinsurers.length ? r.reinsurers.map((re) => flattenRow(r, re)) : [flattenRow(r, null)],
+      r.reinsurers.length
+        ? r.reinsurers.map((re, index) => flattenRow(r, re, index))
+        : [flattenRow(r, null)],
     );
 
     if (scope === 'reinsurer' && reinsurerIds.length) {

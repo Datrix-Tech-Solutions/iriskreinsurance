@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import {
+  assertPaymentAttribution,
+  paymentAttributionCtes,
+} from './payment-attribution.sql';
 import { Prisma } from '../../../prisma/generated/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
@@ -71,52 +75,67 @@ export class ReinsurersReportService {
     tenantId: string,
     query: QueryReinsurersReportDto,
   ): Promise<ReinsurersReportResponseDto> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
-    const offset = (page - 1) * limit;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 50;
+        const offset = (page - 1) * limit;
 
-    const rows = await this.prisma.$queryRaw<ReinsurerReportRawRow[]>(
-      this.rowsQuery(tenantId, query, limit, offset),
-    );
-    const summaryRows = await this.prisma.$queryRaw<
-      ReinsurerReportRawSummaryRow[]
-    >(this.summaryQuery(tenantId, query));
-    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-    return {
-      items: rows.map((row) => this.toRowDto(row)),
-      summary: this.toSummaryDto(summaryRows),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
+          this.rowsQuery(tenantId, query, limit, offset),
+        );
+        const summaryRows = await tx.$queryRaw<ReinsurerReportRawSummaryRow[]>(
+          this.summaryQuery(tenantId, query),
+        );
+        const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+
+        return {
+          items: rows.map((row) => this.toRowDto(row)),
+          summary: this.toSummaryDto(summaryRows),
+          meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        };
       },
-    };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   async exportReinsurersCsv(
     tenantId: string,
     query: QueryReinsurersReportDto,
   ): Promise<string> {
-    const rows = await this.prisma.$queryRaw<ReinsurerReportRawRow[]>(
-      this.rowsQuery(tenantId, query, 50_000, 0),
+    return this.prisma.$transaction(
+      async (tx) => {
+        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+
+        const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
+          this.rowsQuery(tenantId, query, 50_000, 0),
+        );
+        const header = [
+          'Reinsurer',
+          'Currency',
+          'Placements',
+          'Participants',
+          'Ceded Premium',
+          'Payable',
+          'Disbursed',
+          'Outstanding',
+          'Pending',
+        ];
+        const lines = [
+          header,
+          ...rows.flatMap((row) => this.toCsvRows(row)),
+        ].map((cells) => cells.map((cell) => this.csvEscape(cell)).join(','));
+        return `${lines.join('\n')}\n`;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    const header = [
-      'Reinsurer',
-      'Currency',
-      'Placements',
-      'Participants',
-      'Ceded Premium',
-      'Payable',
-      'Disbursed',
-      'Outstanding',
-      'Pending',
-    ];
-    const lines = [header, ...rows.flatMap((row) => this.toCsvRows(row))].map(
-      (cells) => cells.map((cell) => this.csvEscape(cell)).join(','),
-    );
-    return `${lines.join('\n')}\n`;
   }
 
   async exportReinsurersExcel(
@@ -163,7 +182,7 @@ export class ReinsurersReportService {
           WHERE "outstanding" > 0.0001
         ) AS "reinsurersWithOutstanding",
         COUNT(DISTINCT "placementId") AS "placementCount",
-        COUNT(*) AS "participantCount",
+        COUNT(*) FILTER (WHERE NOT "isCredit") AS "participantCount",
         SUM("sumInsured") AS "sumInsured",
         SUM("cededPremium") AS "cededPremium",
         SUM("brokerage") AS "brokerage",
@@ -241,8 +260,10 @@ export class ReinsurersReportService {
           0 AS "sourceRank",
           NULL::timestamp AS "effectiveDate",
           NULL::timestamp AS "endorsementCreatedAt",
+          NULL::text AS "endorsementNumber",
           NULL::text AS "endorsementId",
-          pc."createdAt"
+          pc."createdAt",
+          TRUE AS "isCurrentEligible"
         FROM "reinsurance"."PlacementClosing" pc
         JOIN base_placements bp ON bp."id" = pc."placementId"
         JOIN "reinsurance"."PlacementParticipant" pp
@@ -274,8 +295,10 @@ export class ReinsurersReportService {
           1 AS "sourceRank",
           e."effectiveDate",
           e."createdAt" AS "endorsementCreatedAt",
+          e."endorsementNumber",
           e."id" AS "endorsementId",
-          ec."createdAt"
+          ec."createdAt",
+          (e."status" = 'CLOSED' AND e."effectiveDate" <= NOW()) AS "isCurrentEligible"
         FROM "reinsurance"."PlacementEndorsementClosing" ec
         JOIN base_placements bp ON bp."id" = ec."placementId"
         JOIN "reinsurance"."PlacementEndorsement" e
@@ -289,8 +312,6 @@ export class ReinsurersReportService {
          AND cp."tenantId" = ep."tenantId"
         WHERE ec."tenantId" = ${tenantId}
           AND ec."status" = 'CONFIRMED'
-          AND e."status" = 'CLOSED'
-          AND e."effectiveDate" <= NOW()
       ),
       effective_snapshots AS (
         SELECT *
@@ -303,37 +324,35 @@ export class ReinsurersReportService {
                 sc."sourceRank" DESC,
                 sc."effectiveDate" DESC NULLS LAST,
                 sc."endorsementCreatedAt" DESC NULLS LAST,
+                sc."endorsementNumber" DESC NULLS LAST,
                 sc."endorsementId" DESC NULLS LAST,
                 sc."createdAt" DESC,
                 sc."id" DESC
             ) AS rn
           FROM snapshot_candidates sc
+          WHERE sc."isCurrentEligible"
         ) ranked
         WHERE ranked.rn = 1
       ),
-      payment_rollup AS (
-        SELECT
-          pay."placementId",
-          pay."participantId",
-          pay."counterpartyId",
-          SUM(pay."amount") FILTER (
-            WHERE pay."type" = 'REINSURER_DISBURSEMENT'
-              AND pay."status" = 'BANK_CONFIRMED'
-          ) AS "disbursed",
-          SUM(pay."amount") FILTER (
-            WHERE pay."type" = 'REINSURER_DISBURSEMENT'
-              AND pay."status" = 'RECORDED'
-          ) AS "pending"
-        FROM "reinsurance"."PlacementPayment" pay
-        JOIN base_placements bp ON bp."id" = pay."placementId"
-        WHERE pay."tenantId" = ${tenantId}
-          AND pay."type" = 'REINSURER_DISBURSEMENT'
-          AND pay."reversalOfPaymentId" IS NULL
-        GROUP BY pay."placementId", pay."participantId", pay."counterpartyId"
+      attribution_current AS (
+        SELECT "id", "placementId", "snapshotKey", "reinsurerId", "sourceRank" FROM effective_snapshots
+      ),
+      ${paymentAttributionCtes(tenantId)},
+      settlement_snapshots AS (
+        SELECT es.*, FALSE AS "isCredit" FROM effective_snapshots es
+        UNION ALL
+        SELECT sc."id", sc."placementId", sc."snapshotKey", sc."reinsurerId",
+          sc."reinsurerName", sc."currency", 0, 0, 0, 0, 0,
+          sc."sourceRank", sc."effectiveDate", sc."endorsementCreatedAt",
+          sc."endorsementNumber", sc."endorsementId", sc."createdAt", sc."isCurrentEligible", 0::bigint AS rn, TRUE AS "isCredit"
+        FROM snapshot_candidates sc
+        JOIN attribution_credit_rows cr ON cr."id" = sc."id"
+          AND cr."placementId" = sc."placementId" AND cr."sourceRank" = sc."sourceRank"
       ),
       participant_financials AS (
         SELECT
           es."placementId",
+          es."isCredit",
           es."snapshotKey" AS "participantId",
           es."reinsurerId",
           es."reinsurerName",
@@ -343,29 +362,27 @@ export class ReinsurersReportService {
           es."brokerage",
           es."commission",
           es."payable",
-          COALESCE(pr."disbursed", 0) AS "disbursed",
-          COALESCE(pr."pending", 0) AS "pending",
-          GREATEST(es."payable" - COALESCE(pr."disbursed", 0), 0) AS "outstanding",
+          COALESCE(pr."disbursed", cr."disbursed", 0) AS "disbursed",
+          COALESCE(pr."pending", cr."pending", 0) AS "pending",
+          es."payable" - COALESCE(pr."disbursed", cr."disbursed", 0) AS "outstanding",
           CASE
-            WHEN es."payable" > 0
-             AND es."payable" - COALESCE(pr."disbursed", 0) <= 0.0001
+            WHEN es."isCredit" AND COALESCE(pr."disbursed", cr."disbursed", 0) > 0.0001
               THEN 'Paid'
-            WHEN COALESCE(pr."disbursed", 0) > 0.0001
+            WHEN es."payable" > 0
+             AND es."payable" - COALESCE(pr."disbursed", cr."disbursed", 0) <= 0.0001
+              THEN 'Paid'
+            WHEN COALESCE(pr."disbursed", cr."disbursed", 0) > 0.0001
               THEN 'Part Payment'
-            WHEN COALESCE(pr."pending", 0) > 0.0001
+            WHEN COALESCE(pr."pending", cr."pending", 0) > 0.0001
               THEN 'Pending'
             ELSE 'Outstanding'
           END AS "paymentStatus"
-        FROM effective_snapshots es
-        LEFT JOIN payment_rollup pr
-          ON pr."placementId" = es."placementId"
-         AND (
-           pr."participantId" = es."snapshotKey"
-           OR (
-             pr."participantId" IS NULL
-             AND pr."counterpartyId" = es."reinsurerId"
-           )
-         )
+        FROM settlement_snapshots es
+        LEFT JOIN attribution_snapshot_payments pr
+          ON pr."placementId" = es."placementId" AND pr."id" = es."id" AND pr."sourceRank" = es."sourceRank" AND NOT es."isCredit"
+        LEFT JOIN attribution_credit_rows cr
+          ON cr."placementId" = es."placementId" AND cr."id" = es."id"
+          AND cr."sourceRank" = es."sourceRank" AND es."isCredit"
       ),
       filtered_participants AS (
         SELECT *
@@ -380,7 +397,7 @@ export class ReinsurersReportService {
           "reinsurerName",
           "currency",
           COUNT(DISTINCT "placementId") AS "placementCount",
-          COUNT(*) AS "participantCount",
+          COUNT(*) FILTER (WHERE NOT "isCredit") AS "participantCount",
           SUM("sumInsured") AS "sumInsured",
           SUM("cededPremium") AS "cededPremium",
           SUM("brokerage") AS "brokerage",

@@ -333,6 +333,7 @@ export class ReinsurancePaymentsWorklistService {
         LEFT JOIN accepted_counts ac ON ac."placementId" = bp."id"
         LEFT JOIN obligations ob ON ob."placementId" = bp."id"
         LEFT JOIN payment_totals pt ON pt."placementId" = bp."id"
+      )
     `;
   }
 

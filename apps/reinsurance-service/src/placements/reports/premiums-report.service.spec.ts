@@ -3,12 +3,23 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { PremiumsReportService } from './premiums-report.service';
 
+type QueryReader = {
+  $queryRaw: jest.Mock<Promise<unknown>, [unknown]>;
+};
+type TransactionCallback = (reader: QueryReader) => Promise<unknown>;
+
 describe('PremiumsReportService', () => {
-  let prisma: { $queryRaw: jest.Mock<Promise<unknown>, [unknown]> };
+  let prisma: QueryReader & {
+    $transaction: jest.Mock<Promise<unknown>, [TransactionCallback]>;
+  };
   let service: PremiumsReportService;
 
   beforeEach(() => {
-    prisma = { $queryRaw: jest.fn<Promise<unknown>, [unknown]>() };
+    prisma = {
+      $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
+      $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
+    };
+    prisma.$transaction.mockImplementation((run) => run(prisma));
     // KPI queries (run after rows + summary) default to empty results.
     prisma.$queryRaw.mockResolvedValue([]);
     service = new PremiumsReportService(
@@ -18,6 +29,7 @@ describe('PremiumsReportService', () => {
   });
 
   it('returns paginated Premiums report rows from set-based report queries', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw
       .mockResolvedValueOnce([
         {
@@ -96,7 +108,7 @@ describe('PremiumsReportService', () => {
       dateBasis: 'INCEPTION_DATE',
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,
@@ -165,6 +177,7 @@ describe('PremiumsReportService', () => {
   });
 
   it('keeps full-filtered totals by currency rather than adding unlike currencies', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {
         currency: 'EUR',
@@ -219,6 +232,7 @@ describe('PremiumsReportService', () => {
   });
 
   it('maps migrated-style closed placements with multiple reinsurers without auxiliary financial rows', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw
       .mockResolvedValueOnce([
         {
@@ -309,7 +323,7 @@ describe('PremiumsReportService', () => {
       placementStatus: [PlacementStatus.CLOSED],
     });
     const sql = (
-      prisma.$queryRaw.mock.calls[0]?.[0] as { sql?: string } | undefined
+      prisma.$queryRaw.mock.calls[1]?.[0] as { sql?: string } | undefined
     )?.sql;
 
     expect(result.items[0]).toMatchObject({
@@ -341,12 +355,13 @@ describe('PremiumsReportService', () => {
     expect(sql).toContain('"PlacementEndorsementClosing" ec');
     expect(sql).toContain('e."status" = \'CLOSED\'');
     expect(sql).toContain('ROW_NUMBER() OVER');
-    expect(sql).not.toContain('PlacementPaymentAllocation');
-    expect(sql).not.toContain('PlacementNote');
+    expect(sql).toContain('PlacementPaymentAllocation');
+    expect(sql).toContain('PlacementNote');
     expect(sql).not.toContain('ReinsuranceAccountingOutbox');
   });
 
   it('builds the canonical settlement query from confirmed closings and bank-confirmed cash', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await service.findPremiums('tenant-1', {
@@ -358,7 +373,7 @@ describe('PremiumsReportService', () => {
       paymentStatus: ['Paid'],
     });
 
-    const firstQuery = prisma.$queryRaw.mock.calls[0]?.[0] as
+    const firstQuery = prisma.$queryRaw.mock.calls[1]?.[0] as
       | { sql?: string }
       | undefined;
     const sql = firstQuery?.sql ?? '';
@@ -479,6 +494,7 @@ describe('PremiumsReportService', () => {
   });
 
   it('exports the full filtered CSV through the server-side report query', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]);
     prisma.$queryRaw.mockResolvedValueOnce([
       {
         id: 'placement-1',
@@ -518,7 +534,7 @@ describe('PremiumsReportService', () => {
       limit: 10,
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(csv).toContain('Policy Number,Reinsurer,Insured');
     expect(csv).toContain(
       'POL-001,,Xpress Group,Motor Comprehensive,Acme Insurance,2026-09-08,2026-09-08',
