@@ -1,3 +1,4 @@
+import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
@@ -147,14 +148,16 @@ function normalizeFacultativeReportParams(params: FacultativeReportParams = {}) 
     dateField: params.dateField ?? 'createdAt',
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
-    ...(params.riskClassIds?.length ? { riskClassId: params.riskClassIds.join(',') } : {}),
-    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
-    ...(params.statuses?.length ? { placementStatus: params.statuses.join(',') } : {}),
-    ...(params.cedantIds?.length ? { cedantId: params.cedantIds.join(',') } : {}),
-    ...(params.reinsurerIds?.length ? { reinsurerId: params.reinsurerIds.join(',') } : {}),
+    ...(params.riskClassIds?.length ? { riskClassId: reportFilterCsv(params.riskClassIds) } : {}),
+    ...(params.currencies?.length ? { currency: reportFilterCsv(params.currencies) } : {}),
+    ...(params.statuses?.length ? { placementStatus: reportFilterCsv(params.statuses) } : {}),
+    ...(params.cedantIds?.length ? { cedantId: reportFilterCsv(params.cedantIds) } : {}),
+    ...(params.reinsurerIds?.length ? { reinsurerId: reportFilterCsv(params.reinsurerIds) } : {}),
     ...(params.lifecycle ? { lifecycle: params.lifecycle } : {}),
     ...(params.scope ? { scope: params.scope } : {}),
-    ...(params.paymentStatuses?.length ? { paymentStatus: params.paymentStatuses.join(',') } : {}),
+    ...(params.paymentStatuses?.length
+      ? { paymentStatus: reportFilterCsv(params.paymentStatuses) }
+      : {}),
     ...(params.sortBy ? { sortBy: params.sortBy } : {}),
     ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
   };
@@ -168,7 +171,7 @@ function totalsByCode(
   >,
 ): Map<string, number> {
   return totals.reduce<Map<string, number>>((acc, row) => {
-    if (Math.abs(row[key]) > 0.0001) acc.set(row.currency, row[key]);
+    if (row[key] != null) acc.set(row.currency, row[key]);
     return acc;
   }, new Map<string, number>());
 }
@@ -176,6 +179,7 @@ function totalsByCode(
 function toCurrencyTotals(summary: FacultativeReportSummary | undefined): ReportCurrencyTotals {
   const totals = summary?.totalsByCurrency ?? [];
   return {
+    unavailable: ['nicLevy', 'wht'],
     sumInsured: totalsByCode(totals, 'sumInsured'),
     premium: totalsByCode(totals, 'premium'),
     brokerage: totalsByCode(totals, 'brokerage'),
@@ -187,7 +191,7 @@ function toCurrencyTotals(summary: FacultativeReportSummary | undefined): Report
 }
 
 export const facultativeReportKey = (params: FacultativeReportParams = {}) =>
-  ['reinsurance', 'reports', 'facultative', normalizeFacultativeReportParams(params)] as const;
+  [...reinsuranceReportsKey, 'facultative', normalizeFacultativeReportParams(params)] as const;
 
 export function useFacultativeReport(
   params: FacultativeReportParams,
@@ -202,8 +206,9 @@ export function useFacultativeReport(
   const normalizedParams = normalizeFacultativeReportParams(params);
   const result = useQuery({
     queryKey: facultativeReportKey(params),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const res = await api.get<FacultativeReportResponse>(FACULTATIVE_REPORT_BASE, {
+        signal,
         params: normalizedParams,
       });
       return res.data;

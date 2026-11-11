@@ -1,5 +1,10 @@
 'use client';
 
+import { reportCurrencyOptions } from '@/lib/reinsurance/reportCurrencies';
+
+import { useAppliedReportParams } from '@/hooks/reinsurance/useAppliedReportParams';
+import { reinsurersReportKey } from '@/hooks/reinsurance/useReinsurersReport';
+
 import { useState, useMemo } from 'react';
 import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
@@ -72,24 +77,27 @@ export function ReinsurersReportTable() {
   const [statuses, setStatuses] = useState<string[]>([]);
   const [paymentStatuses, setPaymentStatuses] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
-  const [reportParams, setReportParams] = useState<ReinsurersReportParams | null>(null);
-  const [page, setPage] = useState(1);
+  const [reportParams, setReportParams] =
+    useAppliedReportParams<ReinsurersReportParams>(reinsurersReportKey);
   const [pageSize, setPageSize] = useState(50);
 
   const { options: reinsurerOptions } = useReinsurerOptions();
   const { data: riskTypeOptions = [] } = useRiskTypeOptions();
-  const { data: currencyOptions = [] } = useCurrencyOptions();
+  const { data: currencyMetadataOptions = [] } = useCurrencyOptions();
 
-  const { rows, currencyTotals, isLoading, isError, error, refetch, meta } = useReinsurersReport(
-    reportParams ?? {},
-    {
+  const { rows, summary, currencyTotals, isLoading, isError, error, refetch, meta } =
+    useReinsurersReport(reportParams ?? {}, {
       enabled: reportParams !== null,
-    },
+    });
+
+  const currencyOptions = reportCurrencyOptions(
+    currencyMetadataOptions,
+    summary.totalsByCurrency.map((row) => row.currency),
   );
 
   const handleRunFilter = () => {
     const nextPage = 1;
-    setPage(nextPage);
+
     setReportParams({
       startDate,
       endDate,
@@ -146,7 +154,6 @@ export function ReinsurersReportTable() {
   const data = useMemo(() => rows.map((r) => ({ ...r, id: r.reinsurerId })), [rows]);
 
   const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
     setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
   };
 
@@ -159,7 +166,7 @@ export function ReinsurersReportTable() {
           onChange={(e) => {
             const nextPageSize = Number(e.target.value);
             setPageSize(nextPageSize);
-            setPage(1);
+
             setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
           }}
           className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
@@ -201,7 +208,7 @@ export function ReinsurersReportTable() {
             reportParams ? (
               <div className="flex items-center gap-3">
                 <ReportRowsSummary
-                  page={page}
+                  page={meta.page}
                   pageSize={pageSize}
                   shown={rows.length}
                   total={meta.total}
@@ -218,7 +225,7 @@ export function ReinsurersReportTable() {
             ) : undefined
           }
           exportOptions={
-            reportParams && !isError && data.length > 0
+            reportParams && !isError && meta.total > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -289,7 +296,6 @@ export function ReinsurersReportTable() {
                   value={paymentStatuses}
                   onChange={(next) => {
                     setPaymentStatuses(next);
-                    setPage(1);
                   }}
                 />
               </div>
@@ -315,8 +321,8 @@ export function ReinsurersReportTable() {
               ? 'No reinsurer activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
-          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
-          currentPage={page}
+          rowNumber={(_row, index) => (meta.page - 1) * meta.limit + index + 1}
+          currentPage={meta.page}
           totalPages={isError ? 0 : Math.max(1, meta.totalPages)}
           onPageChange={handlePageChange}
           noInternalScroll

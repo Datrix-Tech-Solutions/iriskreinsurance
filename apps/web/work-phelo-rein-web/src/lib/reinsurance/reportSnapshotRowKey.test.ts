@@ -1,6 +1,6 @@
 import type { FacultativeReinsurerBreakdown } from '@/hooks/reinsurance/useFacultativeReport';
 import type { PremiumReinsurerBreakdown } from '@/hooks/reinsurance/usePremiumsReport';
-import { reportSnapshotRowKey } from './reportSnapshotRowKey';
+import { reportPlacementGroupNumber, reportSnapshotRowKey } from './reportSnapshotRowKey';
 
 describe('reportSnapshotRowKey', () => {
   it('distinguishes Premium snapshots for the same counterparty, including a settlement-only line', () => {
@@ -83,4 +83,17 @@ describe('reportSnapshotRowKey', () => {
       reportSnapshotRowKey('placement-2', snapshot, 0),
     );
   });
+});
+
+it('numbers expanded rows by placement group rather than settlement-row index', () => {
+  const groups = [{ id: 'p1' }, { id: 'p2' }];
+  expect(['p1', 'p1', 'p2'].map((id) => reportPlacementGroupNumber(id, groups, 2, 50))).toEqual([
+    51, 51, 52,
+  ]);
+  expect(reportPlacementGroupNumber('p2', groups, 1, 50)).toBe(2);
+});
+it('does not invent a position for an unrelated settlement row', () => {
+  expect(() => reportPlacementGroupNumber('unknown', [{ id: 'p1' }], 1, 50)).toThrow(
+    'Report row has no placement group',
+  );
 });

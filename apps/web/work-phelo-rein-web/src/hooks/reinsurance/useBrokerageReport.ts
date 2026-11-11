@@ -1,3 +1,4 @@
+import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { PremiumReportDateBasis, PremiumsReportParams } from './usePremiumsReport';
@@ -95,19 +96,21 @@ function normalizeReportParams(params: BrokerageReportParams = {}) {
     scope: params.scope ?? 'reinsurer',
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
-    ...(params.riskTypeIds?.length ? { riskTypeId: params.riskTypeIds.join(',') } : {}),
-    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
-    ...(params.paymentStatuses?.length ? { paymentStatus: params.paymentStatuses.join(',') } : {}),
-    ...(params.cedantIds?.length ? { cedantId: params.cedantIds.join(',') } : {}),
-    ...(params.reinsurerIds?.length ? { reinsurerId: params.reinsurerIds.join(',') } : {}),
-    ...(placementStatus ? { placementStatus: placementStatus.join(',') } : {}),
+    ...(params.riskTypeIds?.length ? { riskTypeId: reportFilterCsv(params.riskTypeIds) } : {}),
+    ...(params.currencies?.length ? { currency: reportFilterCsv(params.currencies) } : {}),
+    ...(params.paymentStatuses?.length
+      ? { paymentStatus: reportFilterCsv(params.paymentStatuses) }
+      : {}),
+    ...(params.cedantIds?.length ? { cedantId: reportFilterCsv(params.cedantIds) } : {}),
+    ...(params.reinsurerIds?.length ? { reinsurerId: reportFilterCsv(params.reinsurerIds) } : {}),
+    ...(placementStatus ? { placementStatus: reportFilterCsv(placementStatus) } : {}),
     ...(params.sortBy ? { sortBy: params.sortBy } : {}),
     ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
   };
 }
 
 export const brokerageReportKey = (params: BrokerageReportParams = {}) =>
-  ['reinsurance', 'reports', 'brokerage', normalizeReportParams(params)] as const;
+  [...reinsuranceReportsKey, 'brokerage', normalizeReportParams(params)] as const;
 
 const emptySummary: BrokerageReportSummary = {
   scope: 'reinsurer',
@@ -134,8 +137,9 @@ export function useBrokerageReport(
   const normalizedParams = normalizeReportParams(params);
   const result = useQuery({
     queryKey: brokerageReportKey(params),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const res = await api.get<BrokerageReportResponse>(BROKERAGE_REPORT_BASE, {
+        signal,
         params: normalizedParams,
       });
       return res.data;

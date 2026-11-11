@@ -1,3 +1,7 @@
+import {
+  assertReportExportLimit,
+  reportPopulationTotal,
+} from './report-population';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../../../prisma/generated/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -67,28 +71,38 @@ export class CedantsReportService {
     tenantId: string,
     query: QueryCedantsReportDto,
   ): Promise<CedantsReportResponseDto> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
-    const offset = (page - 1) * limit;
+    return this.prisma.$transaction(
+      async (tx) => {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 50;
+        const offset = (page - 1) * limit;
 
-    const rows = await this.prisma.$queryRaw<CedantReportRawRow[]>(
-      this.rowsQuery(tenantId, query, limit, offset),
-    );
-    const summaryRows = await this.prisma.$queryRaw<
-      CedantReportRawSummaryRow[]
-    >(this.summaryQuery(tenantId, query));
-    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+        const rows = await tx.$queryRaw<CedantReportRawRow[]>(
+          this.rowsQuery(tenantId, query, limit, offset),
+        );
+        const summaryRows = await tx.$queryRaw<CedantReportRawSummaryRow[]>(
+          this.summaryQuery(tenantId, query),
+        );
+        const total = await reportPopulationTotal(
+          tx,
+          rows,
+          this.reportCtes(tenantId, query),
+          Prisma.sql`filtered_cedants`,
+        );
 
-    return {
-      items: rows.map((row) => this.toRowDto(row)),
-      summary: this.toSummaryDto(summaryRows),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        return {
+          items: rows.map((row) => this.toRowDto(row)),
+          summary: this.toSummaryDto(summaryRows),
+          meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        };
       },
-    };
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
   }
 
   async exportCedantsCsv(
@@ -98,6 +112,7 @@ export class CedantsReportService {
     const rows = await this.prisma.$queryRaw<CedantReportRawRow[]>(
       this.rowsQuery(tenantId, query, 50_000, 0),
     );
+    assertReportExportLimit(rows);
     const header = [
       'Cedant',
       'Currency',
@@ -106,8 +121,10 @@ export class CedantsReportService {
       'Outstanding',
       'Pending',
     ];
-    const lines = [header, ...rows.flatMap((row) => this.toCsvRows(row))].map(
-      (cells) => cells.map((cell) => this.csvEscape(cell)).join(','),
+    const exportRows = rows.flatMap((row) => this.toCsvRows(row));
+    assertReportExportLimit(rows, exportRows.length);
+    const lines = [header, ...exportRows].map((cells) =>
+      cells.map((cell) => this.csvEscape(cell)).join(','),
     );
     return `${lines.join('\n')}\n`;
   }

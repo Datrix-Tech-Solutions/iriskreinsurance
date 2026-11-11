@@ -16,7 +16,11 @@ import { FacultativeReportTable } from '@/components/organisms/reinsurance/table
 import { PremiumsReportTable } from '@/components/organisms/reinsurance/tables/PremiumsReportTable';
 import { ReinsurersReportTable } from '@/components/organisms/reinsurance/tables/ReinsurersReportTable';
 
-jest.mock('@tanstack/react-query', () => ({ useQuery: jest.fn() }));
+jest.mock('@tanstack/react-query', () => ({
+  ...jest.requireActual('@tanstack/react-query'),
+  useQuery: jest.fn(),
+  useQueryClient: () => ({ invalidateQueries: jest.fn() }),
+}));
 jest.mock('@/lib/api', () => ({ api: { get: jest.fn() } }));
 jest.mock('next/navigation', () => ({ useParams: () => ({ tenantSlug: 'test' }) }));
 jest.mock('@/hooks/useLoadingRouter', () => ({ useLoadingRouter: () => ({ push: jest.fn() }) }));
@@ -52,6 +56,7 @@ function queryState(overrides: Record<string, unknown> = {}) {
   jest.mocked(useQuery).mockReturnValue({
     data: undefined,
     isLoading: false,
+    isFetching: overrides.isLoading ?? false,
     isError: false,
     error: null,
     refetch,
@@ -138,6 +143,22 @@ describe.each(reports)('%s report error contract', (_name, useReport) => {
     expect(readReport().isLoading).toBe(true);
     expect(renderBody()).toContain('Loading...');
     expect(renderBody()).not.toContain('No activity');
+  });
+
+  it('keeps loaded rows and summaries visible during a background refresh', () => {
+    const summary = readReport().summary;
+    const data = {
+      items: [{ id: 'cached' }],
+      summary,
+      meta: { page: 2, limit: 50, total: 51, totalPages: 2 },
+    };
+    queryState({ data, isLoading: false, isFetching: true });
+    const result = readReport();
+    expect(result.isLoading).toBe(false);
+    expect(result.rows).toBe(data.items);
+    expect(result.summary).toEqual(summary);
+    expect(result.meta).toBe(data.meta);
+    expect(result.refetch).toBe(refetch);
   });
 
   it('exposes a failed refetch even when cached data remains', () => {

@@ -37,7 +37,7 @@ const CARDS: { title: string; columnLabel: string; key: AmountKey }[] = [
 
 function totalsByCode(rows: PremiumsReportCurrencyTotals[], key: AmountKey): Map<string, number> {
   return rows.reduce<Map<string, number>>((acc, row) => {
-    if (Math.abs(row[key]) > 0.0001) acc.set(row.currency, row[key]);
+    if (row[key] != null) acc.set(row.currency, row[key]);
     return acc;
   }, new Map());
 }

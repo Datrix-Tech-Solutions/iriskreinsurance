@@ -1,3 +1,4 @@
+import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
@@ -86,11 +87,13 @@ function normalizeReinsurersReportParams(params: ReinsurersReportParams = {}) {
     limit: params.limit ?? 50,
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
-    ...(params.riskTypeIds?.length ? { riskTypeId: params.riskTypeIds.join(',') } : {}),
-    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
-    ...(params.statuses?.length ? { placementStatus: params.statuses.join(',') } : {}),
-    ...(params.paymentStatuses?.length ? { paymentStatus: params.paymentStatuses.join(',') } : {}),
-    ...(params.reinsurerIds?.length ? { reinsurerId: params.reinsurerIds.join(',') } : {}),
+    ...(params.riskTypeIds?.length ? { riskTypeId: reportFilterCsv(params.riskTypeIds) } : {}),
+    ...(params.currencies?.length ? { currency: reportFilterCsv(params.currencies) } : {}),
+    ...(params.statuses?.length ? { placementStatus: reportFilterCsv(params.statuses) } : {}),
+    ...(params.paymentStatuses?.length
+      ? { paymentStatus: reportFilterCsv(params.paymentStatuses) }
+      : {}),
+    ...(params.reinsurerIds?.length ? { reinsurerId: reportFilterCsv(params.reinsurerIds) } : {}),
     ...(params.sortBy ? { sortBy: params.sortBy } : {}),
     ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
   };
@@ -104,7 +107,7 @@ function totalsByCode(
   >,
 ): Map<string, number> {
   return totals.reduce<Map<string, number>>((acc, row) => {
-    if (Math.abs(row[key]) > 0.0001) acc.set(row.currency, row[key]);
+    if (row[key] != null) acc.set(row.currency, row[key]);
     return acc;
   }, new Map<string, number>());
 }
@@ -112,6 +115,7 @@ function totalsByCode(
 function toCurrencyTotals(summary: ReinsurersReportSummary | undefined): ReportCurrencyTotals {
   const totals = summary?.totalsByCurrency ?? [];
   return {
+    unavailable: ['nicLevy', 'wht'],
     sumInsured: totalsByCode(totals, 'sumInsured'),
     premium: totalsByCode(totals, 'cededPremium'),
     brokerage: totalsByCode(totals, 'brokerage'),
@@ -123,7 +127,7 @@ function toCurrencyTotals(summary: ReinsurersReportSummary | undefined): ReportC
 }
 
 export const reinsurersReportKey = (params: ReinsurersReportParams = {}) =>
-  ['reinsurance', 'reports', 'reinsurers', normalizeReinsurersReportParams(params)] as const;
+  [...reinsuranceReportsKey, 'reinsurers', normalizeReinsurersReportParams(params)] as const;
 
 export function useReinsurersReport(
   params: ReinsurersReportParams,
@@ -138,8 +142,9 @@ export function useReinsurersReport(
   const normalizedParams = normalizeReinsurersReportParams(params);
   const result = useQuery({
     queryKey: reinsurersReportKey(params),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const res = await api.get<ReinsurersReportResponse>(REINSURERS_REPORT_BASE, {
+        signal,
         params: normalizedParams,
       });
       return res.data;

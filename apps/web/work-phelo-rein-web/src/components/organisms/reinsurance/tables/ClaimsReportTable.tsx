@@ -1,5 +1,10 @@
 'use client';
 
+import { reportCurrencyOptions } from '@/lib/reinsurance/reportCurrencies';
+
+import { useAppliedReportParams } from '@/hooks/reinsurance/useAppliedReportParams';
+import { claimsReportKey } from '@/hooks/reinsurance/useClaimsReport';
+
 import { useState, useMemo } from 'react';
 import { ReportQueryError } from '@/components/molecules/reinsurance/reports/ReportQueryError';
 import { useParams } from 'next/navigation';
@@ -292,25 +297,23 @@ export function ClaimsReportTable() {
   const [scope, setScope] = useState<ClaimsReportScope>('general');
   const [cedantIds, setCedantIds] = useState<string[]>([]);
   const [reinsurerIds, setReinsurerIds] = useState<string[]>([]);
-  const [reportParams, setReportParams] = useState<ClaimsReportParams | null>(null);
-  const [page, setPage] = useState(1);
+  const [reportParams, setReportParams] =
+    useAppliedReportParams<ClaimsReportParams>(claimsReportKey);
   const [pageSize, setPageSize] = useState(50);
 
   const { options: cedantOptions } = useCedantOptions();
   const { options: reinsurerOptions } = useReinsurerOptions();
-  const { data: currencyOptions = [] } = useCurrencyOptions();
+  const { data: currencyMetadataOptions = [] } = useCurrencyOptions();
 
   const handleScopeChange = (value: string) => {
     setScope(value as ClaimsReportScope);
     setCedantIds([]);
     setReinsurerIds([]);
-    setPage(1);
   };
 
   const handleStageChange = (next: string[]) => {
     setStages(next);
     if (!next.includes('finalized')) setPaymentStatuses([]);
-    setPage(1);
   };
 
   const { rows, summary, isLoading, isError, error, refetch, meta } = useClaimsReport(
@@ -320,9 +323,14 @@ export function ClaimsReportTable() {
     },
   );
 
+  const currencyOptions = reportCurrencyOptions(
+    currencyMetadataOptions,
+    summary.totalsByCurrency.map((row) => row.currency),
+  );
+
   const handleRunFilter = () => {
     const nextPage = 1;
-    setPage(nextPage);
+
     setReportParams({
       startDate,
       endDate,
@@ -342,7 +350,10 @@ export function ClaimsReportTable() {
 
   // Column set depends on the selected scope — General shows both the iRisk and
   // reinsurer share blocks, Cedants drops the reinsurer block, Reinsurer drops iRisk.
-  const columns = useMemo<ReportColumn[]>(() => COLUMNS_BY_SCOPE[scope], [scope]);
+  const columns = useMemo<ReportColumn[]>(
+    () => COLUMNS_BY_SCOPE[reportParams?.scope ?? 'general'],
+    [reportParams?.scope],
+  );
 
   const rowsPerPageControl =
     reportParams && meta.total > 10 ? (
@@ -353,7 +364,7 @@ export function ClaimsReportTable() {
           onChange={(e) => {
             const nextPageSize = Number(e.target.value);
             setPageSize(nextPageSize);
-            setPage(1);
+
             setReportParams((prev) => (prev ? { ...prev, page: 1, limit: nextPageSize } : prev));
           }}
           className="appearance-none rounded-input border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-1 focus:ring-(--focus-ring,var(--color-gray-400))"
@@ -368,7 +379,6 @@ export function ClaimsReportTable() {
     ) : null;
 
   const handlePageChange = (nextPage: number) => {
-    setPage(nextPage);
     setReportParams((prev) => (prev ? { ...prev, page: nextPage, limit: pageSize } : prev));
   };
 
@@ -413,7 +423,7 @@ export function ClaimsReportTable() {
             )
           }
           exportOptions={
-            reportParams && !isError && rows.length > 0
+            reportParams && !isError && meta.total > 0
               ? [
                   { label: 'CSV', onClick: handleExport },
                   { label: 'Excel', onClick: handleExportExcel },
@@ -424,7 +434,7 @@ export function ClaimsReportTable() {
             reportParams ? (
               <div className="flex items-center gap-3">
                 <ReportRowsSummary
-                  page={page}
+                  page={meta.page}
                   pageSize={pageSize}
                   shown={rows.length}
                   total={meta.total}
@@ -496,7 +506,6 @@ export function ClaimsReportTable() {
                     value={paymentStatuses}
                     onChange={(next) => {
                       setPaymentStatuses(next);
-                      setPage(1);
                     }}
                   />
                 </div>
@@ -533,7 +542,6 @@ export function ClaimsReportTable() {
                     value={reinsurerIds}
                     onChange={(next) => {
                       setReinsurerIds(next);
-                      setPage(1);
                     }}
                   />
                 </div>
@@ -550,8 +558,8 @@ export function ClaimsReportTable() {
               ? 'No claims activity for the selected filters'
               : 'Select a period and click Run Filter to generate the report'
           }
-          rowNumber={(_row, index) => (page - 1) * pageSize + index + 1}
-          currentPage={page}
+          rowNumber={(_row, index) => (meta.page - 1) * meta.limit + index + 1}
+          currentPage={meta.page}
           totalPages={isError ? 0 : meta.totalPages}
           onPageChange={handlePageChange}
           noInternalScroll

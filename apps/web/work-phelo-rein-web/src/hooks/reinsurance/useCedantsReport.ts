@@ -1,3 +1,4 @@
+import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
@@ -83,11 +84,13 @@ function normalizeCedantsReportParams(params: CedantsReportParams = {}) {
     limit: params.limit ?? 50,
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
-    ...(params.riskTypeIds?.length ? { riskTypeId: params.riskTypeIds.join(',') } : {}),
-    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
-    ...(params.statuses?.length ? { placementStatus: params.statuses.join(',') } : {}),
-    ...(params.paymentStatuses?.length ? { paymentStatus: params.paymentStatuses.join(',') } : {}),
-    ...(params.cedantIds?.length ? { cedantId: params.cedantIds.join(',') } : {}),
+    ...(params.riskTypeIds?.length ? { riskTypeId: reportFilterCsv(params.riskTypeIds) } : {}),
+    ...(params.currencies?.length ? { currency: reportFilterCsv(params.currencies) } : {}),
+    ...(params.statuses?.length ? { placementStatus: reportFilterCsv(params.statuses) } : {}),
+    ...(params.paymentStatuses?.length
+      ? { paymentStatus: reportFilterCsv(params.paymentStatuses) }
+      : {}),
+    ...(params.cedantIds?.length ? { cedantId: reportFilterCsv(params.cedantIds) } : {}),
     ...(params.sortBy ? { sortBy: params.sortBy } : {}),
     ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
   };
@@ -101,7 +104,7 @@ function totalsByCode(
   >,
 ): Map<string, number> {
   return totals.reduce<Map<string, number>>((acc, row) => {
-    if (Math.abs(row[key]) > 0.0001) acc.set(row.currency, row[key]);
+    if (row[key] != null) acc.set(row.currency, row[key]);
     return acc;
   }, new Map<string, number>());
 }
@@ -109,18 +112,19 @@ function totalsByCode(
 function toCurrencyTotals(summary: CedantsReportSummary | undefined): ReportCurrencyTotals {
   const totals = summary?.totalsByCurrency ?? [];
   return {
+    unavailable: ['nicLevy', 'wht'],
     sumInsured: totalsByCode(totals, 'sumInsured'),
     premium: totalsByCode(totals, 'premium'),
     brokerage: totalsByCode(totals, 'brokerage'),
     commission: totalsByCode(totals, 'commission'),
-    nicLevy: totalsByCode(totals, 'nicLevy'),
-    wht: totalsByCode(totals, 'wht'),
+    nicLevy: new Map<string, number>(),
+    wht: new Map<string, number>(),
     isLoading: false,
   };
 }
 
 export const cedantsReportKey = (params: CedantsReportParams = {}) =>
-  ['reinsurance', 'reports', 'cedants', normalizeCedantsReportParams(params)] as const;
+  [...reinsuranceReportsKey, 'cedants', normalizeCedantsReportParams(params)] as const;
 
 export function useCedantsReport(
   params: CedantsReportParams,
@@ -135,8 +139,9 @@ export function useCedantsReport(
   const normalizedParams = normalizeCedantsReportParams(params);
   const result = useQuery({
     queryKey: cedantsReportKey(params),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const res = await api.get<CedantsReportResponse>(CEDANTS_REPORT_BASE, {
+        signal,
         params: normalizedParams,
       });
       return res.data;

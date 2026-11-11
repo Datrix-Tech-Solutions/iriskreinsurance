@@ -16,7 +16,7 @@ describe('ReinsurersReportService', () => {
 
   beforeEach(() => {
     prisma = {
-      $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
+      $queryRaw: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue([]),
       $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
     };
     prisma.$transaction.mockImplementation((run) => run(prisma));

@@ -1,3 +1,7 @@
+import {
+  assertReportExportLimit,
+  reportPopulationTotal,
+} from './report-population';
 import { Injectable } from '@nestjs/common';
 import { PlacementClaimState, Prisma } from '../../../prisma/generated/client';
 import { ClaimRowBucket } from '../dto/claim-row-state-response.dto';
@@ -114,43 +118,59 @@ export class ClaimsReportService {
     tenantId: string,
     query: QueryClaimsReportDto,
   ): Promise<ClaimsReportResponseDto> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 50;
-    const offset = (page - 1) * limit;
-    const scope = query.scope ?? 'general';
+    return this.prisma.$transaction(
+      async (tx) => {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 50;
+        const offset = (page - 1) * limit;
+        const scope = query.scope ?? 'general';
 
-    const rows = await this.prisma.$queryRaw<ClaimsReportRawRow[]>(
-      this.rowsQuery(tenantId, query, limit, offset),
+        const rows = await tx.$queryRaw<ClaimsReportRawRow[]>(
+          this.rowsQuery(tenantId, query, limit, offset),
+        );
+        const summaryRows = await tx.$queryRaw<ClaimsReportRawSummaryRow[]>(
+          this.summaryQuery(tenantId, query),
+        );
+        const total = await reportPopulationTotal(
+          tx,
+          rows,
+          this.reportCtes(tenantId, query),
+          (query.scope ?? 'general') === 'cedant'
+            ? Prisma.sql`filtered_claims`
+            : Prisma.sql`filtered_reinsurers`,
+        );
+        const { kpis, reinsurerTotals } = await this.findKpis(
+          tenantId,
+          query,
+          tx,
+        );
+        const baseSummary = this.toSummaryDto(scope, summaryRows);
+
+        return {
+          items: rows.map((row) => this.toRowDto(row)),
+          summary: {
+            ...baseSummary,
+            ...kpis,
+            totalsByCurrency: baseSummary.totalsByCurrency.map((row) => {
+              const re = reinsurerTotals.get(row.currency);
+              return {
+                ...row,
+                reinsurerShareAmount: re?.share ?? 0,
+                reinsurerPaidAmount: re?.paid ?? 0,
+                reinsurerOutstandingAmount: re?.outstanding ?? 0,
+              };
+            }),
+          },
+          meta: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+          },
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    const summaryRows = await this.prisma.$queryRaw<
-      ClaimsReportRawSummaryRow[]
-    >(this.summaryQuery(tenantId, query));
-    const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
-    const { kpis, reinsurerTotals } = await this.findKpis(tenantId, query);
-    const baseSummary = this.toSummaryDto(scope, summaryRows);
-
-    return {
-      items: rows.map((row) => this.toRowDto(row)),
-      summary: {
-        ...baseSummary,
-        ...kpis,
-        totalsByCurrency: baseSummary.totalsByCurrency.map((row) => {
-          const re = reinsurerTotals.get(row.currency);
-          return {
-            ...row,
-            reinsurerShareAmount: re?.share ?? 0,
-            reinsurerPaidAmount: re?.paid ?? 0,
-            reinsurerOutstandingAmount: re?.outstanding ?? 0,
-          };
-        }),
-      },
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   async exportClaimsCsv(
@@ -160,6 +180,7 @@ export class ClaimsReportService {
     const rows = await this.prisma.$queryRaw<ClaimsReportRawRow[]>(
       this.rowsQuery(tenantId, query, 50_000, 0),
     );
+    assertReportExportLimit(rows);
     const header = [
       'Business Name',
       'Cedant',
@@ -228,6 +249,7 @@ export class ClaimsReportService {
   private async findKpis(
     tenantId: string,
     query: QueryClaimsReportDto,
+    reader: Pick<Prisma.TransactionClient, '$queryRaw'> = this.prisma,
   ): Promise<{
     kpis: Pick<
       ClaimsReportResponseDto['summary'],
@@ -254,7 +276,7 @@ export class ClaimsReportService {
     const ctes = this.reportCtes(tenantId, query);
 
     const [kpiRows, reinsurerRows] = await Promise.all([
-      this.prisma.$queryRaw<ClaimsReportRawKpiRow[]>(Prisma.sql`
+      reader.$queryRaw<ClaimsReportRawKpiRow[]>(Prisma.sql`
         ${ctes}
         , claim_level AS (
           SELECT DISTINCT
@@ -284,7 +306,7 @@ export class ClaimsReportService {
           ) AS "recoveryFull"
         FROM claim_level
       `),
-      this.prisma.$queryRaw<ClaimsReportRawReinsurerTotalsRow[]>(Prisma.sql`
+      reader.$queryRaw<ClaimsReportRawReinsurerTotalsRow[]>(Prisma.sql`
         ${ctes}
         SELECT
           COALESCE("currency", 'UNKNOWN') AS "currency",

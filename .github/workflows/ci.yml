@@ -123,6 +123,7 @@ jobs:
           src/placements/reports/dashboard-financial-correctness.database.spec.ts
           src/placements/reports/financial-reports-attribution.database.spec.ts
           src/placements/worklists/payments-worklist.database.spec.ts
+          src/placements/reports/report-consistency.database.spec.ts
         env:
           FINANCIAL_REPORTS_TEST_DATABASE_URL: postgresql://reports_test:reports_test@127.0.0.1:5432/irisk_financial_test_ci
 

@@ -1,3 +1,4 @@
+import { useReportMutation } from '@/hooks/reinsurance/useReportMutation';
 import { useMemo } from 'react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -360,7 +361,7 @@ export function useNextFacultativeReference(enabled = true) {
 export function useCreateFacultative() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: CreateFacultativePayload) => {
       const res = await api.post<Facultative>(BASE, payload);
       return res.data;
@@ -373,7 +374,7 @@ export function useCreateFacultative() {
 
 export function useUpdateFacultative() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ id, ...payload }: UpdateFacultativePayload & { id: string }) => {
       const res = await api.patch<Facultative>(`${BASE}/${id}`, payload);
       return res.data;
@@ -391,7 +392,7 @@ export function useUpdateFacultative() {
 
 export function useUpdateFacultativeStatus(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ status, note }: { status: FacultativeStatus; note?: string }) => {
       const res = await api.patch(`${BASE}/${placementId}/status`, { status, note });
       return transformPlacement(res.data);
@@ -407,7 +408,7 @@ export function useUpdateFacultativeStatus(placementId: string) {
 
 export function useDeleteFacultative() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ id, archiveReason }: { id: string; archiveReason?: string }) => {
       await api.delete(`${BASE}/${id}`, {
         data: archiveReason ? { archiveReason } : undefined,
@@ -421,7 +422,7 @@ export function useDeleteFacultative() {
 
 export function useRestoreFacultative() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (id: string) => {
       const res = await api.post<Facultative>(`${BASE}/${id}/restore`);
       return transformPlacement(res.data);
@@ -437,7 +438,7 @@ export function useRestoreFacultative() {
 
 export function useAddParticipant(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: PlacementParticipantPayload) => {
       const res = await api.post(`${BASE}/${placementId}/participants`, payload);
       return transformPlacement(res.data);
@@ -453,7 +454,7 @@ export function useAddParticipant(placementId: string) {
 
 export function useForceCloseFacultative(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async () => {
       const res = await api.post<Facultative>(`${BASE}/${placementId}/force-close`);
       return transformPlacement(res.data);
@@ -471,7 +472,7 @@ export function useForceCloseFacultative(placementId: string) {
 
 export function useUpdateParticipant(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       participantId,
       ...payloadWithOptions
@@ -495,7 +496,7 @@ export function useUpdateParticipant(placementId: string) {
 
 export function useUpdateParticipantStatus(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       participantId,
       ...payloadWithOptions
@@ -522,7 +523,7 @@ export function useUpdateParticipantStatus(placementId: string) {
 
 export function useDeleteParticipant(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (participantId: string) => {
       const res = await api.delete(`${BASE}/${placementId}/participants/${participantId}`);
       return transformPlacement(res.data);
@@ -578,7 +579,7 @@ export function usePlacementDocuments(placementId: string) {
 
 export function useCreatePlacementDebitNote(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async () => {
       const res = await api.post(`${BASE}/${placementId}/notes/debit`);
       return res.data as PlacementNote;
@@ -592,7 +593,7 @@ export function useCreatePlacementDebitNote(placementId: string) {
 
 export function useCreateEffectiveDebitNote(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async () => {
       const res = await api.post(`${BASE}/${placementId}/effective-debit-note`);
       return res.data as PlacementNote;
@@ -606,7 +607,7 @@ export function useCreateEffectiveDebitNote(placementId: string) {
 
 export function useCreatePlacementCreditNote(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ closingId }: { closingId: string }) => {
       const res = await api.post(`${BASE}/${placementId}/closings/${closingId}/notes/credit`);
       return res.data as PlacementNote;
@@ -635,7 +636,7 @@ export function useGeneratePlacementNoteDocument(placementId: string) {
 
 export function useCreateClosing(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (
       input: string | ({ participantId: string } & SuppressInvalidationOption),
     ) => {
@@ -655,7 +656,7 @@ export function useCreateClosing(placementId: string) {
 
 export function useUpdateClosingStatus(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       closingId,
       status,
@@ -679,7 +680,7 @@ export function useUpdateClosingStatus(placementId: string) {
 
 export function useAcceptAndConfirmPlacementParticipant(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ participantId }: { participantId: string }) => {
       const res = await api.post<AcceptPlacementParticipantResponse>(
         `${BASE}/${placementId}/participants/${participantId}/accept-and-confirm`,
@@ -762,7 +763,7 @@ export function usePlacementEndorsements(placementId: string, options: { enabled
 
 export function useCreateEndorsement(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: CreateEndorsementPayload) => {
       const res = await api.post(`${BASE}/${placementId}/endorsements`, payload);
       return res.data as PlacementEndorsement;
@@ -775,7 +776,7 @@ export function useCreateEndorsement(placementId: string) {
 
 export function useUpdateEndorsement(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       endorsementId,
       ...payload
@@ -794,7 +795,7 @@ export function useUpdateEndorsement(placementId: string) {
 
 export function useUpdateEndorsementStatus(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       endorsementId,
       status,
@@ -815,7 +816,7 @@ export function useUpdateEndorsementStatus(placementId: string) {
 
 export function useForceCloseEndorsement(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ endorsementId }: { endorsementId: string }) => {
       const res = await api.post<ForceCloseEndorsementResponse>(
         `${BASE}/${placementId}/endorsements/${endorsementId}/force-close`,
@@ -934,7 +935,7 @@ export function useCreateEndorsementParticipant(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (payload: CreateEndorsementParticipantPayload) => {
       const res = await api.post(
         `${BASE}/${placementId}/endorsements/${endorsementId}/participants`,
@@ -953,7 +954,7 @@ export function useReinviteEndorsementParticipant(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ participantId }: { participantId: string }) => {
       const res = await api.post(
         `${BASE}/${placementId}/endorsements/${endorsementId}/participants/${participantId}/reinvite`,
@@ -971,7 +972,7 @@ export function useUpdateEndorsementParticipant(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       participantId,
       ...payload
@@ -997,7 +998,7 @@ export function useUpdateEndorsementParticipantStatus(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       participantId,
       status,
@@ -1029,7 +1030,7 @@ export function useValidateAndConfirmEndorsementParticipant(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ participantId }: { participantId: string }) => {
       if (!endorsementId) {
         throw new Error('Endorsement is required before validating a participant.');
@@ -1129,7 +1130,7 @@ export function useCreateEndorsementDebitNote(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async () => {
       if (!endorsementId) {
         throw new Error('Endorsement is required before creating an endorsement debit note.');
@@ -1151,7 +1152,7 @@ export function useCreateEndorsementCreditNote(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ closingId }: { closingId: string }) => {
       if (!endorsementId) {
         throw new Error('Endorsement is required before creating an endorsement credit note.');
@@ -1170,7 +1171,7 @@ export function useCreateEndorsementCreditNote(
 
 export function useCreatePlacementEndorsementCreditNote(placementId: string) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       endorsementId,
       closingId,
@@ -1193,7 +1194,7 @@ export function useCreatePlacementEndorsementCreditNote(placementId: string) {
 
 export function useIssueEndorsementNote(placementId: string, endorsementId: string | undefined) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({ noteId }: { noteId: string }) => {
       if (!endorsementId) {
         throw new Error('Endorsement is required before issuing an endorsement note.');
@@ -1216,7 +1217,7 @@ export function useCreateEndorsementClosing(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async (
       input: string | ({ endorsementParticipantId: string } & SuppressInvalidationOption),
     ) => {
@@ -1241,7 +1242,7 @@ export function useUpdateEndorsementClosingStatus(
   endorsementId: string | undefined,
 ) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useReportMutation({
     mutationFn: async ({
       closingId,
       status,

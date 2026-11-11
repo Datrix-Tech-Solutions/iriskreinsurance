@@ -1,3 +1,7 @@
+import {
+  assertReportExportLimit,
+  reportPopulationTotal,
+} from './report-population';
 import { Injectable } from '@nestjs/common';
 import {
   assertPaymentAttribution,
@@ -89,7 +93,12 @@ export class ReinsurersReportService {
         const summaryRows = await tx.$queryRaw<ReinsurerReportRawSummaryRow[]>(
           this.summaryQuery(tenantId, query),
         );
-        const total = rows[0] ? this.toInteger(rows[0].totalCount) : 0;
+        const total = await reportPopulationTotal(
+          tx,
+          rows,
+          this.reportCtes(tenantId, query),
+          Prisma.sql`filtered_reinsurers`,
+        );
 
         return {
           items: rows.map((row) => this.toRowDto(row)),
@@ -117,6 +126,7 @@ export class ReinsurersReportService {
         const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
           this.rowsQuery(tenantId, query, 50_000, 0),
         );
+        assertReportExportLimit(rows);
         const header = [
           'Reinsurer',
           'Currency',
@@ -128,10 +138,11 @@ export class ReinsurersReportService {
           'Outstanding',
           'Pending',
         ];
-        const lines = [
-          header,
-          ...rows.flatMap((row) => this.toCsvRows(row)),
-        ].map((cells) => cells.map((cell) => this.csvEscape(cell)).join(','));
+        const exportRows = rows.flatMap((row) => this.toCsvRows(row));
+        assertReportExportLimit(rows, exportRows.length);
+        const lines = [header, ...exportRows].map((cells) =>
+          cells.map((cell) => this.csvEscape(cell)).join(','),
+        );
         return `${lines.join('\n')}\n`;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },

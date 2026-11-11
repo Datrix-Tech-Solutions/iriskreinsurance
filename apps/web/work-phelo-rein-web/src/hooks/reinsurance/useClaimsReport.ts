@@ -1,3 +1,4 @@
+import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ClaimState } from '@/types/reinsurance';
@@ -132,23 +133,23 @@ function normalizeReportParams(params: ClaimsReportParams = {}) {
     scope: params.scope ?? 'general',
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
-    ...(params.currencies?.length ? { currency: params.currencies.join(',') } : {}),
-    ...(params.buckets?.length ? { bucket: params.buckets.join(',') } : {}),
+    ...(params.currencies?.length ? { currency: reportFilterCsv(params.currencies) } : {}),
+    ...(params.buckets?.length ? { bucket: reportFilterCsv(params.buckets) } : {}),
     ...(claimStatesFromStages(params.stages)?.length
       ? { claimState: claimStatesFromStages(params.stages)?.join(',') }
       : {}),
     ...(params.recoveryStatuses?.length
-      ? { recoveryStatus: params.recoveryStatuses.join(',') }
+      ? { recoveryStatus: reportFilterCsv(params.recoveryStatuses) }
       : {}),
-    ...(params.cedantIds?.length ? { cedantId: params.cedantIds.join(',') } : {}),
-    ...(params.reinsurerIds?.length ? { reinsurerId: params.reinsurerIds.join(',') } : {}),
+    ...(params.cedantIds?.length ? { cedantId: reportFilterCsv(params.cedantIds) } : {}),
+    ...(params.reinsurerIds?.length ? { reinsurerId: reportFilterCsv(params.reinsurerIds) } : {}),
     ...(params.sortBy ? { sortBy: params.sortBy } : {}),
     ...(params.sortOrder ? { sortOrder: params.sortOrder } : {}),
   };
 }
 
 export const claimsReportKey = (params: ClaimsReportParams = {}) =>
-  ['reinsurance', 'reports', 'claims', normalizeReportParams(params)] as const;
+  [...reinsuranceReportsKey, 'claims', normalizeReportParams(params)] as const;
 
 const emptySummary: ClaimsReportSummary = {
   scope: 'general',
@@ -179,8 +180,9 @@ export function useClaimsReport(
   const normalizedParams = normalizeReportParams(params);
   const result = useQuery({
     queryKey: claimsReportKey(params),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const res = await api.get<ClaimsReportResponse>(CLAIMS_REPORT_BASE, {
+        signal,
         params: normalizedParams,
       });
       return res.data;

@@ -19,6 +19,7 @@ export interface CurrencyTotalsEntry {
 }
 
 export interface ReportCurrencyTotals {
+  unavailable?: Array<'nicLevy' | 'wht'>;
   sumInsured: Map<string, number>;
   premium: Map<string, number>;
   brokerage: Map<string, number>;

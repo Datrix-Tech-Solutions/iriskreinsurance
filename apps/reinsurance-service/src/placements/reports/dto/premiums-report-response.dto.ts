@@ -3,6 +3,11 @@ import { PlacementStatus } from '../../../../prisma/generated/client';
 import { PremiumReportPaymentStatus } from './query-premiums-report.dto';
 
 export class PremiumReportReinsurerDto {
+  @ApiPropertyOptional({ enum: ['paid', 'part', 'pending', 'outstanding'] })
+  settlementStatus?: 'paid' | 'part' | 'pending' | 'outstanding';
+
+  @ApiPropertyOptional()
+  pendingAmount?: number;
   @ApiPropertyOptional({
     enum: ['SETTLEMENT_ONLY'],
     description:
@@ -198,6 +203,11 @@ export class PremiumReportCountDto {
 }
 
 export class PremiumReportSettlementCountsDto {
+  @ApiProperty({
+    required: false,
+    description: 'Recorded disbursements without confirmed cash.',
+  })
+  pending?: number;
   @ApiProperty()
   paid!: number;
 
