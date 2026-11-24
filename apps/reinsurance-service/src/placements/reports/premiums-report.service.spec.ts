@@ -105,7 +105,7 @@ describe('PremiumsReportService', () => {
       limit: 10,
       dateFrom: '2026-09-01',
       dateTo: '2026-09-30',
-      dateBasis: 'INCEPTION_DATE',
+      dateBasis: 'PLACEMENT_CREATED',
     });
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
@@ -367,7 +367,7 @@ describe('PremiumsReportService', () => {
     await service.findPremiums('tenant-1', {
       page: 1,
       limit: 10,
-      dateBasis: 'BANK_CONFIRMED_AT',
+      dateBasis: 'PREMIUM_PAYMENT_DATE',
       dateFrom: '2026-09-01',
       dateTo: '2026-09-30',
       paymentStatus: ['Paid'],
@@ -387,7 +387,7 @@ describe('PremiumsReportService', () => {
     expect(sql).toContain(
       'OR COALESCE(cr."cedantObligation", 0) - COALESCE(cr."mandatoryDeductions", 0) <= 0.0001',
     );
-    expect(sql).toContain('"bankConfirmedAt"');
+    expect(sql).toContain('pay_date."paymentDate"');
     expect(sql).toContain('"paymentStatus" IN');
   });
 

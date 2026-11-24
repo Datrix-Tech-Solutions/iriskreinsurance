@@ -203,6 +203,7 @@ export function FacultativeOverview({
           label="Period of Insurance"
           value={`${fmtDate(inceptionDate ?? '')} – ${fmtDate(expiryDate ?? '')}`}
         />
+        <DetailField label="Created At" value={fmtDate(placement.createdAt)} />
         {riskEntries.map((entry) => (
           <DetailField key={entry.key} label={entry.label} value={fmtFieldValue(entry.value)} />
         ))}

@@ -10,6 +10,12 @@ import { ReportQueryError } from '@/components/molecules/reinsurance/reports/Rep
 import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
+import { SearchSelect } from '@/components/atoms/SearchSelect';
+import {
+  REPORT_DATE_BASIS_OPTIONS,
+  DEFAULT_REPORT_DATE_BASIS,
+  type ReportDateBasis,
+} from '@/hooks/reinsurance/reportDateBasis';
 import { DatePicker } from '@/components/atoms/DatePicker';
 import { MultiSelect } from '@/components/atoms/MultiSelect';
 import { ReportCurrencySummaryCards } from '@/components/molecules/reinsurance/reports/ReportCurrencySummaryCards';
@@ -70,6 +76,7 @@ export function ReinsurersReportTable() {
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
+  const [dateBasis, setDateBasis] = useState<ReportDateBasis>(DEFAULT_REPORT_DATE_BASIS);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState(todayISODate());
   const [riskTypeIds, setRiskTypeIds] = useState<string[]>([]);
@@ -99,6 +106,7 @@ export function ReinsurersReportTable() {
     const nextPage = 1;
 
     setReportParams({
+      dateBasis,
       startDate,
       endDate,
       riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
@@ -240,10 +248,19 @@ export function ReinsurersReportTable() {
             // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
             // always wrap onto a second line and sit flush right at its end.
             <div className="flex w-full items-center gap-2 flex-wrap">
+              <div className="w-44">
+                <SearchSelect
+                  size="sm"
+                  placeholder="Date basis"
+                  options={REPORT_DATE_BASIS_OPTIONS}
+                  value={dateBasis}
+                  onChange={(v) => setDateBasis(v as ReportDateBasis)}
+                />
+              </div>
               <div className="w-50">
                 <DatePicker
                   size="sm"
-                  placeholder="Period start"
+                  placeholder="Start date"
                   value={startDate}
                   onChange={setStartDate}
                 />
@@ -251,7 +268,7 @@ export function ReinsurersReportTable() {
               <div className="w-50">
                 <DatePicker
                   size="sm"
-                  placeholder="Period end"
+                  placeholder="End date"
                   value={endDate}
                   minDate={startDate || undefined}
                   onChange={setEndDate}

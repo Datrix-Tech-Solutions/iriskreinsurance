@@ -14,6 +14,7 @@ import {
   Min,
 } from 'class-validator';
 import { PlacementStatus } from '../../../../prisma/generated/client';
+import { REPORT_DATE_BASIS, ReportDateBasis } from '../report-date-basis';
 import { TrimmedString } from '../../../counterparties/dto/string.transforms';
 import {
   PREMIUM_REPORT_PAYMENT_STATUSES,
@@ -70,6 +71,14 @@ export class QueryCedantsReportDto {
   @IsOptional()
   @IsDateString()
   dateTo?: string;
+
+  @ApiPropertyOptional({
+    enum: REPORT_DATE_BASIS,
+    default: 'PLACEMENT_CREATED',
+  })
+  @IsOptional()
+  @IsIn(REPORT_DATE_BASIS)
+  dateBasis?: ReportDateBasis = 'PLACEMENT_CREATED';
 
   @ApiPropertyOptional({ type: [String], format: 'uuid' })
   @IsOptional()

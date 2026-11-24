@@ -3,16 +3,16 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { FacultativeStatus } from '@/types/reinsurance';
+import { DEFAULT_REPORT_DATE_BASIS, type ReportDateBasis } from './reportDateBasis';
 import { ReportCurrencyTotals } from './useReportCurrencyTotals';
 
 const FACULTATIVE_REPORT_BASE = '/operations/reinsurance/reports/facultative';
 
-export type FacultativeReportDateField = 'createdAt' | 'premiumPaid' | 'closingDate';
 export type FacultativeReportLifecycle = 'ACTIVE' | 'EXPIRED';
 export type FacultativeReportScope = 'cedant' | 'reinsurer';
 
 export interface FacultativeReportParams {
-  dateField?: FacultativeReportDateField;
+  dateBasis?: ReportDateBasis;
   startDate?: string;
   endDate?: string;
   riskClassIds?: string[];
@@ -145,7 +145,7 @@ function normalizeFacultativeReportParams(params: FacultativeReportParams = {}) 
   return {
     page: params.page ?? 1,
     limit: params.limit ?? 50,
-    dateField: params.dateField ?? 'createdAt',
+    dateBasis: params.dateBasis ?? DEFAULT_REPORT_DATE_BASIS,
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
     ...(params.riskClassIds?.length ? { riskClassId: reportFilterCsv(params.riskClassIds) } : {}),

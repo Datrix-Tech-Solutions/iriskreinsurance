@@ -22,6 +22,10 @@ import {
   QueryFacultativeReportDto,
 } from './dto/query-facultative-report.dto';
 import { csvToExcelHtml, formatExportDate } from './report-excel-export';
+import {
+  LEGACY_DATE_FIELD_TO_BASIS,
+  reportDatePredicate,
+} from './report-date-basis';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -359,8 +363,11 @@ export class FacultativeReportService {
     query: QueryFacultativeReportDto,
   ): Prisma.Sql {
     const dateRange = this.dateRange(query);
-    const datePredicate = this.datePredicate(
-      query.dateField ?? 'createdAt',
+    const datePredicate = reportDatePredicate(
+      query.dateBasis ??
+        (query.dateField
+          ? LEGACY_DATE_FIELD_TO_BASIS[query.dateField]
+          : undefined),
       dateRange,
       tenantId,
     );
@@ -807,63 +814,6 @@ export class FacultativeReportService {
           ${reinsurerPredicate}
       )
     `;
-  }
-
-  private datePredicate(
-    dateField: QueryFacultativeReportDto['dateField'],
-    dateRange: DateRange,
-    tenantId: string,
-  ): Prisma.Sql {
-    const rangePredicate = (column: Prisma.Sql): Prisma.Sql => {
-      const from = dateRange.from
-        ? Prisma.sql`AND ${column} >= ${dateRange.from}`
-        : Prisma.empty;
-      const to = dateRange.to
-        ? Prisma.sql`AND ${column} <= ${dateRange.to}`
-        : Prisma.empty;
-      return Prisma.sql`${from} ${to}`;
-    };
-
-    if (!dateRange.from && !dateRange.to) return Prisma.empty;
-    if (dateField === 'premiumPaid') {
-      return Prisma.sql`
-        AND EXISTS (
-          SELECT 1
-          FROM "reinsurance"."PlacementPayment" pay_date
-          WHERE pay_date."tenantId" = ${tenantId}
-            AND pay_date."placementId" = p."id"
-            AND pay_date."type" = 'PREMIUM_RECEIVED'
-            AND pay_date."status" IN ('RECORDED', 'BANK_CONFIRMED')
-            AND pay_date."reversalOfPaymentId" IS NULL
-            ${rangePredicate(Prisma.sql`pay_date."paymentDate"`)}
-        )
-      `;
-    }
-    if (dateField === 'closingDate') {
-      return Prisma.sql`
-        AND EXISTS (
-          SELECT 1
-          FROM "reinsurance"."PlacementClosing" pc_date
-          WHERE pc_date."tenantId" = ${tenantId}
-            AND pc_date."placementId" = p."id"
-            AND pc_date."status" = 'CONFIRMED'
-            ${rangePredicate(Prisma.sql`COALESCE(pc_date."confirmedAt", pc_date."issuedAt", pc_date."createdAt")`)}
-          UNION ALL
-          SELECT 1
-          FROM "reinsurance"."PlacementEndorsementClosing" ec_date
-          JOIN "reinsurance"."PlacementEndorsement" e_date
-            ON e_date."id" = ec_date."endorsementId"
-           AND e_date."tenantId" = ec_date."tenantId"
-          WHERE ec_date."tenantId" = ${tenantId}
-            AND ec_date."placementId" = p."id"
-            AND ec_date."status" = 'CONFIRMED'
-            AND e_date."status" = 'CLOSED'
-            AND e_date."effectiveDate" <= NOW()
-            ${rangePredicate(Prisma.sql`COALESCE(ec_date."confirmedAt", ec_date."createdAt")`)}
-        )
-      `;
-    }
-    return rangePredicate(Prisma.sql`p."createdAt"`);
   }
 
   private lifecyclePredicate(

@@ -14,6 +14,7 @@ import {
   Min,
 } from 'class-validator';
 import { PlacementStatus } from '../../../../prisma/generated/client';
+import { REPORT_DATE_BASIS, ReportDateBasis } from '../report-date-basis';
 import { TrimmedString } from '../../../counterparties/dto/string.transforms';
 import {
   PREMIUM_REPORT_PAYMENT_STATUSES,
@@ -84,12 +85,22 @@ export class QueryFacultativeReportDto {
   limit?: number = 50;
 
   @ApiPropertyOptional({
+    enum: REPORT_DATE_BASIS,
+    default: 'PLACEMENT_CREATED',
+  })
+  @IsOptional()
+  @IsIn(REPORT_DATE_BASIS)
+  dateBasis?: ReportDateBasis;
+
+  @ApiPropertyOptional({
     enum: FACULTATIVE_REPORT_DATE_FIELDS,
-    default: 'createdAt',
+    deprecated: true,
+    description:
+      'Deprecated alias of dateBasis. dateBasis wins when both are sent.',
   })
   @IsOptional()
   @IsIn(FACULTATIVE_REPORT_DATE_FIELDS)
-  dateField?: FacultativeReportDateField = 'createdAt';
+  dateField?: FacultativeReportDateField;
 
   @ApiPropertyOptional({ type: String, format: 'date' })
   @IsOptional()

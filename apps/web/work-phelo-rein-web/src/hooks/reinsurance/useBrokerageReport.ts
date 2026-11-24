@@ -1,7 +1,8 @@
 import { reinsuranceReportsKey, reportFilterCsv } from '@/lib/reinsurance/reportCache';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { PremiumReportDateBasis, PremiumsReportParams } from './usePremiumsReport';
+import { PremiumsReportParams } from './usePremiumsReport';
+import { DEFAULT_REPORT_DATE_BASIS } from './reportDateBasis';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 
 const BROKERAGE_REPORT_BASE = '/operations/reinsurance/reports/brokerage';
@@ -92,7 +93,7 @@ function normalizeReportParams(params: BrokerageReportParams = {}) {
   return {
     page: params.page ?? 1,
     limit: params.limit ?? 50,
-    dateBasis: (params.dateBasis ?? 'CLOSING_CONFIRMED_AT') as PremiumReportDateBasis,
+    dateBasis: params.dateBasis ?? DEFAULT_REPORT_DATE_BASIS,
     scope: params.scope ?? 'reinsurer',
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),

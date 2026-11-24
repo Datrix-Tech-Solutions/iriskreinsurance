@@ -11,6 +11,11 @@ import { useParams } from 'next/navigation';
 import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
 import { EndorsedReferencePill } from '@/components/atoms/EndorsedReferencePill';
+import {
+  REPORT_DATE_BASIS_OPTIONS,
+  DEFAULT_REPORT_DATE_BASIS,
+  type ReportDateBasis,
+} from '@/hooks/reinsurance/reportDateBasis';
 import { DatePicker } from '@/components/atoms/DatePicker';
 import { SearchSelect } from '@/components/atoms/SearchSelect';
 import { MultiSelect } from '@/components/atoms/MultiSelect';
@@ -385,6 +390,7 @@ export function PremiumsReportTable() {
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
+  const [dateBasis, setDateBasis] = useState<ReportDateBasis>(DEFAULT_REPORT_DATE_BASIS);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState(todayISODate());
   const [riskTypeIds, setRiskTypeIds] = useState<string[]>([]);
@@ -436,6 +442,7 @@ export function PremiumsReportTable() {
         scope === 'reinsurer' && settlements.length
           ? (settlements as PremiumsReportParams['settlementStatuses'])
           : undefined,
+      dateBasis,
       startDate,
       endDate,
       riskTypeIds: riskTypeIds.length ? riskTypeIds : undefined,
@@ -555,10 +562,19 @@ export function PremiumsReportTable() {
             // Export / Run Filter buttons (rendered by DataTable after a flex-1 spacer)
             // always wrap onto a second line and sit flush right at its end.
             <div className="flex w-full items-center gap-2 flex-wrap">
+              <div className="w-44">
+                <SearchSelect
+                  size="sm"
+                  placeholder="Date basis"
+                  options={REPORT_DATE_BASIS_OPTIONS}
+                  value={dateBasis}
+                  onChange={(v) => setDateBasis(v as ReportDateBasis)}
+                />
+              </div>
               <div className="w-50">
                 <DatePicker
                   size="sm"
-                  placeholder="Period start"
+                  placeholder="Start date"
                   value={startDate}
                   onChange={setStartDate}
                 />
@@ -566,7 +582,7 @@ export function PremiumsReportTable() {
               <div className="w-50">
                 <DatePicker
                   size="sm"
-                  placeholder="Period end"
+                  placeholder="End date"
                   value={endDate}
                   minDate={startDate || undefined}
                   onChange={setEndDate}
