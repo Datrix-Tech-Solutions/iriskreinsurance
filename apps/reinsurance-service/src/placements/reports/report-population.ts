@@ -1,10 +1,11 @@
+import { ReportQueryReader } from './report-transaction';
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '../../../prisma/generated/client';
 
 /** Existing window counts are reused. Empty pages count the same filtered CTE,
  * in the caller's repeatable-read snapshot, without sorting or pagination. */
 export async function reportPopulationTotal(
-  reader: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  reader: ReportQueryReader,
   rows: ReadonlyArray<{ totalCount: bigint | number | string }>,
   ctes: Prisma.Sql,
   relation: Prisma.Sql,

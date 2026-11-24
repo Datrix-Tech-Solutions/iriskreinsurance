@@ -5,11 +5,13 @@ import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { FacultativeReportService } from './facultative-report.service';
 import { PremiumsReportService } from './premiums-report.service';
 import { ReinsurersReportService } from './reinsurers-report.service';
+import { REPORT_TRANSACTION_OPTIONS } from './report-transaction';
 import { assertPaymentAttribution } from './payment-attribution.sql';
 
 describe('Payment attribution failure contract', () => {
   it('keeps a retired premium credit on its actual closing ID with a signed balance', async () => {
     const reader = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $queryRaw: jest.fn().mockResolvedValue([]),
     };
     reader.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([
@@ -65,7 +67,7 @@ describe('Payment attribution failure contract', () => {
     ]);
     expect(result.items[0].reinsurers[1]).not.toHaveProperty('rowKind');
     expect(transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      ...REPORT_TRANSACTION_OPTIONS,
     });
   });
 
@@ -111,7 +113,10 @@ describe('Payment attribution failure contract', () => {
             reason: 'Unresolved source, ambiguous attribution or FX',
           },
         ]);
-      const reader = { $queryRaw: queryRaw };
+      const reader = {
+        $queryRaw: queryRaw,
+        $executeRaw: jest.fn().mockResolvedValue(0),
+      };
       const prisma = {
         ...reader,
         $transaction: async (run: (tx: typeof reader) => Promise<unknown>) =>

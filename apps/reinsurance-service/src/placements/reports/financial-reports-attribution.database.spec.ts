@@ -1,5 +1,8 @@
 import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { Prisma } from '../../../prisma/generated/client';
+import * as attribution from './payment-attribution.sql';
+import { baselinePaymentAttributionCtes } from './testing/payment-attribution-baseline.fixture';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClosingSnapshotReader } from '../closings/closing-snapshot.reader';
 import { PlacementFinancialPositionService } from '../finance/financial-position.service';
@@ -73,6 +76,7 @@ financialDatabaseDescribe(
     }
 
     async function reports() {
+      await expectEquivalentAttribution();
       const premium = await premiums.findPremiums(f.tenantId, {});
       const fac = await facultative.findFacultative(f.tenantId, {});
       const re = await reinsurers.findReinsurers(f.tenantId, {});
@@ -80,6 +84,7 @@ financialDatabaseDescribe(
     }
 
     async function expectAllListsConflict() {
+      await expectEquivalentAttribution();
       // Empty pages must still run the guard, rather than silently returning [].
       for (const read of [
         () => premiums.findPremiums(f.tenantId, { page: 999 }),
@@ -88,6 +93,52 @@ financialDatabaseDescribe(
       ])
         await expect(read()).rejects.toBeInstanceOf(ConflictException);
     }
+
+    async function expectEquivalentAttribution() {
+      // Compare the complete intermediate financial population, not only the
+      // first guard error or a paginated report, against frozen Patch 3 SQL.
+      const service = premiums as unknown as {
+        reportCtes(tenantId: string, query: object): Prisma.Sql;
+      };
+      const read = (ctes: Prisma.Sql) =>
+        f.prisma.$queryRaw(Prisma.sql`
+        ${ctes}
+        SELECT * FROM (
+          SELECT 'resolved' AS kind, to_jsonb(r) AS record FROM attribution_resolved r
+          UNION ALL SELECT 'errors', to_jsonb(e) FROM attribution_errors e
+          UNION ALL SELECT 'settled', to_jsonb(s) FROM attribution_snapshot_payments s
+          UNION ALL SELECT 'credits', to_jsonb(c) FROM attribution_credit_rows c
+        ) results ORDER BY kind, record::text
+      `);
+      const optimized = service.reportCtes(f.tenantId, {});
+      const spy = jest
+        .spyOn(attribution, 'paymentAttributionCtes')
+        .mockImplementation(baselinePaymentAttributionCtes);
+      let baseline: Prisma.Sql;
+      try {
+        baseline = service.reportCtes(f.tenantId, {});
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await read(optimized)).toEqual(await read(baseline));
+    }
+
+    it('rejects a closing whose participant belongs to another placement', async () => {
+      const cp = await f.counterparty();
+      const p1 = await f.placement();
+      const p2 = await f.placement();
+      const foreignParticipant = await f.participant(p2.id, cp.id);
+      const closing = await f.closing(p1.id, foreignParticipant.id);
+      await f.payment(p1.id, cp.id, { closingId: closing.id });
+      await expectAllListsConflict();
+    });
+
+    it('rejects multiple source closings rather than choosing an arbitrary minimum', async () => {
+      const { cp, placement, participant } = await line();
+      await f.closing(placement.id, participant.id);
+      await f.payment(placement.id, cp.id, { participantId: participant.id });
+      await expectAllListsConflict();
+    });
 
     it('attributes a null-participant closing payment once when a counterparty has two current roots', async () => {
       const { cp, placement, closing } = await line();
