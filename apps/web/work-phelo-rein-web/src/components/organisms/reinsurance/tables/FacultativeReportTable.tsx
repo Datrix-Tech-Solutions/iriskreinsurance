@@ -153,6 +153,7 @@ const POLICY_NUMBER_COLUMN: ReportColumn = {
       id={row.placementId}
       reference={displayPolicyNumber(row.policyNumber)}
       textClassName="text-[10px]"
+      deferFetchUntilInteraction
     />
   ),
   csv: (row) => displayPolicyNumber(row.policyNumber),
