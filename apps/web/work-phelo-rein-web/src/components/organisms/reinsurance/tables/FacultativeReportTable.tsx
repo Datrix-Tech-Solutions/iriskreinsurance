@@ -12,6 +12,11 @@ import { useLoadingRouter as useRouter } from '@/hooks/useLoadingRouter';
 import { DataTable, Column } from '@/components/organisms/shared/DataTable';
 import { Badge } from '@/components/atoms/Badge';
 import { EndorsedReferencePill } from '@/components/atoms/EndorsedReferencePill';
+import {
+  REPORT_DATE_BASIS_OPTIONS,
+  DEFAULT_REPORT_DATE_BASIS,
+  type ReportDateBasis,
+} from '@/hooks/reinsurance/reportDateBasis';
 import { DatePicker } from '@/components/atoms/DatePicker';
 import { SearchSelect } from '@/components/atoms/SearchSelect';
 import { MultiSelect } from '@/components/atoms/MultiSelect';
@@ -28,7 +33,6 @@ import {
   FacultativeReportRow,
   FacultativeReinsurerBreakdown,
   FacultativeReportParams,
-  FacultativeReportDateField,
   FacultativeReportLifecycle,
 } from '@/hooks/reinsurance/useFacultativeReport';
 import { FACULTATIVE_STATUSES, FacultativeStatus } from '@/types/reinsurance';
@@ -47,12 +51,6 @@ const STATUS_OPTIONS = FACULTATIVE_STATUSES.map((s) => ({
   value: s,
   label: facultativeStatusLabel(s),
 }));
-
-const DATE_FIELD_OPTIONS: { value: FacultativeReportDateField; label: string }[] = [
-  { value: 'createdAt', label: 'Date of entry' },
-  { value: 'premiumPaid', label: 'Premium paid' },
-  { value: 'closingDate', label: 'Closing date' },
-];
 
 const LIFECYCLE_OPTIONS: { value: FacultativeReportLifecycle; label: string }[] = [
   { value: 'ACTIVE', label: 'Active' },
@@ -458,7 +456,7 @@ export function FacultativeReportTable() {
   const { tenantSlug } = useParams<{ tenantSlug: string }>();
 
   // Staged filter values — only applied to the report once "Run Filter" is clicked.
-  const [dateField, setDateField] = useState<FacultativeReportDateField>('createdAt');
+  const [dateBasis, setDateBasis] = useState<ReportDateBasis>(DEFAULT_REPORT_DATE_BASIS);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState(todayISODate());
   const [riskClassIds, setRiskClassIds] = useState<string[]>([]);
@@ -496,7 +494,7 @@ export function FacultativeReportTable() {
 
   const handleRunFilter = () => {
     setReportParams({
-      dateField,
+      dateBasis,
       startDate,
       endDate,
       riskClassIds: riskClassIds.length ? riskClassIds : undefined,
@@ -628,10 +626,10 @@ export function FacultativeReportTable() {
               <div className="w-40">
                 <SearchSelect
                   size="sm"
-                  placeholder="Date field"
-                  options={DATE_FIELD_OPTIONS}
-                  value={dateField}
-                  onChange={(v) => setDateField(v as FacultativeReportDateField)}
+                  placeholder="Date basis"
+                  options={REPORT_DATE_BASIS_OPTIONS}
+                  value={dateBasis}
+                  onChange={(v) => setDateBasis(v as ReportDateBasis)}
                 />
               </div>
               <div className="w-50">

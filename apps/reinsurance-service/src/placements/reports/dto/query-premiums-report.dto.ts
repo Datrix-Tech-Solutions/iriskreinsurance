@@ -14,18 +14,12 @@ import {
   Min,
 } from 'class-validator';
 import { PlacementStatus } from '../../../../prisma/generated/client';
+import { REPORT_DATE_BASIS, ReportDateBasis } from '../report-date-basis';
 import { TrimmedString } from '../../../counterparties/dto/string.transforms';
 
-export const PREMIUM_REPORT_DATE_BASIS = [
-  'PLACEMENT_CREATED',
-  'INCEPTION_DATE',
-  'EXPIRY_DATE',
-  'CLOSING_CONFIRMED_AT',
-  'PAYMENT_DATE',
-  'BANK_CONFIRMED_AT',
-] as const;
+export const PREMIUM_REPORT_DATE_BASIS = REPORT_DATE_BASIS;
 
-export type PremiumReportDateBasis = (typeof PREMIUM_REPORT_DATE_BASIS)[number];
+export type PremiumReportDateBasis = ReportDateBasis;
 
 export const PREMIUM_REPORT_PAYMENT_STATUSES = [
   'Outstanding',
@@ -133,11 +127,11 @@ export class QueryPremiumsReportDto {
 
   @ApiPropertyOptional({
     enum: PREMIUM_REPORT_DATE_BASIS,
-    default: 'INCEPTION_DATE',
+    default: 'PLACEMENT_CREATED',
   })
   @IsOptional()
   @IsIn(PREMIUM_REPORT_DATE_BASIS)
-  dateBasis?: PremiumReportDateBasis = 'INCEPTION_DATE';
+  dateBasis?: PremiumReportDateBasis = 'PLACEMENT_CREATED';
 
   @ApiPropertyOptional({
     type: [String],

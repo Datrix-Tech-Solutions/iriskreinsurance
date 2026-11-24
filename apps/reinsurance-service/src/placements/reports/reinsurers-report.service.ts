@@ -21,6 +21,7 @@ import {
   ReinsurersReportSortField,
 } from './dto/query-reinsurers-report.dto';
 import { csvToExcelHtml } from './report-excel-export';
+import { reportDatePredicate } from './report-date-basis';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -213,7 +214,11 @@ export class ReinsurersReportService {
     query: QueryReinsurersReportDto,
   ): Prisma.Sql {
     const dateRange = this.dateRange(query);
-    const datePredicate = this.inceptionDatePredicate(dateRange);
+    const datePredicate = reportDatePredicate(
+      query.dateBasis,
+      dateRange,
+      tenantId,
+    );
     const currencyPredicate = query.currency?.length
       ? Prisma.sql`AND p."currency" IN (${Prisma.join(query.currency)})`
       : Prisma.empty;
@@ -455,16 +460,6 @@ export class ReinsurersReportService {
         GROUP BY "reinsurerId", "reinsurerName"
       )
     `;
-  }
-
-  private inceptionDatePredicate(dateRange: DateRange): Prisma.Sql {
-    const from = dateRange.from
-      ? Prisma.sql`AND p."inceptionDate" >= ${dateRange.from}`
-      : Prisma.empty;
-    const to = dateRange.to
-      ? Prisma.sql`AND p."inceptionDate" <= ${dateRange.to}`
-      : Prisma.empty;
-    return Prisma.sql`${from} ${to}`;
   }
 
   private searchPredicate(search?: string): Prisma.Sql {

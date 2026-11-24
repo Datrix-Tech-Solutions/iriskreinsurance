@@ -28,6 +28,23 @@ financial definitions are documented here. Report dates keep the existing
 placement-cohort/date-basis semantics; this patch adds no new financial or FX
 formula.
 
+## Date basis
+
+Premiums, Cedants, Reinsurers, Facultative and Brokerage share one `dateBasis`
+parameter and one SQL predicate (`report-date-basis.ts`), so the same range selects
+the same placements. Claims is unaffected.
+
+- `PLACEMENT_CREATED` (default): `Placement.createdAt`.
+- `CLOSING_DATE`: a confirmed original closing, or a confirmed closing of a CLOSED,
+  already-effective endorsement, falls in the range.
+- `PREMIUM_PAYMENT_DATE`: a non-reversed `PREMIUM_RECEIVED` payment (RECORDED or
+  BANK_CONFIRMED) has its `paymentDate` in the range.
+
+Inception, expiry and bank-confirmed bases were removed. Facultative's `dateField`
+(`createdAt`/`closingDate`/`premiumPaid`) is still accepted as a deprecated alias;
+`dateBasis` wins when both are sent. Brokerage's credit-note selection now orders by
+`effectiveAsOf` first, like Facultative.
+
 ## Count and summary consistency
 
 All six list services read rows, summaries and counts in a repeatable-read

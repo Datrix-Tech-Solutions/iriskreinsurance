@@ -3,21 +3,17 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 
+import { DEFAULT_REPORT_DATE_BASIS, type ReportDateBasis } from './reportDateBasis';
+
 const PREMIUMS_REPORT_BASE = '/operations/reinsurance/reports/premiums';
 
-export type PremiumReportDateBasis =
-  | 'PLACEMENT_CREATED'
-  | 'INCEPTION_DATE'
-  | 'EXPIRY_DATE'
-  | 'CLOSING_CONFIRMED_AT'
-  | 'PAYMENT_DATE'
-  | 'BANK_CONFIRMED_AT';
+export type PremiumReportDateBasis = ReportDateBasis;
 
 export interface PremiumsReportParams {
   scope?: 'cedant' | 'reinsurer';
   reinsurerIds?: string[];
   settlementStatuses?: Array<'paid' | 'part' | 'pending' | 'outstanding'>;
-  /** Restricts placements by the selected date basis. Defaults to inceptionDate. */
+  /** Restricts placements by the selected date basis. Defaults to the date of entry. */
   startDate?: string;
   endDate?: string;
   dateBasis?: PremiumReportDateBasis;
@@ -183,7 +179,7 @@ function normalizeReportParams(params: PremiumsReportParams = {}) {
       : {}),
     page: params.page ?? 1,
     limit: params.limit ?? 50,
-    dateBasis: params.dateBasis ?? 'INCEPTION_DATE',
+    dateBasis: params.dateBasis ?? DEFAULT_REPORT_DATE_BASIS,
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
     ...(params.riskTypeIds?.length ? { riskTypeId: reportFilterCsv(params.riskTypeIds) } : {}),

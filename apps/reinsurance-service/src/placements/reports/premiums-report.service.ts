@@ -29,6 +29,7 @@ import {
 } from './dto/query-premiums-report.dto';
 import { QueryPremiumsStatsDto } from './dto/query-premiums-stats.dto';
 import { csvToExcelHtml, formatExportDate } from './report-excel-export';
+import { reportDatePredicate } from './report-date-basis';
 
 type SqlNumber = Prisma.Decimal | string | number | null;
 
@@ -410,8 +411,8 @@ export class PremiumsReportService {
       ? Prisma.sql`AND (${settlementState}) IN (${Prisma.join(query.settlementStatus)})`
       : Prisma.empty;
     const dateRange = this.dateRange(query);
-    const baseDatePredicate = this.baseDatePredicate(
-      query.dateBasis ?? 'INCEPTION_DATE',
+    const baseDatePredicate = reportDatePredicate(
+      query.dateBasis,
       dateRange,
       tenantId,
     );
@@ -942,72 +943,6 @@ export class PremiumsReportService {
       LEFT JOIN obligation_pivot op ON op."placementId" = bp."id"
       LEFT JOIN payment_totals pt ON pt."placementId" = bp."id"
     `;
-  }
-
-  private baseDatePredicate(
-    dateBasis: PremiumReportDateBasis,
-    dateRange: DateRange,
-    tenantId: string,
-  ): Prisma.Sql {
-    const rangePredicate = (column: Prisma.Sql): Prisma.Sql => {
-      const from = dateRange.from
-        ? Prisma.sql`AND ${column} >= ${dateRange.from}`
-        : Prisma.empty;
-      const to = dateRange.to
-        ? Prisma.sql`AND ${column} <= ${dateRange.to}`
-        : Prisma.empty;
-      return Prisma.sql`${from} ${to}`;
-    };
-
-    if (!dateRange.from && !dateRange.to) {
-      return Prisma.empty;
-    }
-
-    if (dateBasis === 'PLACEMENT_CREATED') {
-      return rangePredicate(Prisma.sql`p."createdAt"`);
-    }
-    if (dateBasis === 'EXPIRY_DATE') {
-      return rangePredicate(Prisma.sql`p."expiryDate"`);
-    }
-    if (dateBasis === 'CLOSING_CONFIRMED_AT') {
-      return Prisma.sql`
-        AND EXISTS (
-          SELECT 1
-          FROM "reinsurance"."PlacementClosing" pc_date
-          WHERE pc_date."tenantId" = ${tenantId}
-            AND pc_date."placementId" = p."id"
-            AND pc_date."status" = 'CONFIRMED'
-            ${rangePredicate(Prisma.sql`pc_date."confirmedAt"`)}
-        )
-      `;
-    }
-    if (dateBasis === 'PAYMENT_DATE') {
-      return Prisma.sql`
-        AND EXISTS (
-          SELECT 1
-          FROM "reinsurance"."PlacementPayment" pay_date
-          WHERE pay_date."tenantId" = ${tenantId}
-            AND pay_date."placementId" = p."id"
-            AND pay_date."reversalOfPaymentId" IS NULL
-            ${rangePredicate(Prisma.sql`pay_date."paymentDate"`)}
-        )
-      `;
-    }
-    if (dateBasis === 'BANK_CONFIRMED_AT') {
-      return Prisma.sql`
-        AND EXISTS (
-          SELECT 1
-          FROM "reinsurance"."PlacementPayment" bank_date
-          WHERE bank_date."tenantId" = ${tenantId}
-            AND bank_date."placementId" = p."id"
-            AND bank_date."status" = 'BANK_CONFIRMED'
-            AND bank_date."reversalOfPaymentId" IS NULL
-            ${rangePredicate(Prisma.sql`bank_date."bankConfirmedAt"`)}
-        )
-      `;
-    }
-
-    return rangePredicate(Prisma.sql`p."inceptionDate"`);
   }
 
   private searchPredicate(search?: string): Prisma.Sql {

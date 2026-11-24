@@ -3,14 +3,16 @@ import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { CedantPaymentStatus } from '@/lib/reinsurance/placementStatus';
 import { FacultativeStatus } from '@/types/reinsurance';
+import { DEFAULT_REPORT_DATE_BASIS, type ReportDateBasis } from './reportDateBasis';
 import { ReportCurrencyTotals } from './useReportCurrencyTotals';
 
 const CEDANTS_REPORT_BASE = '/operations/reinsurance/reports/cedants';
 
 export interface CedantsReportParams {
-  /** Restricts to placements whose inceptionDate (period of insurance start) falls in [startDate, endDate]. */
+  /** Restricts to placements whose selected dateBasis falls in [startDate, endDate]. */
   startDate?: string;
   endDate?: string;
+  dateBasis?: ReportDateBasis;
   riskTypeIds?: string[];
   /** Row filter — include only placements in these currencies (native currency, no conversion). */
   currencies?: string[];
@@ -82,6 +84,7 @@ function normalizeCedantsReportParams(params: CedantsReportParams = {}) {
   return {
     page: params.page ?? 1,
     limit: params.limit ?? 50,
+    dateBasis: params.dateBasis ?? DEFAULT_REPORT_DATE_BASIS,
     ...(params.startDate ? { dateFrom: params.startDate } : {}),
     ...(params.endDate ? { dateTo: params.endDate } : {}),
     ...(params.riskTypeIds?.length ? { riskTypeId: reportFilterCsv(params.riskTypeIds) } : {}),

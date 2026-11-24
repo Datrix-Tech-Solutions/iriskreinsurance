@@ -101,7 +101,7 @@ describe('BrokerageReportService', () => {
       page: 1,
       limit: 10,
       scope: 'reinsurer',
-      dateBasis: 'INCEPTION_DATE',
+      dateBasis: 'PLACEMENT_CREATED',
       dateFrom: '2026-09-01',
       dateTo: '2026-09-30',
     });
@@ -161,7 +161,7 @@ describe('BrokerageReportService', () => {
       scope: 'reinsurer',
       page: 1,
       limit: 20,
-      dateBasis: 'BANK_CONFIRMED_AT',
+      dateBasis: 'PREMIUM_PAYMENT_DATE',
       dateFrom: '2026-08-01',
       dateTo: '2026-08-31',
       paymentStatus: ['Paid'],
@@ -182,7 +182,7 @@ describe('BrokerageReportService', () => {
     expect(sql).toContain('e."status" = \'CLOSED\'');
     expect(sql).toContain('"PlacementNote" n');
     expect(sql).toContain('n."type" = \'CREDIT_NOTE\'');
-    expect(sql).toContain('pay_date."bankConfirmedAt"');
+    expect(sql).toContain('pay_date."paymentDate"');
     expect(sql).toContain('br."reinsurerId" IN');
     expect(sql).toContain('br."paymentStatus" IN');
     expect(sql).toContain('placement_premiums');
