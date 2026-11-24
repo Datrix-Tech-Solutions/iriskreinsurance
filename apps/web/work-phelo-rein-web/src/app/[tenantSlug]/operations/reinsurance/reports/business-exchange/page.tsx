@@ -22,7 +22,7 @@ export default function BusinessExchangeReportPage({
             Reports
           </Link>
           <Icons.ChevronRight className="w-5 h-5" />
-          <span className="text-gray-700 font-medium">Business Exchange</span>
+          <span className="text-gray-700 font-medium">Management Report</span>
         </nav>
       </div>
 

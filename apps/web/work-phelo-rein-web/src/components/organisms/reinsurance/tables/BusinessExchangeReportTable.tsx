@@ -307,7 +307,7 @@ export function BusinessExchangeReportTable() {
           actionButton={{ label: 'Run Filter', onClick: handleRunFilter }}
           emptyMessage={
             reportParams
-              ? 'No business exchange for the selected period'
+              ? 'No management report for the selected period'
               : 'Select a period and click Run Filter to generate the report'
           }
           rowNumber={(_row, index) => (meta.page - 1) * meta.limit + index + 1}

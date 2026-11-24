@@ -135,7 +135,7 @@ export class ReinsuranceReportsController {
   @Get('business-exchange')
   @RequirePermissions(PlacementPermission.VIEW)
   @ApiOperation({
-    summary: 'List Reinsurance business exchange report rows',
+    summary: 'List Reinsurance management report rows',
     description:
       'Per insurance company and currency: business given (placements where it is a reinsurer), business received (placements where it is the cedant, with gross premium), net balance and net brokerage. ' +
       'Filter monthly (a year, optionally one month) or yearly (one year or all years).',
@@ -158,7 +158,7 @@ export class ReinsuranceReportsController {
     'Content-Disposition',
     'attachment; filename="business-exchange-report.csv"',
   )
-  @ApiOperation({ summary: 'Export Reinsurance business exchange report CSV' })
+  @ApiOperation({ summary: 'Export Reinsurance management report CSV' })
   exportBusinessExchangeCsv(
     @Query() query: QueryBusinessExchangeReportDto,
     @Req() request: Request & { user: RequestUser },
@@ -177,7 +177,7 @@ export class ReinsuranceReportsController {
     'attachment; filename="business-exchange-report.xls"',
   )
   @ApiOperation({
-    summary: 'Export Reinsurance business exchange report Excel',
+    summary: 'Export Reinsurance management report Excel',
   })
   exportBusinessExchangeExcel(
     @Query() query: QueryBusinessExchangeReportDto,

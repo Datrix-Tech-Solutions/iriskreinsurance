@@ -690,9 +690,16 @@ export class ClaimsReportService {
             WHEN cp."premiumPaidAt" IS NULL THEN NULL
             ELSE FLOOR(EXTRACT(EPOCH FROM (cp."occurrenceDate" - cp."premiumPaidAt")) / 86400)::int
           END AS "dolDop",
+          -- Per-reinsurer status: this reinsurer's own paid vs. own share.
           CASE
-            WHEN cp."iriskSharePaid" <= 0.01 THEN 'outstanding'
-            WHEN GREATEST(0, cp."iriskShareAmount" - cp."iriskSharePaid") <= 0.01 THEN 'full'
+            WHEN rp."counterpartyId" IS NULL THEN
+              CASE
+                WHEN cp."iriskSharePaid" <= 0.01 THEN 'outstanding'
+                WHEN GREATEST(0, cp."iriskShareAmount" - cp."iriskSharePaid") <= 0.01 THEN 'full'
+                ELSE 'part'
+              END
+            WHEN rp."reinsurerPaidAmount" <= 0.01 THEN 'outstanding'
+            WHEN rp."reinsurerOutstandingAmount" <= 0.01 THEN 'full'
             ELSE 'part'
           END AS "recoveryStatus"
         FROM claim_positions cp
