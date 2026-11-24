@@ -4,6 +4,7 @@ import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { PremiumsReportService } from './premiums-report.service';
 
 type QueryReader = {
+  $executeRaw: jest.Mock<Promise<number>, [unknown]>;
   $queryRaw: jest.Mock<Promise<unknown>, [unknown]>;
 };
 type TransactionCallback = (reader: QueryReader) => Promise<unknown>;
@@ -16,6 +17,7 @@ describe('PremiumsReportService', () => {
 
   beforeEach(() => {
     prisma = {
+      $executeRaw: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
       $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
       $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
     };
@@ -108,7 +110,7 @@ describe('PremiumsReportService', () => {
       dateBasis: 'PLACEMENT_CREATED',
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(5);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,

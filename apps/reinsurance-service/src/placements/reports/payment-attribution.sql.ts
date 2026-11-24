@@ -12,34 +12,39 @@ export function paymentAttributionCtes(
   { guardPremiumReceipts = false }: { guardPremiumReceipts?: boolean } = {},
 ): Prisma.Sql {
   return Prisma.sql`
-    attribution_sources AS (
+    -- Keep the ownership proof as data until matching. Filtering the redundant
+    -- participant/placement FK equality here drastically underestimates sources
+    -- and selects repeated nested-loop scans of otherwise large CTEs.
+    attribution_sources AS MATERIALIZED (
       SELECT pc."id", pc."placementId", pc."participantId" AS "snapshotKey",
-        pp."counterpartyId" AS "reinsurerId", pc."currency", 0 AS "sourceRank"
+        pp."counterpartyId" AS "reinsurerId", pc."currency", 0 AS "sourceRank",
+        (pp."placementId" = pc."placementId") AS "validSource"
       FROM "reinsurance"."PlacementClosing" pc
       JOIN base_placements bp ON bp."id" = pc."placementId"
       JOIN "reinsurance"."PlacementParticipant" pp
         ON pp."id" = pc."participantId" AND pp."tenantId" = pc."tenantId"
-        AND pp."placementId" = pc."placementId"
       WHERE pc."tenantId" = ${tenantId} AND pc."status" = 'CONFIRMED'
       UNION ALL
       SELECT ec."id", ec."placementId",
         COALESCE(ep."originalParticipantId", ec."endorsementParticipantId"),
-        ep."counterpartyId", ec."currency", 1
+        ep."counterpartyId", ec."currency", 1,
+        (ep."placementId" = ec."placementId" AND e."placementId" = ec."placementId")
       FROM "reinsurance"."PlacementEndorsementClosing" ec
       JOIN base_placements bp ON bp."id" = ec."placementId"
       JOIN "reinsurance"."PlacementEndorsementParticipant" ep
         ON ep."id" = ec."endorsementParticipantId" AND ep."tenantId" = ec."tenantId"
-        AND ep."placementId" = ec."placementId"
       JOIN "reinsurance"."PlacementEndorsement" e
         ON e."id" = ec."endorsementId" AND e."tenantId" = ec."tenantId"
-        AND e."placementId" = ec."placementId"
       -- Payment creation accepts every confirmed closing, independently of its
       -- endorsement's lifecycle/effective date. This proves source ownership;
       -- attribution_current alone determines whether an obligation is current.
       WHERE ec."tenantId" = ${tenantId} AND ec."status" = 'CONFIRMED'
     ),
     attribution_payments AS (
-      SELECT pay.* FROM "reinsurance"."PlacementPayment" pay
+      SELECT pay."id", pay."tenantId", pay."placementId", pay."counterpartyId",
+        pay."status", pay."direction", pay."currency", pay."settlementCurrency",
+        pay."amount", pay."closingId", pay."endorsementClosingId", pay."participantId"
+      FROM "reinsurance"."PlacementPayment" pay
       JOIN base_placements bp ON bp."id" = pay."placementId"
       WHERE pay."tenantId" = ${tenantId}
         AND pay."type" = 'REINSURER_DISBURSEMENT'
@@ -77,44 +82,71 @@ export function paymentAttributionCtes(
       FROM attribution_payments pay
       WHERE NOT EXISTS (SELECT 1 FROM attribution_allocations a WHERE a."paymentId" = pay."id")
     ),
+    -- Hashable placement/payee joins evaluate all source candidates as a set.
+    -- The identity predicates remain exactly the three original exclusive shapes.
+    attribution_source_candidates AS (
+      SELECT p."paymentId", p."pieceId", s.*
+      FROM attribution_payment_parts p
+      JOIN attribution_sources s ON s."placementId" = p."placementId"
+        AND s."reinsurerId" = p."counterpartyId" AND s."validSource"
+        AND CASE
+          WHEN p."closingId" IS NOT NULL AND p."endorsementClosingId" IS NULL THEN
+            s."sourceRank" = 0 AND s."id" = p."closingId"
+              AND (p."participantId" IS NULL OR p."participantId" = s."snapshotKey")
+          WHEN p."endorsementClosingId" IS NOT NULL AND p."closingId" IS NULL THEN
+            s."sourceRank" = 1 AND s."id" = p."endorsementClosingId"
+              AND p."participantId" IS NULL
+          WHEN p."closingId" IS NULL AND p."endorsementClosingId" IS NULL THEN
+            p."participantId" IS NOT NULL AND s."sourceRank" = 0
+              AND s."snapshotKey" = p."participantId"
+          ELSE FALSE
+        END
+    ),
+    attribution_source_matches AS (
+      SELECT "paymentId", "pieceId", MIN("id") AS "id",
+        MIN("sourceRank") AS "sourceRank", MIN("snapshotKey") AS "snapshotKey",
+        MIN("currency") AS "currency", COUNT(*) AS "matches",
+        MIN("placementId") AS "placementId", MIN("reinsurerId") AS "reinsurerId"
+      FROM attribution_source_candidates GROUP BY "paymentId", "pieceId"
+    ),
+    attribution_current_matches AS (
+      SELECT s."paymentId", s."pieceId", MIN(c."id") AS "id",
+        MIN(c."sourceRank") AS "sourceRank", COUNT(*) AS "matches"
+      FROM attribution_source_matches s
+      JOIN attribution_current c ON c."placementId" = s."placementId"
+        AND c."snapshotKey" = s."snapshotKey" AND c."reinsurerId" = s."reinsurerId"
+      GROUP BY s."paymentId", s."pieceId"
+    ),
     attribution_resolved AS (
+      -- MIN only projects a candidate identity; matches=1 is still mandatory.
+      -- Missing matches must retain COUNT's former zero (not NULL) semantics.
       SELECT p.*, source."id" AS "sourceClosingId", source."sourceRank",
         source."snapshotKey", source."currency" AS "sourceCurrency",
-        source."matches", current_snapshot."id" AS "currentClosingId",
-        current_snapshot."matches" AS "currentMatches", current_snapshot."sourceRank" AS "currentSourceRank"
+        COALESCE(source."matches", 0) AS "matches", current_snapshot."id" AS "currentClosingId",
+        COALESCE(current_snapshot."matches", 0) AS "currentMatches", current_snapshot."sourceRank" AS "currentSourceRank"
       FROM attribution_payment_parts p
-      LEFT JOIN LATERAL (
-        -- MIN only projects a singleton; matches must equal 1 in the guard.
-        -- It never chooses a winner among ambiguous historical sources.
-        SELECT MIN(s."id") AS "id", MIN(s."sourceRank") AS "sourceRank",
-          MIN(s."snapshotKey") AS "snapshotKey", MIN(s."currency") AS "currency",
-          COUNT(*) AS "matches"
-        FROM attribution_sources s
-        WHERE s."placementId" = p."placementId" AND s."reinsurerId" = p."counterpartyId"
-          AND (
-            (p."closingId" IS NOT NULL AND p."endorsementClosingId" IS NULL
-              AND s."sourceRank" = 0 AND s."id" = p."closingId"
-              AND (p."participantId" IS NULL OR p."participantId" = s."snapshotKey"))
-            OR (p."endorsementClosingId" IS NOT NULL AND p."closingId" IS NULL
-              AND s."sourceRank" = 1 AND s."id" = p."endorsementClosingId"
-              AND p."participantId" IS NULL)
-            OR (p."closingId" IS NULL AND p."endorsementClosingId" IS NULL
-              AND p."participantId" IS NOT NULL AND s."sourceRank" = 0
-              AND s."snapshotKey" = p."participantId")
-          )
-      ) source ON TRUE
-      LEFT JOIN LATERAL (
-        -- As above, these projections are usable only after uniqueness validation.
-        SELECT MIN(c."id") AS "id", MIN(c."sourceRank") AS "sourceRank", COUNT(*) AS "matches"
-        FROM attribution_current c
-        WHERE c."placementId" = p."placementId" AND c."snapshotKey" = source."snapshotKey"
-          AND c."reinsurerId" = p."counterpartyId"
-      ) current_snapshot ON TRUE
+      LEFT JOIN attribution_source_matches source
+        ON source."paymentId" = p."paymentId" AND source."pieceId" = p."pieceId"
+      LEFT JOIN attribution_current_matches current_snapshot
+        ON current_snapshot."paymentId" = p."paymentId" AND current_snapshot."pieceId" = p."pieceId"
     ),
-    attribution_errors AS (
+    attribution_current_currencies AS (
+      -- Existence projection, not selection of an arbitrary matching closing.
+      SELECT DISTINCT c."placementId", c."id", c."sourceRank", s."currency"
+      FROM attribution_current c
+      JOIN attribution_sources s ON s."placementId" = c."placementId"
+        AND s."id" = c."id" AND s."sourceRank" = c."sourceRank"
+      WHERE s."validSource"
+    ),
+    attribution_errors AS MATERIALIZED (
       SELECT p."paymentId", 'Unresolved source, ambiguous attribution or FX' AS "reason"
       FROM attribution_resolved p
       JOIN base_placements bp ON bp."id" = p."placementId"
+      LEFT JOIN attribution_current_currencies valid_current
+        ON valid_current."placementId" = p."placementId"
+        AND valid_current."id" = p."currentClosingId"
+        AND valid_current."sourceRank" = p."currentSourceRank"
+        AND valid_current."currency" = p."currency"
       WHERE p."matches" <> 1 OR p."currentMatches" > 1
         OR p."validNote" IS DISTINCT FROM TRUE OR p."direction" IS DISTINCT FROM 'OUTBOUND'
         OR p."amount" <= 0 OR p."obligationAmount" <= 0
@@ -124,11 +156,7 @@ export function paymentAttributionCtes(
         OR p."currency" IS DISTINCT FROM p."sourceCurrency"
         OR p."currency" IS DISTINCT FROM bp."currency"
         OR p."amount" IS DISTINCT FROM p."obligationAmount"
-        OR (p."currentClosingId" IS NOT NULL AND NOT EXISTS (
-          SELECT 1 FROM attribution_sources s
-          WHERE s."placementId" = p."placementId" AND s."id" = p."currentClosingId"
-            AND s."sourceRank" = p."currentSourceRank" AND s."currency" = p."currency"
-        ))
+        OR (p."currentClosingId" IS NOT NULL AND valid_current."id" IS NULL)
       UNION ALL
       SELECT pay."id", 'Allocations do not reconcile to payment header'
       FROM attribution_payments pay
@@ -142,7 +170,7 @@ export function paymentAttributionCtes(
         ON s."placementId" = c."placementId" AND s."id" = c."id"
         AND s."sourceRank" = c."sourceRank"
       JOIN base_placements bp ON bp."id" = c."placementId"
-      WHERE s."currency" IS DISTINCT FROM bp."currency"
+      WHERE s."validSource" AND s."currency" IS DISTINCT FROM bp."currency"
       ${
         guardPremiumReceipts
           ? Prisma.sql`

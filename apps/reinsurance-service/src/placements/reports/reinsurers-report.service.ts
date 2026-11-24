@@ -1,3 +1,4 @@
+import { reportTransaction } from './report-transaction';
 import {
   assertReportExportLimit,
   reportPopulationTotal,
@@ -80,74 +81,68 @@ export class ReinsurersReportService {
     tenantId: string,
     query: QueryReinsurersReportDto,
   ): Promise<ReinsurersReportResponseDto> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const page = query.page ?? 1;
-        const limit = query.limit ?? 50;
-        const offset = (page - 1) * limit;
+    return reportTransaction(this.prisma, async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 50;
+      const offset = (page - 1) * limit;
 
-        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+      await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-        const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
-          this.rowsQuery(tenantId, query, limit, offset),
-        );
-        const summaryRows = await tx.$queryRaw<ReinsurerReportRawSummaryRow[]>(
-          this.summaryQuery(tenantId, query),
-        );
-        const total = await reportPopulationTotal(
-          tx,
-          rows,
-          this.reportCtes(tenantId, query),
-          Prisma.sql`filtered_reinsurers`,
-        );
+      const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
+        this.rowsQuery(tenantId, query, limit, offset),
+      );
+      const summaryRows = await tx.$queryRaw<ReinsurerReportRawSummaryRow[]>(
+        this.summaryQuery(tenantId, query),
+      );
+      const total = await reportPopulationTotal(
+        tx,
+        rows,
+        this.reportCtes(tenantId, query),
+        Prisma.sql`filtered_reinsurers`,
+      );
 
-        return {
-          items: rows.map((row) => this.toRowDto(row)),
-          summary: this.toSummaryDto(summaryRows),
-          meta: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-          },
-        };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+      return {
+        items: rows.map((row) => this.toRowDto(row)),
+        summary: this.toSummaryDto(summaryRows),
+        meta: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    });
   }
 
   async exportReinsurersCsv(
     tenantId: string,
     query: QueryReinsurersReportDto,
   ): Promise<string> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+    return reportTransaction(this.prisma, async (tx) => {
+      await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-        const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
-          this.rowsQuery(tenantId, query, 50_000, 0),
-        );
-        assertReportExportLimit(rows);
-        const header = [
-          'Reinsurer',
-          'Currency',
-          'Placements',
-          'Participants',
-          'Ceded Premium',
-          'Payable',
-          'Disbursed',
-          'Outstanding',
-          'Pending',
-        ];
-        const exportRows = rows.flatMap((row) => this.toCsvRows(row));
-        assertReportExportLimit(rows, exportRows.length);
-        const lines = [header, ...exportRows].map((cells) =>
-          cells.map((cell) => this.csvEscape(cell)).join(','),
-        );
-        return `${lines.join('\n')}\n`;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+      const rows = await tx.$queryRaw<ReinsurerReportRawRow[]>(
+        this.rowsQuery(tenantId, query, 50_000, 0),
+      );
+      assertReportExportLimit(rows);
+      const header = [
+        'Reinsurer',
+        'Currency',
+        'Placements',
+        'Participants',
+        'Ceded Premium',
+        'Payable',
+        'Disbursed',
+        'Outstanding',
+        'Pending',
+      ];
+      const exportRows = rows.flatMap((row) => this.toCsvRows(row));
+      assertReportExportLimit(rows, exportRows.length);
+      const lines = [header, ...exportRows].map((cells) =>
+        cells.map((cell) => this.csvEscape(cell)).join(','),
+      );
+      return `${lines.join('\n')}\n`;
+    });
   }
 
   async exportReinsurersExcel(

@@ -1,3 +1,4 @@
+import { reportTransaction, ReportQueryReader } from './report-transaction';
 import {
   assertReportExportLimit,
   reportPopulationTotal,
@@ -91,6 +92,7 @@ type PremiumReportRawKpiRow = {
   settlementPart: bigint | number | string;
   settlementOutstanding: bigint | number | string;
   settlementPending?: bigint | number | string;
+  paymentStatusCounts?: PremiumReportRawCountRow[];
 };
 
 type PremiumReportRawCountRow = {
@@ -153,93 +155,87 @@ export class PremiumsReportService {
     tenantId: string,
     query: QueryPremiumsReportDto,
   ): Promise<PremiumsReportResponseDto> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const page = query.page ?? 1;
-        const limit = query.limit ?? 50;
-        const offset = (page - 1) * limit;
+    return reportTransaction(this.prisma, async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 50;
+      const offset = (page - 1) * limit;
 
-        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+      await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-        const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
-          this.rowsQuery(tenantId, query, limit, offset),
-        );
-        const summaryRows = await tx.$queryRaw<PremiumReportRawSummaryRow[]>(
-          this.summaryQuery(tenantId, query),
-        );
+      const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
+        this.rowsQuery(tenantId, query, limit, offset),
+      );
+      const summaryRows = await tx.$queryRaw<PremiumReportRawSummaryRow[]>(
+        this.summaryQuery(tenantId, query),
+      );
 
-        const total = await reportPopulationTotal(
-          tx,
-          rows,
-          this.reportCtes(tenantId, query),
-          Prisma.sql`filtered_rows`,
-        );
-        const kpis = await this.findKpis(tenantId, query, tx);
+      const total = await reportPopulationTotal(
+        tx,
+        rows,
+        this.reportCtes(tenantId, query),
+        Prisma.sql`filtered_rows`,
+      );
+      const kpis = await this.findKpis(tenantId, query, tx);
 
-        return {
-          items: rows.map((row) => this.toRowDto(row)),
-          summary: { ...this.toSummaryDto(summaryRows), ...kpis },
-          meta: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-          },
-        };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+      return {
+        items: rows.map((row) => this.toRowDto(row)),
+        summary: { ...this.toSummaryDto(summaryRows), ...kpis },
+        meta: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    });
   }
 
   async exportPremiumsCsv(
     tenantId: string,
     query: QueryPremiumsReportDto,
   ): Promise<string> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+    return reportTransaction(this.prisma, async (tx) => {
+      await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-        const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
-          this.rowsQuery(tenantId, query, 50_000, 0),
-        );
-        assertReportExportLimit(rows);
-        const header = [
-          'Policy Number',
-          'Reinsurer',
-          'Insured',
-          'Policy Type',
-          'Cedant',
-          'Offer Date',
-          'Date Closed',
-          'Inception Date',
-          'Expiry Date',
-          'Currency',
-          '100% S.I',
-          '100% Premium',
-          'Fac Share',
-          'Fac Premium',
-          "Insurer's Commission %",
-          "Insurer's Commission Amount",
-          'Brokerage',
-          'Net Premium Due Reinsurer',
-          'Net Premium Due Reinsurer Paid',
-          'Cedant Premium Due',
-          'Cedant Premium Paid',
-          'Mandatory Deductions',
-          'Effective Settlement',
-          'Cedant Outstanding',
-          'Payment Status',
-        ];
+      const rows = await tx.$queryRaw<PremiumReportRawRow[]>(
+        this.rowsQuery(tenantId, query, 50_000, 0),
+      );
+      assertReportExportLimit(rows);
+      const header = [
+        'Policy Number',
+        'Reinsurer',
+        'Insured',
+        'Policy Type',
+        'Cedant',
+        'Offer Date',
+        'Date Closed',
+        'Inception Date',
+        'Expiry Date',
+        'Currency',
+        '100% S.I',
+        '100% Premium',
+        'Fac Share',
+        'Fac Premium',
+        "Insurer's Commission %",
+        "Insurer's Commission Amount",
+        'Brokerage',
+        'Net Premium Due Reinsurer',
+        'Net Premium Due Reinsurer Paid',
+        'Cedant Premium Due',
+        'Cedant Premium Paid',
+        'Mandatory Deductions',
+        'Effective Settlement',
+        'Cedant Outstanding',
+        'Payment Status',
+      ];
 
-        const exportRows = this.toCsvRows(rows);
-        assertReportExportLimit(rows, exportRows.length);
-        const lines = [header, ...exportRows].map((cells) =>
-          cells.map((cell) => this.csvEscape(cell)).join(','),
-        );
-        return `${lines.join('\n')}\n`;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+      const exportRows = this.toCsvRows(rows);
+      assertReportExportLimit(rows, exportRows.length);
+      const lines = [header, ...exportRows].map((cells) =>
+        cells.map((cell) => this.csvEscape(cell)).join(','),
+      );
+      return `${lines.join('\n')}\n`;
+    });
   }
 
   async exportPremiumsExcel(
@@ -286,7 +282,7 @@ export class PremiumsReportService {
   private async findKpis(
     tenantId: string,
     query: QueryPremiumsReportDto,
-    reader: Pick<Prisma.TransactionClient, '$queryRaw'> = this.prisma,
+    reader: ReportQueryReader = this.prisma,
   ): Promise<
     Pick<
       PremiumsReportResponseDto['summary'],
@@ -299,8 +295,7 @@ export class PremiumsReportService {
     >
   > {
     const ctes = this.reportCtes(tenantId, query);
-    const [kpiRows, paymentRows] = await Promise.all([
-      reader.$queryRaw<PremiumReportRawKpiRow[]>(Prisma.sql`
+    const kpiRows = await reader.$queryRaw<PremiumReportRawKpiRow[]>(Prisma.sql`
         ${ctes}
         SELECT
           (SELECT COUNT(DISTINCT f."cedantId") FROM filtered_rows f) AS "cedantCount",
@@ -315,7 +310,10 @@ export class PremiumsReportService {
           s."settlementPaid",
           s."settlementPart",
           s."settlementPending",
-          s."settlementOutstanding"
+          s."settlementOutstanding",
+          (SELECT COALESCE(jsonb_agg(to_jsonb(counts)), '[]'::jsonb)
+            FROM (SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
+              FROM filtered_rows f GROUP BY f."paymentStatus") counts) AS "paymentStatusCounts"
         FROM (
           SELECT
             COUNT(*) FILTER (WHERE re.elem ->> 'settlementStatus' = 'paid') AS "settlementPaid",
@@ -326,21 +324,14 @@ export class PremiumsReportService {
           CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
             WHERE re.elem ->> 'rowKind' IS DISTINCT FROM 'SETTLEMENT_ONLY'
         ) s
-      `),
-      reader.$queryRaw<PremiumReportRawCountRow[]>(Prisma.sql`
-        ${ctes}
-        SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
-        FROM filtered_rows f
-        GROUP BY f."paymentStatus"
-      `),
-    ]);
+      `);
     const kpi = kpiRows[0];
     return {
       cedantCount: kpi ? this.toInteger(kpi.cedantCount) : 0,
       reinsurerCount: kpi ? this.toInteger(kpi.reinsurerCount) : 0,
       closedCount: kpi ? this.toInteger(kpi.closedCount) : 0,
       openCount: kpi ? this.toInteger(kpi.openCount) : 0,
-      paymentStatusCounts: paymentRows.map((r) => ({
+      paymentStatusCounts: (kpi?.paymentStatusCounts ?? []).map((r) => ({
         key: r.key ?? 'UNKNOWN',
         count: this.toInteger(r.count),
       })),

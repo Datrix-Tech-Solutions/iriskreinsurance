@@ -1,3 +1,4 @@
+import { reportTransaction, ReportQueryReader } from './report-transaction';
 import {
   assertReportExportLimit,
   reportPopulationTotal,
@@ -110,6 +111,8 @@ type FacultativeReportRawKpiRow = {
   reinsurerCount: bigint | number | string;
   activeCount: bigint | number | string;
   expiredCount: bigint | number | string;
+  statusCounts?: FacultativeReportRawCountRow[];
+  paymentStatusCounts?: FacultativeReportRawCountRow[];
 };
 
 type FacultativeReportRawCountRow = {
@@ -128,97 +131,91 @@ export class FacultativeReportService {
     tenantId: string,
     query: QueryFacultativeReportDto,
   ): Promise<FacultativeReportResponseDto> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        const page = query.page ?? 1;
-        const limit = query.limit ?? 50;
-        const offset = (page - 1) * limit;
+    return reportTransaction(this.prisma, async (tx) => {
+      const page = query.page ?? 1;
+      const limit = query.limit ?? 50;
+      const offset = (page - 1) * limit;
 
-        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+      await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-        const rows = await tx.$queryRaw<FacultativeReportRawRow[]>(
-          this.rowsQuery(tenantId, query, limit, offset),
-        );
-        const summaryRows = await tx.$queryRaw<
-          FacultativeReportRawSummaryRow[]
-        >(this.summaryQuery(tenantId, query));
-        const total = await reportPopulationTotal(
-          tx,
-          rows,
-          this.reportCtes(tenantId, query),
-          Prisma.sql`filtered_rows`,
-        );
-        const kpis = await this.findKpis(tenantId, query, tx);
+      const rows = await tx.$queryRaw<FacultativeReportRawRow[]>(
+        this.rowsQuery(tenantId, query, limit, offset),
+      );
+      const summaryRows = await tx.$queryRaw<FacultativeReportRawSummaryRow[]>(
+        this.summaryQuery(tenantId, query),
+      );
+      const total = await reportPopulationTotal(
+        tx,
+        rows,
+        this.reportCtes(tenantId, query),
+        Prisma.sql`filtered_rows`,
+      );
+      const kpis = await this.findKpis(tenantId, query, tx);
 
-        return {
-          items: rows.map((row) => this.toRowDto(row)),
-          summary: { ...this.toSummaryDto(summaryRows), ...kpis },
-          meta: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit),
-          },
-        };
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+      return {
+        items: rows.map((row) => this.toRowDto(row)),
+        summary: { ...this.toSummaryDto(summaryRows), ...kpis },
+        meta: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    });
   }
 
   async exportFacultativeCsv(
     tenantId: string,
     query: QueryFacultativeReportDto,
   ): Promise<string> {
-    return this.prisma.$transaction(
-      async (tx) => {
-        await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
+    return reportTransaction(this.prisma, async (tx) => {
+      await assertPaymentAttribution(tx, this.reportCtes(tenantId, query));
 
-        const rows = await tx.$queryRaw<FacultativeReportRawRow[]>(
-          this.rowsQuery(tenantId, query, 50_000, 0),
-        );
-        const scope = query.scope ?? 'cedant';
-        assertReportExportLimit(rows);
-        const header = [
-          'Policy Number',
-          'Insurer',
-          ...(scope === 'reinsurer' ? ['Reinsurer'] : []),
-          'Insured',
-          'Risk Class',
-          'Offer Date',
-          'Date Closed',
-          'Start Date',
-          'End Date',
-          'Currency',
-          '100% Sum Insured',
-          '100% Premium',
-          'Fac Share',
-          'Fac Sum Insured',
-          'Fac Premium',
-          'Paid Fac Premium',
-          'Cedant Commission %',
-          'Cedant Commission',
-          'Brokerage',
-          'Brokerage Paid',
-          'WHT',
-          'Paid WHT',
-          'NIC Levy',
-          'Paid NIC',
-          'Net Premium Due Reinsurer',
-          'Net Premium Due Reinsurer Paid',
-          'Net Premium Due iRisk',
-          'Net Premium Due iRisk Paid',
-          'Offer Status',
-          'Payment Status',
-        ];
-        const exportRows = this.toCsvRows(rows, scope);
-        assertReportExportLimit(rows, exportRows.length);
-        const lines = [header, ...exportRows].map((cells) =>
-          cells.map((cell) => this.csvEscape(cell)).join(','),
-        );
-        return `${lines.join('\n')}\n`;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+      const rows = await tx.$queryRaw<FacultativeReportRawRow[]>(
+        this.rowsQuery(tenantId, query, 50_000, 0),
+      );
+      const scope = query.scope ?? 'cedant';
+      assertReportExportLimit(rows);
+      const header = [
+        'Policy Number',
+        'Insurer',
+        ...(scope === 'reinsurer' ? ['Reinsurer'] : []),
+        'Insured',
+        'Risk Class',
+        'Offer Date',
+        'Date Closed',
+        'Start Date',
+        'End Date',
+        'Currency',
+        '100% Sum Insured',
+        '100% Premium',
+        'Fac Share',
+        'Fac Sum Insured',
+        'Fac Premium',
+        'Paid Fac Premium',
+        'Cedant Commission %',
+        'Cedant Commission',
+        'Brokerage',
+        'Brokerage Paid',
+        'WHT',
+        'Paid WHT',
+        'NIC Levy',
+        'Paid NIC',
+        'Net Premium Due Reinsurer',
+        'Net Premium Due Reinsurer Paid',
+        'Net Premium Due iRisk',
+        'Net Premium Due iRisk Paid',
+        'Offer Status',
+        'Payment Status',
+      ];
+      const exportRows = this.toCsvRows(rows, scope);
+      assertReportExportLimit(rows, exportRows.length);
+      const lines = [header, ...exportRows].map((cells) =>
+        cells.map((cell) => this.csvEscape(cell)).join(','),
+      );
+      return `${lines.join('\n')}\n`;
+    });
   }
 
   async exportFacultativeExcel(
@@ -253,7 +250,7 @@ export class FacultativeReportService {
   private async findKpis(
     tenantId: string,
     query: QueryFacultativeReportDto,
-    reader: Pick<Prisma.TransactionClient, '$queryRaw'> = this.prisma,
+    reader: ReportQueryReader = this.prisma,
   ): Promise<
     Pick<
       FacultativeReportResponseDto['summary'],
@@ -265,37 +262,31 @@ export class FacultativeReportService {
       | 'paymentStatusCounts'
     >
   > {
-    const ctes = this.reportCtes(tenantId, query);
-    const [kpiRows, statusRows, paymentRows] = await Promise.all([
-      reader.$queryRaw<FacultativeReportRawKpiRow[]>(Prisma.sql`
+    const ctes = this.reportCtes(tenantId, query, false);
+    const kpiRows = await reader.$queryRaw<
+      FacultativeReportRawKpiRow[]
+    >(Prisma.sql`
         ${ctes}
         SELECT
           (SELECT COUNT(DISTINCT f."cedantId") FROM filtered_rows f) AS "cedantCount",
           (
-            SELECT COUNT(DISTINCT re.elem ->> 'reinsurerId')
-            FROM filtered_rows f
-            CROSS JOIN LATERAL jsonb_array_elements(f."reinsurers") AS re(elem)
-            WHERE re.elem ->> 'rowKind' IS DISTINCT FROM 'SETTLEMENT_ONLY'
+            SELECT COUNT(DISTINCT es."reinsurerId")
+            FROM effective_snapshots es
+            JOIN filtered_rows f ON f."id" = es."placementId"
+            ${query.reinsurerId?.length ? Prisma.sql`WHERE es."reinsurerId" IN (${Prisma.join(query.reinsurerId)})` : Prisma.empty}
           ) AS "reinsurerCount",
           (SELECT COUNT(*) FROM filtered_rows f
             WHERE f."inceptionDate" IS NOT NULL AND f."expiryDate" IS NOT NULL
               AND f."inceptionDate" <= NOW() AND f."expiryDate" >= NOW()) AS "activeCount",
           (SELECT COUNT(*) FROM filtered_rows f
-            WHERE f."expiryDate" < NOW()) AS "expiredCount"
-      `),
-      reader.$queryRaw<FacultativeReportRawCountRow[]>(Prisma.sql`
-        ${ctes}
-        SELECT f."status"::text AS "key", COUNT(*) AS "count"
-        FROM filtered_rows f
-        GROUP BY f."status"
-      `),
-      reader.$queryRaw<FacultativeReportRawCountRow[]>(Prisma.sql`
-        ${ctes}
-        SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
-        FROM filtered_rows f
-        GROUP BY f."paymentStatus"
-      `),
-    ]);
+            WHERE f."expiryDate" < NOW()) AS "expiredCount",
+          (SELECT COALESCE(jsonb_agg(to_jsonb(counts)), '[]'::jsonb)
+            FROM (SELECT f."status"::text AS "key", COUNT(*) AS "count"
+              FROM filtered_rows f GROUP BY f."status") counts) AS "statusCounts",
+          (SELECT COALESCE(jsonb_agg(to_jsonb(counts)), '[]'::jsonb)
+            FROM (SELECT f."paymentStatus"::text AS "key", COUNT(*) AS "count"
+              FROM filtered_rows f GROUP BY f."paymentStatus") counts) AS "paymentStatusCounts"
+      `);
     const kpi = kpiRows[0];
     const toCounts = (rows: FacultativeReportRawCountRow[]) =>
       rows.map((r) => ({
@@ -307,8 +298,8 @@ export class FacultativeReportService {
       reinsurerCount: kpi ? this.toInteger(kpi.reinsurerCount) : 0,
       activeCount: kpi ? this.toInteger(kpi.activeCount) : 0,
       expiredCount: kpi ? this.toInteger(kpi.expiredCount) : 0,
-      statusCounts: toCounts(statusRows),
-      paymentStatusCounts: toCounts(paymentRows),
+      statusCounts: toCounts(kpi?.statusCounts ?? []),
+      paymentStatusCounts: toCounts(kpi?.paymentStatusCounts ?? []),
     };
   }
 
@@ -361,6 +352,7 @@ export class FacultativeReportService {
   private reportCtes(
     tenantId: string,
     query: QueryFacultativeReportDto,
+    includeReinsurerDetails = true,
   ): Prisma.Sql {
     const dateRange = this.dateRange(query);
     const datePredicate = reportDatePredicate(
@@ -647,6 +639,96 @@ export class FacultativeReportService {
         SELECT "id", "placementId", "snapshotKey", "reinsurerId", "sourceRank" FROM effective_snapshots
       ),
       ${paymentAttributionCtes(tenantId, { guardPremiumReceipts: true })},
+      reinsurer_breakdown_rows AS (
+        SELECT es."id", es."placementId", es."reinsurerId", es."reinsurerName",
+          es."signedLinePercent", es."sharePercent", es."confirmedAt",
+          es."sumInsuredSnapshot", es."grossPremium", es."effectiveBrokerageAmount",
+          es."commissionAmount", es."withholdingTaxAmount", es."nicLevyAmount", es."netPremium",
+          COALESCE(rp."disbursed", 0) AS "disbursed", FALSE AS "isCredit"
+        FROM effective_snapshots_with_notes es
+        LEFT JOIN attribution_snapshot_payments rp
+          ON rp."placementId" = es."placementId" AND rp."id" = es."id" AND rp."sourceRank" = es."sourceRank"
+        UNION ALL
+        SELECT sc."id", sc."placementId", sc."reinsurerId", sc."reinsurerName",
+          0, 0, sc."confirmedAt", 0, 0, 0, 0, 0, 0, 0, cr."disbursed", TRUE
+        FROM snapshot_candidates sc
+        JOIN attribution_credit_rows cr ON cr."id" = sc."id"
+          AND cr."placementId" = sc."placementId" AND cr."sourceRank" = sc."sourceRank"
+      ),
+      reinsurer_breakdowns AS (
+        SELECT es."placementId", JSONB_AGG(
+          JSONB_BUILD_OBJECT(
+            'reinsurerId', es."reinsurerId",
+            'reinsurerName', es."reinsurerName",
+            'closingId', es."id",
+            'rowKind', CASE WHEN es."isCredit" THEN 'SETTLEMENT_ONLY' END,
+            'sharePercent', COALESCE(es."signedLinePercent", es."sharePercent"),
+            'closedAt', es."confirmedAt",
+            'facSumInsured', es."sumInsuredSnapshot",
+            'facPremium', es."grossPremium",
+            'paidFacPremium',
+              CASE
+                WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
+                  THEN COALESCE(es."grossPremium", 0) * LEAST(
+                    1,
+                    GREATEST(
+                      0,
+                      COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
+                    )
+                  )
+                ELSE 0
+              END,
+            'brokerage', es."effectiveBrokerageAmount",
+            'commission', COALESCE(es."commissionAmount", 0),
+            'brokeragePaid',
+              CASE
+                WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
+                  THEN COALESCE(es."effectiveBrokerageAmount", 0) * LEAST(
+                    1,
+                    GREATEST(
+                      0,
+                      COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
+                    )
+                  )
+                ELSE 0
+              END,
+            'withholdingTax', COALESCE(es."withholdingTaxAmount", 0),
+            'withholdingTaxPaid',
+              CASE
+                WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
+                  THEN COALESCE(es."withholdingTaxAmount", 0) * LEAST(
+                    1,
+                    GREATEST(
+                      0,
+                      COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
+                    )
+                  )
+                ELSE 0
+              END,
+            'nicLevy', COALESCE(es."nicLevyAmount", 0),
+            'nicLevyPaid',
+              CASE
+                WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
+                  THEN COALESCE(es."nicLevyAmount", 0) * LEAST(
+                    1,
+                    GREATEST(
+                      0,
+                      COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
+                    )
+                  )
+                ELSE 0
+              END,
+            'netPremiumDueReinsurer', es."netPremium",
+            'netPremiumPaid', es."disbursed"
+          )
+          ORDER BY es."reinsurerName" ASC, es."id" ASC
+        ) AS "reinsurers"
+        FROM reinsurer_breakdown_rows es
+        LEFT JOIN closing_rollup cr ON cr."placementId" = es."placementId"
+        LEFT JOIN payment_rollup pp ON pp."placementId" = es."placementId"
+        WHERE 1 = 1 ${reinsurerBreakdownPredicate}
+        GROUP BY es."placementId"
+      ),
       report_rows AS (
         SELECT
           bp."id",
@@ -707,100 +789,12 @@ export class FacultativeReportService {
               THEN 'Pending'
             ELSE 'Outstanding'
           END AS "paymentStatus",
-          COALESCE(
-            (
-              SELECT JSONB_AGG(
-                JSONB_BUILD_OBJECT(
-                  'reinsurerId', es."reinsurerId",
-                  'reinsurerName', es."reinsurerName",
-                  'closingId', es."id",
-                  'rowKind', CASE WHEN es."isCredit" THEN 'SETTLEMENT_ONLY' END,
-                  'sharePercent', COALESCE(es."signedLinePercent", es."sharePercent"),
-                  'closedAt', es."confirmedAt",
-                  'facSumInsured', es."sumInsuredSnapshot",
-                  'facPremium', es."grossPremium",
-                  'paidFacPremium',
-                    CASE
-                      WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
-                        THEN COALESCE(es."grossPremium", 0) * LEAST(
-                          1,
-                          GREATEST(
-                            0,
-                            COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
-                          )
-                        )
-                      ELSE 0
-                    END,
-                  'brokerage', es."effectiveBrokerageAmount",
-                  'commission', COALESCE(es."commissionAmount", 0),
-                  'brokeragePaid',
-                    CASE
-                      WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
-                        THEN COALESCE(es."effectiveBrokerageAmount", 0) * LEAST(
-                          1,
-                          GREATEST(
-                            0,
-                            COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
-                          )
-                        )
-                      ELSE 0
-                    END,
-                  'withholdingTax', COALESCE(es."withholdingTaxAmount", 0),
-                  'withholdingTaxPaid',
-                    CASE
-                      WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
-                        THEN COALESCE(es."withholdingTaxAmount", 0) * LEAST(
-                          1,
-                          GREATEST(
-                            0,
-                            COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
-                          )
-                        )
-                      ELSE 0
-                    END,
-                  'nicLevy', COALESCE(es."nicLevyAmount", 0),
-                  'nicLevyPaid',
-                    CASE
-                      WHEN COALESCE(cr."cedantObligation", 0) > 0.0001
-                        THEN COALESCE(es."nicLevyAmount", 0) * LEAST(
-                          1,
-                          GREATEST(
-                            0,
-                            COALESCE(pp."premiumReceived", 0) / COALESCE(cr."cedantObligation", 0)
-                          )
-                        )
-                      ELSE 0
-                    END,
-                  'netPremiumDueReinsurer', es."netPremium",
-                  'netPremiumPaid', es."disbursed"
-                )
-                ORDER BY es."reinsurerName" ASC, es."id" ASC
-              )
-              FROM (
-                SELECT es."id", es."placementId", es."reinsurerId", es."reinsurerName",
-                  es."signedLinePercent", es."sharePercent", es."confirmedAt",
-                  es."sumInsuredSnapshot", es."grossPremium", es."effectiveBrokerageAmount",
-                  es."commissionAmount", es."withholdingTaxAmount", es."nicLevyAmount", es."netPremium",
-                  COALESCE(rp."disbursed", 0) AS "disbursed", FALSE AS "isCredit"
-                FROM effective_snapshots_with_notes es
-                LEFT JOIN attribution_snapshot_payments rp
-                  ON rp."placementId" = es."placementId" AND rp."id" = es."id" AND rp."sourceRank" = es."sourceRank"
-                UNION ALL
-                SELECT sc."id", sc."placementId", sc."reinsurerId", sc."reinsurerName",
-                  0, 0, sc."confirmedAt", 0, 0, 0, 0, 0, 0, 0, cr."disbursed", TRUE
-                FROM snapshot_candidates sc
-                JOIN attribution_credit_rows cr ON cr."id" = sc."id"
-                  AND cr."placementId" = sc."placementId" AND cr."sourceRank" = sc."sourceRank"
-              ) es
-              WHERE es."placementId" = bp."id"
-                ${reinsurerBreakdownPredicate}
-            ),
-            '[]'::jsonb
-          ) AS "reinsurers"
+          ${includeReinsurerDetails ? Prisma.sql`COALESCE(rb."reinsurers", '[]'::jsonb)` : Prisma.sql`'[]'::jsonb`} AS "reinsurers"
         FROM base_placements bp
         LEFT JOIN participant_rollup pru ON pru."placementId" = bp."id"
         LEFT JOIN closing_rollup cr ON cr."placementId" = bp."id"
         LEFT JOIN payment_rollup pp ON pp."placementId" = bp."id"
+        ${includeReinsurerDetails ? Prisma.sql`LEFT JOIN reinsurer_breakdowns rb ON rb."placementId" = bp."id"` : Prisma.empty}
       ),
       filtered_rows AS (
         SELECT *

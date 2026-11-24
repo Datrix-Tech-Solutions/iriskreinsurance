@@ -4,6 +4,7 @@ import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { FacultativeReportService } from './facultative-report.service';
 
 type QueryReader = {
+  $executeRaw: jest.Mock<Promise<number>, [unknown]>;
   $queryRaw: jest.Mock<Promise<unknown>, [unknown]>;
 };
 type TransactionCallback = (reader: QueryReader) => Promise<unknown>;
@@ -16,6 +17,7 @@ describe('FacultativeReportService', () => {
 
   beforeEach(() => {
     prisma = {
+      $executeRaw: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
       $queryRaw: jest.fn<Promise<unknown>, [unknown]>(),
       $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
     };
@@ -129,7 +131,7 @@ describe('FacultativeReportService', () => {
       placementStatus: [PlacementStatus.CLOSED],
     });
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(6);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
     expect(result.meta).toEqual({
       page: 2,
       limit: 10,

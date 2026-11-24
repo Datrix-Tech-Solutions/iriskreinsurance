@@ -161,25 +161,15 @@ migration behavior changes are included.
 
 ## Transaction and pool review
 
-This UI revision changes no SQL population, aggregation, attribution, isolation,
-transaction options or pool settings. Premiums, Reinsurers and Facultative retain
-Patch 2 repeatable-read reads. Cedants, Brokerage and Claims retain Patch 3's
-repeatable-read list/summary/count snapshots. Each call holds one connection
-until those reads finish; it does not hold a transaction across browser actions.
-Queries within an interactive transaction use that one connection.
+Patch 3 retained the original repeatable-read snapshots and Prisma defaults.
+Patch 4 supersedes the timeout/performance portion of that review; see
+[Reporting performance and transaction contract](./REPORT-PERFORMANCE-CONTRACT.md).
+It preserves the populations, financial definitions, filters, counts, export
+headers and frontend contract documented above. Premiums, Facultative and
+Reinsurers now use bounded report-specific transactions with transaction-local
+SQL deadlines and parameter-specific plans. Other report transaction settings
+are unchanged. No global pool/timeout change is introduced.
 
-Nonempty pages use their existing window count; empty pages add one unpaginated,
-unsorted filtered count. Bounded exports may retain a connection during their
-existing CSV serialization callback. PrismaService supplies no global timeout
-or pool override; report calls set isolation only and retain Prisma 5.22's
-existing transaction defaults (verified in the generated client: 2,000 ms max
-wait and 5,000 ms timeout). This revision does not increase those limits.
-
-Synthetic local timing/query-count evidence (51 groups: approximately 8–70 ms
-per call) verifies the additional empty-page count and unchanged read structure;
-it is not a production-scale benchmark.
-Large filtered aggregates or exports can still exceed existing timeout/pool
-capacity under load. Capacity measurement remains an operational follow-up;
-changing credentials, pool sizes or transaction timeouts is outside this change.
-Active-only report invalidation and normal pagination cache reuse are preserved;
-background UI stability does not introduce polling or extra requests.
+Nonempty pages reuse window counts; empty pages count the same complete filtered
+population. Browser refresh, applied filters, currency completeness and financial
+mutation invalidation retain Patch 3 behavior without additional frontend edits.

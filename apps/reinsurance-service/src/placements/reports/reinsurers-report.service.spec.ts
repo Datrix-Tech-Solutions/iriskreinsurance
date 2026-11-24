@@ -4,6 +4,7 @@ import { ReinsuranceMoneyHelper } from '../reinsurance-money.helper';
 import { ReinsurersReportService } from './reinsurers-report.service';
 
 type QueryReader = {
+  $executeRaw: jest.Mock<Promise<number>, [unknown]>;
   $queryRaw: jest.Mock<Promise<unknown>, [unknown]>;
 };
 type TransactionCallback = (reader: QueryReader) => Promise<unknown>;
@@ -16,6 +17,7 @@ describe('ReinsurersReportService', () => {
 
   beforeEach(() => {
     prisma = {
+      $executeRaw: jest.fn<Promise<number>, [unknown]>().mockResolvedValue(0),
       $queryRaw: jest.fn<Promise<unknown>, [unknown]>().mockResolvedValue([]),
       $transaction: jest.fn<Promise<unknown>, [TransactionCallback]>(),
     };
