@@ -280,7 +280,8 @@ export class ClaimsReportService {
         ${ctes}
         , claim_level AS (
           SELECT DISTINCT
-            "claimId", "cedantId", "bucket", "claimState", "recoveryStatus"
+            "claimId", "cedantId", "bucket", "claimState",
+            ${scope === 'cedant' ? Prisma.sql`"recoveryStatus"` : Prisma.sql`"claimRecoveryStatus"`} AS "recoveryStatus"
           FROM ${table}
         )
         SELECT
@@ -690,11 +691,25 @@ export class ClaimsReportService {
             WHEN cp."premiumPaidAt" IS NULL THEN NULL
             ELSE FLOOR(EXTRACT(EPOCH FROM (cp."occurrenceDate" - cp."premiumPaidAt")) / 86400)::int
           END AS "dolDop",
+          -- Per-reinsurer status: this reinsurer's own paid vs. own share.
+          CASE
+            WHEN rp."counterpartyId" IS NULL THEN
+              CASE
+                WHEN cp."iriskSharePaid" <= 0.01 THEN 'outstanding'
+                WHEN GREATEST(0, cp."iriskShareAmount" - cp."iriskSharePaid") <= 0.01 THEN 'full'
+                ELSE 'part'
+              END
+            WHEN rp."reinsurerPaidAmount" <= 0.01 THEN 'outstanding'
+            WHEN rp."reinsurerOutstandingAmount" <= 0.01 THEN 'full'
+            ELSE 'part'
+          END AS "recoveryStatus",
+          -- Claim-level status (all reinsurers combined); keeps claim counts
+          -- from being multiplied by the per-reinsurer status above.
           CASE
             WHEN cp."iriskSharePaid" <= 0.01 THEN 'outstanding'
             WHEN GREATEST(0, cp."iriskShareAmount" - cp."iriskSharePaid") <= 0.01 THEN 'full'
             ELSE 'part'
-          END AS "recoveryStatus"
+          END AS "claimRecoveryStatus"
         FROM claim_positions cp
         LEFT JOIN reinsurer_positions rp ON rp."claimId" = cp."claimId"
       ),

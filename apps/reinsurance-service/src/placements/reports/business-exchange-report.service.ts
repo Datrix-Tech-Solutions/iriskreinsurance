@@ -145,7 +145,7 @@ export class BusinessExchangeReportService {
     query: QueryBusinessExchangeReportDto,
   ): Promise<string> {
     const csv = await this.exportBusinessExchangeCsv(tenantId, query);
-    return csvToExcelHtml(csv, 'Business Exchange Report');
+    return csvToExcelHtml(csv, 'Management Report');
   }
 
   private rowsQuery(
