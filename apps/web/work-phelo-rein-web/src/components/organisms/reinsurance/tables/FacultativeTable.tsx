@@ -87,6 +87,8 @@ const PLACEMENTS_FILTER_OPTIONS = [
   ...CLOSING_PAYMENT_FILTER_OPTIONS,
 ];
 
+// Kept for re-enabling the status filters in CLOSING_FILTER_OPTIONS below.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const CLOSING_STATUS_FILTER_OPTIONS = [
   { value: 'CLOSING', label: 'Partially Closed' },
   { value: 'CLOSED', label: 'Closed' },

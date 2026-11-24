@@ -10,6 +10,7 @@ import {
   BanknoteArrowUp,
   HandCoins,
   Archive,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { ReportCard } from '@/components/molecules/shared/ReportCard';
 
@@ -86,6 +87,14 @@ export default function ReinsuranceReportsPage() {
           title="Brokerage"
           description="Brokerage earned and withholding across placements."
           onClick={() => router.push(`${base}/brokerage`)}
+        />
+
+        <ReportCard
+          icon={<ArrowLeftRight className="w-6 h-6" />}
+          iconClassName="bg-teal-600 text-teal-100"
+          title="Management Reports"
+          description="Business given and received per insurance company, monthly or yearly."
+          onClick={() => router.push(`${base}/business-exchange`)}
         />
 
         <ReportCard
