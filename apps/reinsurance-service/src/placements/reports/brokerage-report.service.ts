@@ -16,7 +16,6 @@ import {
   BrokerageReportSortField,
   QueryBrokerageReportDto,
 } from './dto/query-brokerage-report.dto';
-import { PremiumReportDateBasis } from './dto/query-premiums-report.dto';
 import { csvToExcelHtml, formatExportPeriod } from './report-excel-export';
 import { reportDatePredicate } from './report-date-basis';
 

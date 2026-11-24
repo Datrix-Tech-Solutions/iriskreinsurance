@@ -22,7 +22,6 @@ import {
   PremiumsStatsTopCedantDto,
 } from './dto/premiums-stats-response.dto';
 import {
-  PremiumReportDateBasis,
   PremiumReportPaymentStatus,
   PremiumReportSortField,
   QueryPremiumsReportDto,
