@@ -64,6 +64,10 @@ export default function CompanyDetailPage({ params }: { params: Promise<{ id: st
   const moduleConfig = (tenant?.moduleConfig as Record<string, boolean>) ?? {};
   const featureConfig = (tenant?.featureConfig as Record<string, Record<string, boolean>>) ?? {};
 
+  // Stable string keys so the memo recomputes only when the config contents change.
+  const moduleConfigKey = JSON.stringify(moduleConfig);
+  const featureConfigKey = JSON.stringify(featureConfig);
+
   const modules: Module[] = useMemo(
     () =>
       DEFAULT_MODULES.map((m) => ({
@@ -100,8 +104,8 @@ export default function CompanyDetailPage({ params }: { params: Promise<{ id: st
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      JSON.stringify(moduleConfig),
-      JSON.stringify(featureConfig),
+      moduleConfigKey,
+      featureConfigKey,
       tenant?.historicalStatementsEnabled,
       updateHistorical.isPending,
     ],

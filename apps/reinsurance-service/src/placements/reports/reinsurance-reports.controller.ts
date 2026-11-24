@@ -18,12 +18,14 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { ModuleGuard } from '../../auth/guards/module.guard';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { PlacementPermission } from '../placement.permissions';
+import { BusinessExchangeReportResponseDto } from './dto/business-exchange-report-response.dto';
 import { BrokerageReportResponseDto } from './dto/brokerage-report-response.dto';
 import { CedantsReportResponseDto } from './dto/cedants-report-response.dto';
 import { ClaimsReportResponseDto } from './dto/claims-report-response.dto';
 import { FacultativeReportResponseDto } from './dto/facultative-report-response.dto';
 import { PremiumsReportResponseDto } from './dto/premiums-report-response.dto';
 import { PremiumsStatsResponseDto } from './dto/premiums-stats-response.dto';
+import { QueryBusinessExchangeReportDto } from './dto/query-business-exchange-report.dto';
 import { QueryBrokerageReportDto } from './dto/query-brokerage-report.dto';
 import { QueryCedantsReportDto } from './dto/query-cedants-report.dto';
 import { QueryClaimsReportDto } from './dto/query-claims-report.dto';
@@ -33,6 +35,7 @@ import { QueryPremiumsStatsDto } from './dto/query-premiums-stats.dto';
 import { QueryReinsurersReportDto } from './dto/query-reinsurers-report.dto';
 import { ReinsurersReportResponseDto } from './dto/reinsurers-report-response.dto';
 import { BrokerageReportService } from './brokerage-report.service';
+import { BusinessExchangeReportService } from './business-exchange-report.service';
 import { CedantsReportService } from './cedants-report.service';
 import { ClaimsReportService } from './claims-report.service';
 import { FacultativeReportService } from './facultative-report.service';
@@ -59,6 +62,7 @@ export class ReinsuranceReportsController {
     private readonly facultativeReport: FacultativeReportService,
     private readonly brokerageReport: BrokerageReportService,
     private readonly claimsReport: ClaimsReportService,
+    private readonly businessExchangeReport: BusinessExchangeReportService,
   ) {}
 
   @Get('premiums/stats')
@@ -123,6 +127,63 @@ export class ReinsuranceReportsController {
     @Req() request: Request & { user: RequestUser },
   ) {
     return this.premiumsReport.exportPremiumsExcel(
+      request.user.tenantId,
+      query,
+    );
+  }
+
+  @Get('business-exchange')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @ApiOperation({
+    summary: 'List Reinsurance business exchange report rows',
+    description:
+      'Per insurance company and currency: business given (placements where it is a reinsurer), business received (placements where it is the cedant, with gross premium), net balance and net brokerage. ' +
+      'Filter monthly (a year, optionally one month) or yearly (one year or all years).',
+  })
+  @ApiOkResponse({ type: BusinessExchangeReportResponseDto })
+  findBusinessExchange(
+    @Query() query: QueryBusinessExchangeReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.businessExchangeReport.findBusinessExchange(
+      request.user.tenantId,
+      query,
+    );
+  }
+
+  @Get('business-exchange/export.csv')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="business-exchange-report.csv"',
+  )
+  @ApiOperation({ summary: 'Export Reinsurance business exchange report CSV' })
+  exportBusinessExchangeCsv(
+    @Query() query: QueryBusinessExchangeReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.businessExchangeReport.exportBusinessExchangeCsv(
+      request.user.tenantId,
+      query,
+    );
+  }
+
+  @Get('business-exchange/export.xls')
+  @RequirePermissions(PlacementPermission.VIEW)
+  @Header('Content-Type', 'application/vnd.ms-excel; charset=utf-8')
+  @Header(
+    'Content-Disposition',
+    'attachment; filename="business-exchange-report.xls"',
+  )
+  @ApiOperation({
+    summary: 'Export Reinsurance business exchange report Excel',
+  })
+  exportBusinessExchangeExcel(
+    @Query() query: QueryBusinessExchangeReportDto,
+    @Req() request: Request & { user: RequestUser },
+  ) {
+    return this.businessExchangeReport.exportBusinessExchangeExcel(
       request.user.tenantId,
       query,
     );

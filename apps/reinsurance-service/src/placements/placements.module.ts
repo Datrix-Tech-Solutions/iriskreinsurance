@@ -35,6 +35,7 @@ import { ReinsuranceDashboardController } from './dashboard/dashboard.controller
 import { ReinsuranceDashboardService } from './dashboard/dashboard.service';
 import { ReinsuranceMoneyHelper } from './reinsurance-money.helper';
 import { BrokerageReportService } from './reports/brokerage-report.service';
+import { BusinessExchangeReportService } from './reports/business-exchange-report.service';
 import { CedantsReportService } from './reports/cedants-report.service';
 import { ClaimsReportService } from './reports/claims-report.service';
 import { FacultativeReportService } from './reports/facultative-report.service';
@@ -69,6 +70,7 @@ import { ReinsuranceWorklistsController } from './worklists/reinsurance-worklist
     ReinsuranceDashboardService,
     PremiumsReportService,
     CedantsReportService,
+    BusinessExchangeReportService,
     ReinsurersReportService,
     FacultativeReportService,
     BrokerageReportService,
